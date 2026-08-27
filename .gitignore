@@ -5,6 +5,11 @@ __pycache__/
 data/
 checkpoints/
 sparsify_sweep/
+sat_checkpoints/
+sat_hparam_sweep/
+sat_stats_big/
+sat_stats_smoke/
+scale_sweep/
 *.npz
 *.out
 .ipynb_checkpoints/
