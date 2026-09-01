@@ -9,10 +9,13 @@ val_satisfying_completion_rate) on the k-SAT trace", not a fair-comparison
 question against another architecture.
 
 Originally swept (d_model, nhead) (scripts/slurm/sat_hparam_sweep.sbatch),
-then nhead alone at fixed d_model=256 (sat_nhead_sweep.sbatch); this module
-now also supports sweeping num_layers/dim_feedforward at fixed d_model/nhead
-(sat_mlp_sweep.sbatch) -- the tag/checkpoint dir and CSV row always include
-all four dimensions, so runs across any of these sweeps never collide.
+then nhead alone at fixed d_model=256 (sat_nhead_sweep.sbatch), then
+num_layers/dim_feedforward at fixed d_model/nhead (sat_mlp_sweep.sbatch);
+this module now also supports sweeping qk_dim -- the Q/K projection rank,
+decoupled from nhead/d_model, see sat_transformer.LowRankSelfAttention --
+at fixed everything else (sat_qk_sweep.sbatch). The tag/checkpoint dir and
+CSV row always include all five dimensions, so runs across any of these
+sweeps never collide.
 
 Run via scripts/slurm/sat_hparam_sweep.sbatch (one array task per grid
 point), not directly on the login node -- training needs a CUDA-enabled
@@ -25,15 +28,26 @@ from .config import SATConfig, SATModelConfig, SATTrainConfig
 from .train_sat_transformer import save_checkpoint, train_sat_model
 
 
-def run_one(sat_cfg: SATConfig, train_cfg: SATTrainConfig, d_model, nhead, num_layers, out_dir, dim_feedforward=0):
-    model_cfg = SATModelConfig(d_model=d_model, num_layers=num_layers, nhead=nhead, dim_feedforward=dim_feedforward)
+def run_one(
+    sat_cfg: SATConfig, train_cfg: SATTrainConfig, d_model, nhead, num_layers, out_dir,
+    dim_feedforward=0, qk_dim=0,
+):
+    model_cfg = SATModelConfig(
+        d_model=d_model, num_layers=num_layers, nhead=nhead,
+        dim_feedforward=dim_feedforward, qk_dim=qk_dim,
+    )
     model, history, baseline_acc = train_sat_model(sat_cfg, model_cfg, train_cfg)
-    resolved_ff = model.encoder.layers[0].linear1.out_features
+    # .layers[0] only exists on the built-in nn.TransformerEncoder path (used
+    # when qk_dim resolves to full rank); the custom low-rank path stores its
+    # blocks directly in a plain ModuleList -- see SATTransformer._custom_attn.
+    first_layer = model.encoder[0] if model._custom_attn else model.encoder.layers[0]
+    resolved_ff = first_layer.linear1.out_features
+    resolved_qk = model.qk_dim
 
-    # Tag includes every varied dimension, not just d_model/nhead -- the
-    # num_layers/dim_feedforward follow-up sweep holds d_model/nhead fixed,
-    # so those two alone would collide across every point in that grid.
-    tag = f"d{d_model:04d}_h{nhead:02d}_L{num_layers:02d}_ff{resolved_ff:05d}"
+    # Tag includes every varied dimension, not just d_model/nhead -- each
+    # follow-up sweep holds some of these fixed while varying others, so any
+    # subset of dimensions alone could collide across sweep generations.
+    tag = f"d{d_model:04d}_h{nhead:02d}_L{num_layers:02d}_ff{resolved_ff:05d}_qk{resolved_qk:04d}"
     ckpt_dir = os.path.join(out_dir, tag)
     save_checkpoint(model, history, ckpt_dir, sat_cfg, model_cfg, baseline_acc=baseline_acc)
 
@@ -43,6 +57,7 @@ def run_one(sat_cfg: SATConfig, train_cfg: SATTrainConfig, d_model, nhead, num_l
         "nhead": nhead,
         "num_layers": num_layers,
         "dim_feedforward": resolved_ff,
+        "qk_dim": resolved_qk,
         "n_vars": sat_cfg.n_vars,
         "k": sat_cfg.k,
         "alpha": sat_cfg.alpha,
@@ -82,6 +97,7 @@ if __name__ == "__main__":
     ap.add_argument("--nhead", type=int, required=True)
     ap.add_argument("--num-layers", type=int, default=2)
     ap.add_argument("--dim-feedforward", type=int, default=0, help="0 = model's default (4 * d_model)")
+    ap.add_argument("--qk-dim", type=int, default=0, help="0 = full rank (= d_model)")
     ap.add_argument("--n-train-instances", type=int, default=10_000)
     ap.add_argument("--n-val-instances", type=int, default=500)
     ap.add_argument("--batch-size", type=int, default=8)
@@ -93,6 +109,8 @@ if __name__ == "__main__":
 
     if args.d_model % args.nhead != 0:
         raise ValueError(f"d_model={args.d_model} must be divisible by nhead={args.nhead}")
+    if args.qk_dim and args.qk_dim % args.nhead != 0:
+        raise ValueError(f"qk_dim={args.qk_dim} must be divisible by nhead={args.nhead}")
 
     sat_cfg = SATConfig(n_vars=args.n_vars, k=args.k, alpha=args.alpha, seed=args.seed)
     train_cfg = SATTrainConfig(
@@ -103,5 +121,5 @@ if __name__ == "__main__":
 
     run_one(
         sat_cfg, train_cfg, args.d_model, args.nhead, args.num_layers, args.out_dir,
-        dim_feedforward=args.dim_feedforward,
+        dim_feedforward=args.dim_feedforward, qk_dim=args.qk_dim,
     )

@@ -58,3 +58,76 @@ def trace_to_text(tokens, step_lengths=None, max_steps=None, var_names=None):
             lines.append("  " + token_to_str(row, var_names))
         offset += length
     return "\n".join(lines)
+
+
+def infer_step_lengths(tokens):
+    """Group a raw (T, n_vars+1) token stream into steps using the encoding's
+    own grammar rather than an externally-known grouping: a step starts at
+    whatever token comes next (regardless of its kind) and absorbs every
+    immediately-following clause-type token (kind > 0, last dim). For a
+    well-formed trace (solve_with_trace's own output: always one
+    assignment token then zero or more clause tokens) this reproduces
+    exactly the same lengths solve_with_trace itself returns. For a freely
+    model-generated sequence -- which has no externally-known step
+    boundaries at all -- this is the only way to segment it into steps, and
+    if the model doesn't emit assignment/clause tokens in the expected
+    alternation, it just reports whatever grouping actually falls out of
+    what it emitted (informative in itself, not an error)."""
+    n_tokens = tokens.shape[0]
+    lengths = []
+    i = 0
+    while i < n_tokens:
+        start = i
+        i += 1
+        while i < n_tokens and tokens[i, -1] > 0:
+            i += 1
+        lengths.append(i - start)
+    return lengths
+
+
+def trace_to_lines(tokens, step_lengths=None, var_names=None):
+    """tokens: (T, n_vars+1) array. step_lengths: from solve_with_trace, or
+    omit to infer step boundaries from the tokens themselves via
+    infer_step_lengths -- the only option for a freely model-generated
+    sequence, which has no externally-known grouping at all.
+
+    Unlike trace_to_text's indented multi-line-per-step blocks, this is
+    exactly one line per step: the current variable assignment, followed by
+    every currently non-trivial clause, all on one line -- built for
+    tabular/side-by-side display (see side_by_side_trace) rather than
+    reading top-to-bottom."""
+    if step_lengths is None:
+        step_lengths = infer_step_lengths(tokens)
+    n = tokens.shape[1] - 1
+    lines = []
+    offset = 0
+    for length in step_lengths:
+        step_tokens = tokens[offset : offset + length]
+        offset += length
+        assignment = assignment_to_str(step_tokens[0][:n], var_names)
+        clauses = " ".join(clause_to_str(row[:n], var_names) for row in step_tokens[1:])
+        lines.append(assignment if not clauses else f"{assignment}  {clauses}")
+    return lines
+
+
+def side_by_side_trace(left_lines, right_lines, left_title="MODEL", right_title="TRUE", col_width=60):
+    """Two lists of per-step lines (e.g. two trace_to_lines() outputs),
+    formatted as two aligned columns for direct visual comparison -- e.g. a
+    model-generated trace against the actual solver trace for the same
+    instance, step by step. Lines longer than col_width are truncated (with
+    a trailing "..."); the shorter list is padded with blanks so both
+    columns run the full length of the longer one, which also makes it
+    visually obvious where the two traces diverge or one ends early."""
+
+    def fit(line):
+        return line if len(line) <= col_width else line[: col_width - 3] + "..."
+
+    n_steps = max(len(left_lines), len(right_lines))
+    header = f"{'step':>4}  {left_title:<{col_width}}  {right_title}"
+    rule = "-" * len(header)
+    rows = [header, rule]
+    for i in range(n_steps):
+        left = fit(left_lines[i]) if i < len(left_lines) else ""
+        right = fit(right_lines[i]) if i < len(right_lines) else ""
+        rows.append(f"{i:>4}  {left:<{col_width}}  {right}")
+    return "\n".join(rows)

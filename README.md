@@ -182,6 +182,47 @@ converge) rather than a genuine capacity ceiling -- a natural next step
 rather than a settled answer. See `notebooks/sat_unit_propagation_results.ipynb`
 section 3b for the full plot.
 
+A second follow-up (`sat_mlp_sweep.sbatch`) fixed `d_model=256, nhead=8` and
+scanned `num_layers` ("number of MLPs" -- each transformer block is one
+attention sub-layer plus one feedforward/MLP sub-layer) in `{1,2,4,6}`
+against `dim_feedforward` (each block's own MLP hidden width, previously
+always the implicit default `4*d_model=1024`) in `{256,512,1024,2048}`:
+`num_layers=1` is too shallow (collapses to baseline everywhere) and
+`num_layers=6` with `dim_feedforward>=1024` fails to train at all
+(`best_epoch=0`, likely needs LR warmup at that depth); the best config
+found in the whole notebook is `num_layers=4, dim_feedforward=1024`
+(accuracy ~94.3%, NLL ~5.0), but `val_satisfying_completion_rate` is exactly
+0% for all 16 of these configs -- scaling depth/MLP width improved the
+easier per-token metric without recovering any of the head-count sweep's
+(small) ability to actually complete a satisfying assignment. See section
+3c for the full grid.
+
+A third follow-up (`sat_qk_sweep.sbatch`) fixes the winning MLP config
+(`d_model=256, num_layers=4, dim_feedforward=1024`) and scans `nhead` and
+`qk_dim` together -- `qk_dim` is the *total* (pre-head-split) Q/K
+projection size, decoupled from `nhead`/`d_model` via
+`spin_gnn.sat_transformer.LowRankSelfAttention` (V and the output
+projection always stay at full `d_model`; only the key/query rank is
+restricted or expanded). `nhead in {1,2,4,8,16}`, `qk_dim in
+{64,128,256,512}` (256 = standard full rank; 512 is an over-complete Q/K
+space larger than `d_model` itself) -- 20 grid points. See section 3d for
+results once run.
+
+`spin_gnn/ksat_render.py` also has `trace_to_lines` (one line per solver
+step: the assignment, then every non-trivial clause, vs. `trace_to_text`'s
+indented multi-line-per-step blocks) and `side_by_side_trace` (two such
+line lists as aligned columns, e.g. a model-generated trace against the
+true solver trace for the same instance -- see
+`notebooks/sat_unit_propagation_results.ipynb` section 4's "Model-generated
+trace vs. the true solver trace, side by side"). Since a freely
+model-generated sequence has no externally-known step grouping the way a
+real solver trace does, `trace_to_lines` falls back to
+`infer_step_lengths`, which segments purely from the token stream's own
+grammar (a step = one token plus any immediately-following clause-type
+tokens) -- this reproduces the real step lengths exactly on a well-formed
+trace, and degrades gracefully (rather than crashing) on a generated
+sequence that doesn't follow the expected alternation.
+
 `tests/test_ksat_solver.py` cross-checks `solve_with_trace`'s
 satisfiable/unsatisfiable verdict against brute-force enumeration on small
 random instances -- the correctness guarantee here, since there's no
@@ -258,6 +299,13 @@ sbatch scripts/slurm/sat_stats.sbatch
 
 # train the SAT-trace transformer:
 sbatch scripts/slurm/sat_train_transformer.sbatch
+
+# SATTransformer hyperparameter sweeps (GPU, sganguli partition):
+sbatch scripts/slurm/sat_hparam_sweep.sbatch    # (d_model, nhead)
+sbatch scripts/slurm/sat_nhead_sweep.sbatch     # nhead alone, fixed d_model=256
+sbatch scripts/slurm/sat_mlp_sweep.sbatch       # (num_layers, dim_feedforward), fixed d_model/nhead
+sbatch scripts/slurm/sat_qk_sweep.sbatch        # (nhead, qk_dim), fixed d_model/num_layers/dim_feedforward
+python -m spin_gnn.aggregate_sat_sweep "$SCRATCH/spin_gnn/sat_hparam_sweep"  # once all tasks finish
 
 squeue --me
 ```

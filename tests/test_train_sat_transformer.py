@@ -63,3 +63,36 @@ def test_checkpoint_roundtrips_dim_feedforward(tmp_path):
     # working model, not just report the right number.
     x = torch.zeros(1, 3, sat_cfg.n_vars + 1)
     reloaded_auto(x)
+
+
+def test_checkpoint_roundtrips_qk_dim(tmp_path):
+    """Same concern as the dim_feedforward test above, for qk_dim -- and
+    specifically through the custom low-rank attention path (.layers
+    doesn't exist on that path's ModuleList, unlike nn.TransformerEncoder;
+    save_checkpoint/sat_hparam_sweep.py must branch on model._custom_attn to
+    find the first block's .linear1 either way)."""
+    sat_cfg = SATConfig(n_vars=4, k=2, alpha=2.0)
+
+    low_rank_cfg = SATModelConfig(d_model=16, num_layers=2, nhead=2, qk_dim=8)
+    low_rank_model = SATTransformer(
+        sat_cfg.n_vars, d_model=low_rank_cfg.d_model, num_layers=low_rank_cfg.num_layers,
+        nhead=low_rank_cfg.nhead, max_len=5, qk_dim=low_rank_cfg.qk_dim or None,
+    )
+    assert low_rank_model._custom_attn is True
+    save_checkpoint(low_rank_model, [], str(tmp_path / "low_rank"), sat_cfg, low_rank_cfg)
+    reloaded_low_rank, low_rank_saved = load_checkpoint(str(tmp_path / "low_rank"))
+    assert low_rank_saved["qk_dim"] == 8
+    assert low_rank_saved["dim_feedforward"] == 4 * low_rank_cfg.d_model  # unset -> model's default
+    assert reloaded_low_rank._custom_attn is True
+    x = torch.zeros(1, 3, sat_cfg.n_vars + 1)
+    reloaded_low_rank(x)
+
+    auto_qk_cfg = SATModelConfig(d_model=16, num_layers=1, nhead=2, qk_dim=0)
+    auto_qk_model = SATTransformer(
+        sat_cfg.n_vars, d_model=auto_qk_cfg.d_model, num_layers=auto_qk_cfg.num_layers,
+        nhead=auto_qk_cfg.nhead, max_len=5, qk_dim=auto_qk_cfg.qk_dim or None,
+    )
+    assert auto_qk_model._custom_attn is False
+    save_checkpoint(auto_qk_model, [], str(tmp_path / "auto_qk"), sat_cfg, auto_qk_cfg)
+    _, auto_qk_saved = load_checkpoint(str(tmp_path / "auto_qk"))
+    assert auto_qk_saved["qk_dim"] == 16  # full rank = d_model

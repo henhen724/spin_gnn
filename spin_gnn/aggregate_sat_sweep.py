@@ -18,6 +18,18 @@ def aggregate(sweep_dir):
     for p in paths:
         with open(p, newline="") as f:
             rows.extend(csv.DictReader(f))
+
+    # Older sweeps (before dim_feedforward was a configurable/recorded field)
+    # wrote rows without that column at all -- csv.DictWriter requires every
+    # row to have exactly the fieldnames' keys, so mixing old- and new-schema
+    # rows crashes unless backfilled first. Those older runs always used
+    # SATTransformer's implicit default (4 * d_model), so backfill the real
+    # value rather than leaving it blank -- keeps the column meaningful
+    # (a real number, not NaN) for every row once loaded downstream.
+    for r in rows:
+        if "dim_feedforward" not in r:
+            r["dim_feedforward"] = str(4 * int(r["d_model"]))
+
     rows.sort(key=lambda r: (int(r["d_model"]), int(r["nhead"])))
 
     out_path = os.path.join(sweep_dir, "aggregated.csv")

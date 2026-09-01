@@ -17,6 +17,11 @@ The readout predicts each of the n_vars+1 dimensions as an independent 3-way
 class ({-1,0,1} -> {0,1,2}): the direct generalization of
 SpinTransformer/SpinGNN's per-site 2-way cross-entropy to this vector-token
 alphabet.
+
+SATTransformer's attention is nn.TransformerEncoder by default, but takes an
+optional qk_dim to decouple the Q/K projection rank from nhead/d_model (see
+LowRankSelfAttention/LowRankEncoderLayer below) -- V and the output
+projection always stay at full d_model.
 """
 import numpy as np
 import torch
@@ -29,20 +34,118 @@ def to_class_index(x):
     return (x + 1).long()
 
 
+class LowRankSelfAttention(nn.Module):
+    """Causal multi-head self-attention with the Q/K projection size ("rank")
+    decoupled from nhead and d_model. nn.MultiheadAttention always ties
+    head_dim to exactly d_model/nhead and has no way to shrink (or expand)
+    just the Q/K side while leaving V/the output at full d_model, so this
+    reimplements attention directly from matmuls to allow that.
+
+    qk_dim is the *total* (pre-head-split) Q/K projection size; each of the
+    nhead heads gets qk_dim // nhead of it for scoring. V and the output
+    projection stay at the full d_model (split as d_model // nhead per head)
+    -- only the key/query rank is being restricted, per the request that
+    prompted this ("the rank of the key query matrices", not V's).
+
+    Reimplements nn.MultiheadAttention's dropout placement exactly (a
+    dropout on the softmax attention weights before the V matmul) so this is
+    an apples-to-apples swap-in for nn.TransformerEncoderLayer's default
+    attention, not a confound alongside the actual qk_dim variable."""
+
+    def __init__(self, d_model, nhead, qk_dim, dropout=0.1):
+        super().__init__()
+        if qk_dim % nhead != 0:
+            raise ValueError(f"qk_dim={qk_dim} must be divisible by nhead={nhead}")
+        if d_model % nhead != 0:
+            raise ValueError(f"d_model={d_model} must be divisible by nhead={nhead}")
+        self.nhead = nhead
+        self.qk_head_dim = qk_dim // nhead
+        self.v_head_dim = d_model // nhead
+        self.q_proj = nn.Linear(d_model, qk_dim)
+        self.k_proj = nn.Linear(d_model, qk_dim)
+        self.v_proj = nn.Linear(d_model, d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.attn_dropout = nn.Dropout(dropout)
+
+    def forward(self, x, attn_mask, key_padding_mask=None):
+        """x: (B, L, d_model). attn_mask: (L, L) bool, True = disallowed
+        (causal). key_padding_mask: (B, L) bool, True = disallowed (pad)."""
+        b, l, _ = x.shape
+
+        def split_heads(t, head_dim):
+            return t.view(b, l, self.nhead, head_dim).transpose(1, 2)  # (B, nhead, L, head_dim)
+
+        q = split_heads(self.q_proj(x), self.qk_head_dim)
+        k = split_heads(self.k_proj(x), self.qk_head_dim)
+        v = split_heads(self.v_proj(x), self.v_head_dim)
+
+        scores = (q @ k.transpose(-2, -1)) / (self.qk_head_dim ** 0.5)  # (B, nhead, L, L)
+        mask = attn_mask.view(1, 1, l, l)
+        if key_padding_mask is not None:
+            mask = mask | key_padding_mask.view(b, 1, 1, l)
+        scores = scores.masked_fill(mask, float("-inf"))
+        weights = self.attn_dropout(torch.softmax(scores, dim=-1))
+        out = weights @ v  # (B, nhead, L, v_head_dim)
+        out = out.transpose(1, 2).reshape(b, l, self.nhead * self.v_head_dim)
+        return self.out_proj(out)
+
+
+class LowRankEncoderLayer(nn.Module):
+    """Post-norm transformer block (attention + FFN, each with residual +
+    LayerNorm, dropout in the same three places) built on
+    LowRankSelfAttention -- mirrors nn.TransformerEncoderLayer's default
+    (norm_first=False, activation=relu, dropout=0.1) layout exactly, so
+    results stay comparable with every prior sweep that used the built-in
+    layer; qk_dim is the only actual architectural difference."""
+
+    def __init__(self, d_model, nhead, dim_feedforward, qk_dim, dropout=0.1):
+        super().__init__()
+        self.self_attn = LowRankSelfAttention(d_model, nhead, qk_dim, dropout=dropout)
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.activation = nn.ReLU()
+
+    def forward(self, x, attn_mask, key_padding_mask=None):
+        attn_out = self.dropout1(self.self_attn(x, attn_mask, key_padding_mask))
+        x = self.norm1(x + attn_out)
+        ff_out = self.dropout2(self.linear2(self.dropout(self.activation(self.linear1(x)))))
+        x = self.norm2(x + ff_out)
+        return x
+
+
 class SATTransformer(nn.Module):
-    def __init__(self, n_vars, d_model=64, num_layers=2, nhead=1, max_len=4096, dim_feedforward=None):
+    def __init__(self, n_vars, d_model=64, num_layers=2, nhead=1, max_len=4096,
+                 dim_feedforward=None, qk_dim=None):
         super().__init__()
         self.n_vars = n_vars
         self.token_dim = n_vars + 1
+        # 0/None both mean "full rank" (= d_model), matching the
+        # dim_feedforward-or-default convention elsewhere in this module.
+        self.qk_dim = qk_dim or d_model
         self.input_embed = nn.Linear(self.token_dim, d_model)
         self.pos_embed = nn.Parameter(0.02 * torch.randn(max_len, d_model))
-        layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=nhead,
-            dim_feedforward=dim_feedforward or 4 * d_model,
-            batch_first=True,
-        )
-        self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers)
+        resolved_ff = dim_feedforward or 4 * d_model
+
+        if self.qk_dim == d_model:
+            # Full-rank case: route through the exact built-in layer every
+            # prior sweep used, rather than this module's own reimplementation
+            # -- keeps every existing checkpoint/result 100% reproducible
+            # when this new axis isn't actually being exercised.
+            layer = nn.TransformerEncoderLayer(
+                d_model=d_model, nhead=nhead, dim_feedforward=resolved_ff, batch_first=True,
+            )
+            self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers)
+            self._custom_attn = False
+        else:
+            self.encoder = nn.ModuleList(
+                LowRankEncoderLayer(d_model, nhead, resolved_ff, self.qk_dim) for _ in range(num_layers)
+            )
+            self._custom_attn = True
         self.readout = nn.Linear(d_model, self.token_dim * 3)
 
     def forward(self, x, valid_mask=None):
@@ -59,7 +162,11 @@ class SATTransformer(nn.Module):
         # PyTorch deprecation warning even though it still works.
         causal_mask = torch.triu(torch.ones(l, l, dtype=torch.bool, device=x.device), diagonal=1)
         src_key_padding_mask = ~valid_mask if valid_mask is not None else None
-        h = self.encoder(h, mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
+        if self._custom_attn:
+            for layer in self.encoder:
+                h = layer(h, causal_mask, src_key_padding_mask)
+        else:
+            h = self.encoder(h, mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
         return self.readout(h).view(b, l, self.token_dim, 3)
 
 

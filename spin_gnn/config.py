@@ -83,6 +83,7 @@ class SATModelConfig:
     num_layers: int = 2
     nhead: int = 1
     dim_feedforward: int = 0  # 0 = SATTransformer's own default (4 * d_model)
+    qk_dim: int = 0  # 0 = full rank (= d_model); see sat_transformer.LowRankSelfAttention
 
 
 @dataclass

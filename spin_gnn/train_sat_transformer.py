@@ -144,6 +144,7 @@ def train_sat_model(sat_cfg: SATConfig, model_cfg: SATModelConfig, train_cfg: SA
         sat_cfg.n_vars, d_model=model_cfg.d_model, num_layers=model_cfg.num_layers,
         nhead=model_cfg.nhead, max_len=max_len,
         dim_feedforward=model_cfg.dim_feedforward or None,
+        qk_dim=model_cfg.qk_dim or None,
     ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=train_cfg.lr)
     rng = np.random.default_rng(sat_cfg.seed)
@@ -194,13 +195,18 @@ def save_checkpoint(model, history, out_dir, sat_cfg: SATConfig, model_cfg: SATM
     torch.save(model.state_dict(), os.path.join(out_dir, "model.pt"))
     with open(os.path.join(out_dir, "history.json"), "w") as f:
         json.dump(history, f, indent=2)
+    # Read the *resolved* dim_feedforward off the model itself, not
+    # model_cfg.dim_feedforward (which may be the 0="auto" sentinel) -- a
+    # reload must reconstruct the exact same architecture regardless of how
+    # the original value was specified. .layers[0] only exists on the
+    # built-in nn.TransformerEncoder path; the custom low-rank path stores
+    # its blocks directly in a plain ModuleList.
+    first_layer = model.encoder[0] if model._custom_attn else model.encoder.layers[0]
     config = {
         "n_vars": sat_cfg.n_vars, "k": sat_cfg.k, "alpha": sat_cfg.alpha,
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
-        # Read the *resolved* value off the model itself, not model_cfg.dim_feedforward
-        # (which may be the 0="auto" sentinel) -- a reload must reconstruct the exact
-        # same architecture regardless of how the original value was specified.
-        "dim_feedforward": model.encoder.layers[0].linear1.out_features,
+        "dim_feedforward": first_layer.linear1.out_features,
+        "qk_dim": model.qk_dim,
         "max_len": model.pos_embed.shape[0],
         "baseline_accuracy": baseline_acc,
     }
@@ -217,10 +223,12 @@ def load_checkpoint(out_dir, device="cpu"):
     model = SATTransformer(
         config["n_vars"], d_model=config["d_model"], num_layers=config["num_layers"],
         nhead=config["nhead"], max_len=config["max_len"],
-        # .get(...): older checkpoints (before dim_feedforward was configurable)
-        # have no such key -- None resolves to SATTransformer's own default
-        # (4 * d_model), which is what those models were actually trained with.
+        # .get(...): older checkpoints (before dim_feedforward/qk_dim were
+        # configurable) have no such keys -- None resolves to SATTransformer's
+        # own defaults (4 * d_model, full-rank d_model respectively), which is
+        # what those models were actually trained with.
         dim_feedforward=config.get("dim_feedforward"),
+        qk_dim=config.get("qk_dim"),
     ).to(device)
     model.load_state_dict(torch.load(os.path.join(out_dir, "model.pt"), map_location=device, weights_only=True))
     model.eval()
@@ -239,6 +247,7 @@ if __name__ == "__main__":
     ap.add_argument("--num-layers", type=int, default=2)
     ap.add_argument("--nhead", type=int, default=1)
     ap.add_argument("--dim-feedforward", type=int, default=0, help="0 = SATTransformer's default (4 * d_model)")
+    ap.add_argument("--qk-dim", type=int, default=0, help="0 = full rank (= d_model)")
     ap.add_argument("--n-train-instances", type=int, default=256)
     ap.add_argument("--n-val-instances", type=int, default=32)
     ap.add_argument("--batch-size", type=int, default=8)
@@ -251,7 +260,7 @@ if __name__ == "__main__":
     sat_cfg = SATConfig(n_vars=args.n_vars, k=args.k, alpha=args.alpha, seed=args.seed)
     model_cfg = SATModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead,
-        dim_feedforward=args.dim_feedforward,
+        dim_feedforward=args.dim_feedforward, qk_dim=args.qk_dim,
     )
     train_cfg = SATTrainConfig(
         n_train_instances=args.n_train_instances, n_val_instances=args.n_val_instances,
