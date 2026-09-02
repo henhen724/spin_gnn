@@ -29,6 +29,12 @@ def aggregate(sweep_dir):
     for r in rows:
         if "dim_feedforward" not in r:
             r["dim_feedforward"] = str(4 * int(r["d_model"]))
+        # Same story for qk_dim: older sweeps predate the low-rank Q/K
+        # attention feature entirely, and always used full-rank Q/K (i.e.
+        # SATTransformer's own qk_dim=None -> d_model resolution) -- see
+        # spin_gnn.config.SATModelConfig's "0 = auto" convention.
+        if "qk_dim" not in r:
+            r["qk_dim"] = str(int(r["d_model"]))
 
     rows.sort(key=lambda r: (int(r["d_model"]), int(r["nhead"])))
 
