@@ -95,3 +95,38 @@ class SATTrainConfig:
     epochs: int = 50
     device: str = "cuda"
     max_trace_tokens: int = 0  # 0 = no cap; see sat_dataset.SATTraceDataset's docstring
+
+
+@dataclass
+class SATReasoningConfig:
+    """Random k-SAT instance generation for the v2 event-based encoding, see
+    spin_gnn/ksat2.py. Unlike SATConfig's default alpha=4.2 (near the
+    satisfiability threshold, deliberately hard), the default here is
+    deliberately easy/underconstrained -- this encoding's own tractability
+    is still being established, so start where backtracking is rare."""
+
+    n_vars: int = 16
+    k: int = 3
+    alpha: float = 1.25  # m_clauses = round(alpha * n_vars) = 20 at n_vars=16
+    n_hints: int = 0
+    seed: int = 0
+
+
+@dataclass
+class SATReasoningModelConfig:
+    d_model: int = 64
+    num_layers: int = 2
+    nhead: int = 1
+    dim_feedforward: int = 0  # 0 = 4 * d_model, same convention as SATModelConfig
+    norm_first: bool = False  # True = pre-norm (stable at depth); see sat_transformer2.py
+
+
+@dataclass
+class SATReasoningTrainConfig:
+    n_train_instances: int = 2000
+    n_val_instances: int = 200
+    batch_size: int = 32
+    lr: float = 1e-3
+    epochs: int = 50
+    device: str = "cuda"
+    max_len: int = 0  # 0 = no cap (sequences are short in this encoding, unlike ksat.py's)
