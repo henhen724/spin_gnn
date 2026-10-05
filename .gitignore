@@ -13,3 +13,4 @@ scale_sweep/
 *.npz
 *.out
 .ipynb_checkpoints/
+amp_results/
