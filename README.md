@@ -92,6 +92,36 @@ cross-point variance when comparing across the sweep.
 per grid point) and `spin_gnn/aggregate_scaling.py` concatenates the resulting
 per-task CSVs into one table for fitting/plotting.
 
+**Transformer baseline.** `spin_gnn/transformer_baseline.py` (`SpinTransformer`)
+is a standard `nn.TransformerEncoder` (nhead=1, no causal mask -- the K-lag
+window is a fixed-size non-autoregressive context, unlike the k-SAT trace
+below) over the same next-spin-prediction task, but with **no access to the
+true coupling graph** `J` -- it sees only the raw K-lag spin trajectory and
+must discover any useful structure purely from self-attention, isolating the
+value of SpinGNN's privileged structural input. `transformer_scale_sweep.py`
+mirrors `scale_sweep.py`'s grid/held-out-pool construction exactly but trains
+`SpinTransformer`, with `find_matching_d_model` choosing `d_model` so its
+parameter count matches SpinGNN's at that `context_length` -- a
+capacity-controlled comparison, not just "bigger vs. smaller."
+`spin_gnn/bayes_accuracy.py` computes the Bayes-optimal accuracy ceiling
+(thresholding the *true* analytic posterior at 0.5) per
+`(gamma_kind, gamma_param, context_length)`, independent of
+`n_train_sequences` or model type, as the reference line both scaling sweeps
+should approach from below.
+
+## Approximate message passing (AMP) for teacher-student inference
+
+A separate exploration of the same disordered kinetic Ising model
+(`spin_gnn/amp.py`): rather than training a GNN/transformer, run
+**approximate message passing** directly on the teacher's own generative
+model to infer the couplings `J` from an observed trajectory, and compare
+against the naive MAP estimate. `spin_gnn/amp_sweep.py` sweeps the sample
+ratio `alpha = T_total / N` and records both estimators' reconstruction
+error and held-out NLL gap to the teacher (`scripts/slurm/amp_sweep.sbatch`,
+output under `amp_results/`). `tests/test_amp.py` covers the AMP update
+equations; `scripts/_amp_diagnose.py` is a standalone diagnostic for
+inspecting convergence on a single instance.
+
 ## Exact-recovery sanity check
 
 `tests/test_exact_recovery.py` builds `SpinGNN(hidden_dim=0, num_layers=1,
@@ -205,8 +235,26 @@ projection size, decoupled from `nhead`/`d_model` via
 projection always stay at full `d_model`; only the key/query rank is
 restricted or expanded). `nhead in {1,2,4,8,16}`, `qk_dim in
 {64,128,256,512}` (256 = standard full rank; 512 is an over-complete Q/K
-space larger than `d_model` itself) -- 20 grid points. See section 3d for
-results once run.
+space larger than `d_model` itself) -- 20 grid points. **Result**: the new
+overall best across every v1 sweep is `nhead=16, qk_dim=512` (accuracy
+94.40%, NLL 4.76) -- the *first* config in this encoding to combine
+top-tier accuracy with a nonzero `val_satisfying_completion_rate` (1.4%)
+rather than trading one off against the other. The highest completion
+rate in the grid (3.5%) instead shows up at the *smallest* `qk_dim=64`
+(genuinely low-rank Q/K) paired with `nhead in {4,16}`, at lower accuracy
+-- the accuracy/completion trade-off from the earlier sweeps isn't fully
+gone, just no longer absolute. See section 3d for the full grid and
+heatmaps.
+
+A later diagnostic (`copy_vs_delta_breakdown`, run against this best v1
+checkpoint -- see `scripts/_copy_vs_delta_probe.py`) explains *why*
+`val_satisfying_completion_rate` stayed near zero despite 94% token
+accuracy: teacher-forced per-dimension accuracy splits into 96.0% on
+variables that are still unassigned (trivially "copy 0 forward") but only
+**34.0%** on variables that are already decided (need to actually
+remember/reproduce a specific committed value) -- barely above the 33%
+chance rate for 3 classes, and the main reason this encoding motivated the
+v2 rewrite below (see "v2: event-based reasoning-trace encoding").
 
 `spin_gnn/ksat_render.py` also has `trace_to_lines` (one line per solver
 step: the assignment, then every non-trivial clause, vs. `trace_to_text`'s
@@ -228,6 +276,102 @@ satisfiable/unsatisfiable verdict against brute-force enumeration on small
 random instances -- the correctness guarantee here, since there's no
 closed-form reference the way `test_exact_recovery.py` has for SpinGNN.
 
+## v2: event-based reasoning-trace encoding
+
+The `copy_vs_delta_breakdown` result above motivated a second encoding of
+the same underlying task (`spin_gnn/ksat2.py`, `ksat2_tokens.py`,
+`sat_transformer2.py`, `train_sat_transformer2.py`): instead of re-emitting
+the *entire* clause database at every step (v1's encoding, extremely
+redundant -- most of each step's tokens are an unchanged copy of the
+previous step's), only emit **events**: which single variable got set or
+unset, and why. Every token is a single categorical id into a small fixed
+vocabulary (standard `nn.Embedding` input, not v1's real-valued vectors),
+rather than a vector-per-token.
+
+**Grammar** (12 special tokens + one token per variable + one per clause):
+
+```
+BEGIN_HINTS   (VAR (TRUE|FALSE))*
+BEGIN_STATEMENT   (CLAUSE_c (NOT? VAR)*)*                for c in 0..m-1
+BEGIN_REASONING   ((NO_UNIT | IS_UNIT CLAUSE_c) SET VAR (TRUE|FALSE) | BACKTRACK VAR)*
+SAT (VAR (TRUE|FALSE))*   |   UNSAT
+```
+
+`solve_with_reasoning_trace` (`ksat2.py`) is the same textbook DPLL as v1
+(chronological backtracking, MCV branching), instrumented to additionally
+track **which clause** triggers each unit-propagation (v1's solver found
+the forced literal but discarded the clause index) and to emit an explicit
+`unassign` event for *every* variable undone during a backtrack, not just
+the final "give up on this decision level" pop -- v1's full-snapshot
+encoding didn't need these (an unassignment was invisible bookkeeping,
+since the whole state was recomputed from scratch every step); an
+event-based encoding has to say it out loud. `hints` (`sample_hints`,
+`SATReasoningConfig.n_hints`) are a partial assignment fixed *before* any
+decision is made -- given facts, never touched by backtracking -- though
+every sweep below uses `n_hints=0`.
+
+**Does it actually solve the problem?** `sat_transformer2.solve_rate`
+prompts the model with only hints + the problem statement (nothing about
+*how* to solve it), lets it freely generate its own entire reasoning trace,
+and checks whether the result is verifiably correct -- a strictly harder,
+more meaningful bar than v1's teacher-forced `val_satisfying_completion_rate`.
+
+**Findings, in order** (`spin_gnn/sat2_hparam_sweep.py`,
+`scripts/slurm/sat2_hparam_sweep.sbatch` + follow-ups below, all at
+`n_vars=16, alpha=1.25` -> `m_clauses=20`, "O(20) clauses" as a
+deliberately easy/underconstrained starting regime):
+
+1. A 72-config grid (`d_model x nhead x num_layers x lr`) found a best
+   `solve_rate` of only 6.7% (`d_model=128, nhead=2, num_layers=2,
+   lr=3e-4`) -- but already a real improvement in kind over v1: a 10-epoch
+   smoke test hit 81% SAT/UNSAT-call accuracy, something v1 never
+   approached at any epoch count.
+2. A dedicated depth x LR scan (`sat2_layer_scan.sbatch`, `num_layers in
+   {1,2,3,4,6,8,12,16}`) found `num_layers=16, lr=3e-4` best (7.0%), but
+   `num_layers in {12,16}` at `lr=1e-3` **collapsed completely** (0%
+   well-formed output) -- the classic post-norm-at-depth instability.
+3. Adding `norm_first=True` (pre-norm: `x = x + Sublayer(LayerNorm(x))`,
+   keeping the residual stream itself un-normalized, vs. post-norm's
+   `x = LayerNorm(x + Sublayer(x))`) to `SATReasoningTransformer` and
+   re-running the same grid (`sat2_prenorm_depth_scan.sbatch`, extended to
+   `num_layers=24`) fixed the collapse everywhere (>=99.3% well-formed)
+   *and* raised the best `solve_rate` to **12.3%** (same point,
+   `num_layers=16, lr=3e-4`) -- the depth "ceiling" in step 2 was partly an
+   optimization artifact, not a true capacity limit. `num_layers=24` did
+   not beat 16 (not simply "deeper is better").
+4. A head-count scan at that optimum (`sat2_prenorm_nhead_scan.sbatch`,
+   `nhead in {1,2,4,8,16,32}`) found `nhead in {1,2}` best, declining as
+   head count grows -- unlike depth, head count was never the lever, in
+   either encoding. A repeat run at the identical `nhead=2` config landed
+   at 4.0% vs. step 3's 12.3%, a reminder that single-run comparisons at
+   this scale carry real noise (roughly 2-3x).
+5. A `copy_vs_delta`-style per-role accuracy breakdown on the step-3
+   checkpoint (`scripts/_sat2_step_accuracy_probe.py`) found the bottleneck
+   is **which variable to act on**, not value prediction: 35% accuracy
+   choosing which variable to backtrack on (n=40), 42% choosing which
+   variable to branch on (n=2057) -- vs. 96-100% for the *value* to assign
+   once a variable is chosen, and 72% for which step type (decide /
+   propagate / backtrack) comes next. Motivated (but not yet implemented)
+   a `[SATISFIED]`/`[REACTIVATED]` clause-status annotation to offload the
+   implicit clause-bookkeeping burden from attention.
+
+`notebooks/tokenization_comparison.ipynb` compares v1 vs. v2 training
+curves directly (with explicit unit-normalization caveats, since v1's loss
+sums cross-entropy over `n_vars+1` dimensions per token while v2's is a
+single categorical cross-entropy). `notebooks/exploration_summary.ipynb`
+is a 2-page writeup of the whole investigation (both encodings) with
+citations to the exact sweep CSV/checkpoint/probe-output backing every
+number above.
+
+`tests/test_ksat2.py` and `test_ksat2_tokens.py` cover the event-stream
+invariants (every unit-prop is actually unit when claimed, the event
+stream replays to a consistent assignment history, hints are never
+touched by backtracking) and the encode/decode round-trip (tolerant of
+malformed/truncated input, since `decode` is also used on freely
+model-generated sequences). `test_sat_transformer2.py` and
+`test_train_sat_transformer2.py` cover the model/training pipeline,
+including the `norm_first` checkpoint round-trip.
+
 ## Layout
 
 ```
@@ -239,26 +383,67 @@ spin_gnn/
   dataset.py    sliding K-lag-window dataset, batched with a shared tiled graph
   train.py      self-supervised NTP training loop + eval vs Bayes-optimal
   sparsify.py   keep_prob sweep
-  scale_sweep.py        one (context_length, n_train_sequences) grid point
-  aggregate_scaling.py  concatenate scale_sweep.py's per-job CSVs
-  ksat.py                   random k-SAT sampling + DPLL unit-prop solver + trace tokens
+  scale_sweep.py            one (context_length, n_train_sequences) grid point, SpinGNN
+  transformer_baseline.py   SpinTransformer: no-graph-access baseline for the same task
+  transformer_scale_sweep.py   scale_sweep.py's grid, parameter-matched SpinTransformer
+  aggregate_scaling.py      concatenate scale_sweep.py's per-job CSVs
+  bayes_accuracy.py         Bayes-optimal accuracy ceiling per (gamma_kind, context_length)
+  amp.py                    approximate message passing for teacher-student inference
+  amp_sweep.py              AMP/MAP reconstruction-error + NLL-gap sweep over alpha=T/N
+  ksat.py                   random k-SAT sampling + DPLL unit-prop solver + v1 trace tokens
+  ksat_render.py            v1 tokens -> human-readable CNF text / assignment strings
   sat_stats.py              unit-propagation/backtracking statistics across random instances
-  sat_dataset.py            variable-length trace NTP dataset (padded batching)
-  sat_transformer.py        causal transformer over trace vector tokens
+  sat_dataset.py            v1 variable-length trace NTP dataset (padded batching)
+  sat_transformer.py        causal transformer over v1 trace vector tokens (+ LowRankSelfAttention)
   train_sat_transformer.py  NTP training loop for sat_transformer.py
+  sat_hparam_sweep.py       one data point of the v1 (d_model,nhead,...) hyperparameter sweep
+  aggregate_sat_sweep.py    concatenate sat_hparam_sweep.py's per-job CSVs
+  ksat2.py                  DPLL solver instrumented for the v2 event-based trace
+  ksat2_tokens.py           v2 vocabulary + encode/decode/render (categorical tokens)
+  sat_dataset2.py           v2 token-id NTP dataset (padded batching)
+  sat_transformer2.py       causal transformer LM over v2 token ids (norm_first option)
+  train_sat_transformer2.py NTP training loop for sat_transformer2.py + solve_rate eval
+  sat2_hparam_sweep.py      one data point of the v2 hyperparameter/depth/LR/nhead sweeps
+  aggregate_sat2_sweep.py   concatenate sat2_hparam_sweep.py's per-job CSVs
 tests/
   test_exact_recovery.py
   test_transformer_shapes.py
+  test_amp.py
   test_ksat_solver.py
+  test_ksat_render.py
   test_sat_transformer_shapes.py
+  test_train_sat_transformer.py
+  test_ksat2.py
+  test_ksat2_tokens.py
+  test_sat_transformer2.py
+  test_train_sat_transformer2.py
 scripts/
-  setup_env.sh          one-time venv setup (run inside sh_dev, not on login node)
+  setup_env.sh                       one-time venv setup (run inside sh_dev, not on login node)
+  _amp_diagnose.py                   standalone AMP convergence diagnostic
+  _copy_vs_delta_probe.py            per-role teacher-forced accuracy breakdown, v1 best checkpoint
+  _sat2_step_accuracy_probe.py       per-role teacher-forced accuracy breakdown, v2 best checkpoint
   slurm/generate_data.sbatch
   slurm/train.sbatch
   slurm/sparsify_sweep.sbatch
   slurm/scale_sweep.sbatch
+  slurm/amp_sweep.sbatch
   slurm/sat_stats.sbatch
   slurm/sat_train_transformer.sbatch
+  slurm/sat_hparam_sweep.sbatch           v1: (d_model, nhead)
+  slurm/sat_nhead_sweep.sbatch            v1: nhead alone, fixed d_model=256
+  slurm/sat_mlp_sweep.sbatch              v1: (num_layers, dim_feedforward)
+  slurm/sat_qk_sweep.sbatch               v1: (nhead, qk_dim)
+  slurm/sat2_hparam_sweep.sbatch          v2: (d_model, nhead, num_layers, lr), 72 configs
+  slurm/sat2_layer_scan.sbatch            v2: num_layers x lr at fixed d_model/nhead, post-norm
+  slurm/sat2_prenorm_depth_scan.sbatch    v2: same grid, norm_first=True
+  slurm/sat2_prenorm_nhead_scan.sbatch    v2: nhead at the pre-norm optimum
+  slurm/build_sat_notebook.sbatch         execute a notebook in place (pass path as $1)
+  slurm/run_tests.sbatch                  full pytest suite
+notebooks/
+  results.ipynb                        kinetic-Ising results: SpinGNN vs. parameter-matched SpinTransformer
+  sat_unit_propagation_results.ipynb   v1 sweep results, sections 1-4 + 3b/3c/3d follow-ups
+  tokenization_comparison.ipynb        v1 vs. v2 training curves, with unit-normalization caveats
+  exploration_summary.ipynb            2-page writeup of the whole investigation, with citations
 ```
 
 Note: `train.py`/`sparsify.py` regenerate their disorder realizations and
@@ -294,18 +479,31 @@ sbatch scripts/slurm/sparsify_sweep.sbatch
 sbatch scripts/slurm/scale_sweep.sbatch
 python -m spin_gnn.aggregate_scaling "$SCRATCH/spin_gnn/scale_sweep/power1"  # once all tasks finish
 
+# AMP teacher-student reconstruction-error sweep over alpha=T/N:
+sbatch scripts/slurm/amp_sweep.sbatch
+
 # k-SAT unit-propagation statistics (CPU, cheap):
 sbatch scripts/slurm/sat_stats.sbatch
 
-# train the SAT-trace transformer:
+# train the v1 (full-snapshot) SAT-trace transformer:
 sbatch scripts/slurm/sat_train_transformer.sbatch
 
-# SATTransformer hyperparameter sweeps (GPU, sganguli partition):
+# v1 SATTransformer hyperparameter sweeps (GPU, sganguli partition):
 sbatch scripts/slurm/sat_hparam_sweep.sbatch    # (d_model, nhead)
 sbatch scripts/slurm/sat_nhead_sweep.sbatch     # nhead alone, fixed d_model=256
 sbatch scripts/slurm/sat_mlp_sweep.sbatch       # (num_layers, dim_feedforward), fixed d_model/nhead
 sbatch scripts/slurm/sat_qk_sweep.sbatch        # (nhead, qk_dim), fixed d_model/num_layers/dim_feedforward
 python -m spin_gnn.aggregate_sat_sweep "$SCRATCH/spin_gnn/sat_hparam_sweep"  # once all tasks finish
+
+# v2 (event-based) SATReasoningTransformer sweeps (GPU, sganguli partition):
+sbatch scripts/slurm/sat2_hparam_sweep.sbatch        # (d_model, nhead, num_layers, lr), 72 configs
+sbatch scripts/slurm/sat2_layer_scan.sbatch          # num_layers x lr, post-norm
+sbatch scripts/slurm/sat2_prenorm_depth_scan.sbatch  # same grid, norm_first=True (fixes depth collapse)
+sbatch scripts/slurm/sat2_prenorm_nhead_scan.sbatch  # nhead at the pre-norm optimum
+python -m spin_gnn.aggregate_sat2_sweep "$SCRATCH/spin_gnn/sat2_hparam_sweep"  # once all tasks finish
+
+# re-execute a results notebook in place after new sweep data lands:
+sbatch scripts/slurm/build_sat_notebook.sbatch notebooks/exploration_summary.ipynb
 
 squeue --me
 ```
