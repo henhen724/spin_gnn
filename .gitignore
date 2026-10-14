@@ -16,3 +16,5 @@ scale_sweep/
 *.out
 .ipynb_checkpoints/
 amp_results/
+sudoku_dd_results/
+sudoku_mcmc_results/

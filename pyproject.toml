@@ -7,7 +7,7 @@ name = "spin_gnn"
 version = "0.1.0"
 description = "Self-supervised GNN next-token prediction on a disordered kinetic Ising spin model"
 requires-python = ">=3.10"
-dependencies = ["numpy"]
+dependencies = ["numpy", "numba"]
 
 [tool.setuptools]
 packages = ["spin_gnn"]
