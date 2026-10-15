@@ -35,7 +35,7 @@ cd "${SLURM_SUBMIT_DIR}"
 # --seed 0), so sat2_hparam_sweep.py's tag alone would collide between the
 # two array tasks and the second would silently overwrite the first's
 # checkpoint -- caught before submitting, not after.
-OUT_DIR="${SCRATCH}/spin_gnn/runs/2026-10-15_clause-status-tokens/task${SLURM_ARRAY_TASK_ID}"
+OUT_DIR="${SCRATCH}/spin_gnn/runs/2026-10-14_clause-status-tokens/task${SLURM_ARRAY_TASK_ID}"
 mkdir -p "$OUT_DIR"
 
 echo "task ${SLURM_ARRAY_TASK_ID}: use_clause_status=True seed=0 (d=128,h=2,L=16,lr=3e-4,norm_first=True)"
