@@ -12,7 +12,7 @@ agents' threads, not touched here.
 the identical config landed at 4.3% (model init is unseeded -- data seed
 is fixed at 0 throughout). Checkpoint:
 `$SCRATCH/spin_gnn/sat2_hparam_sweep/m020_d0128_h02_L16_ff00512_lr3e-04_pre`.
-Goal is `solve_rate>=50%`; not close yet. Commit `c8da12b`.
+Goal is `solve_rate>=50%`; not close yet. Commit `1590cae`.
 Results notebook: `notebooks/results_prenorm_scan.ipynb`.
 
 ## Running jobs
