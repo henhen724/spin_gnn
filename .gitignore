@@ -9,6 +9,7 @@ sat_checkpoints/
 sat_hparam_sweep/
 sat2_hparam_sweep/
 _sat2_smoke/
+runs/
 sat_stats_big/
 sat_stats_smoke/
 scale_sweep/

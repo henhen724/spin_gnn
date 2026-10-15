@@ -12,39 +12,44 @@ agents' threads, not touched here.
 the identical config landed at 4.3% (model init is unseeded -- data seed
 is fixed at 0 throughout). Checkpoint:
 `$SCRATCH/spin_gnn/sat2_hparam_sweep/m020_d0128_h02_L16_ff00512_lr3e-04_pre`.
-Goal is `solve_rate>=50%`; not close yet. Commit `12d5d71`.
+Goal is `solve_rate>=50%`; not close yet. Commit `c8da12b`.
 Results notebook: `notebooks/results_prenorm_scan.ipynb`.
 
 ## Running jobs
-- Slurm `47896056` (array `0-1%1`, `sat2_clause_status_test.sbatch`):
-  testing hypothesis that `[SATISFIED]`/`[REACTIVATED]` clause-status
-  tokens (`use_clause_status=True`, same config as current best) raise
-  `solve_rate` above 12.3%/4.3%. Submitted while the output dir was
-  misnamed with tomorrow's date (caught before it started, fixed on disk
-  for next time, but sbatch had already snapshotted the old path) -- it
-  will write to `$SCRATCH/spin_gnn/runs/2026-10-15_clause-status-tokens/
-  task{0,1}/`; **rename that to `2026-10-14_...` once it finishes** (plain
-  `mv`, no new job needed). Check `sacct -j 47896056`; results notebook
-  not yet made -- do that once both tasks finish (not done as of writing).
+None.
+
+## Negative result this session
+Hypothesis: explicit `[SATISFIED]`/`[REACTIVATED]` clause-status tokens
+(`use_clause_status=True`, implemented+tested, opt-in, default False --
+every old checkpoint still loads unaffected) would raise `solve_rate`
+above the 12.3%/4.3% baseline. **Not supported**: two runs, identical
+config otherwise, got 0.0% and 0.67% -- both well below *both* baseline
+runs (Slurm `47896056`, see `notebooks/results_clause_status.ipynb`).
+Plausible cause: the extra tags lengthen every sequence a lot, which may
+dilute training signal rather than reduce bookkeeping burden as
+hypothesized. Feature stays in the codebase (opt-in) but is not adopted.
+Output: `$SCRATCH/spin_gnn/runs/2026-10-14_clause-status-tokens/task{0,1}/`
+(the per-row `checkpoint_dir` string inside those CSVs still says
+`2026-10-15` -- a harmless stale path string from before a post-hoc `mv`,
+not a data error; the actual checkpoint files are under `2026-10-14`).
 
 ## Open problems
 1. Per-token diagnostic (`scripts/_sat2_step_accuracy_probe.py`, on the
    12.3% checkpoint) found the real bottleneck is choosing *which*
    variable to act on next (35-42% accuracy, near chance), not value
-   prediction (96-100%) -- the clause-status token experiment targets the
-   bookkeeping half of this, not the variable-selection half directly.
-2. Run-to-run noise is large (~3x) because model init isn't seeded --
-   single-run comparisons below ~2x should not be trusted.
+   prediction (96-100%) -- untouched by this session's experiment.
+2. Run-to-run noise is large (~3-25x seen so far) because model init isn't
+   seeded -- single/double-run comparisons should not be trusted much.
 3. Still all-SAT in the sampled regime (`alpha=1.25`) -- no real UNSAT
    discrimination has been tested yet.
 
 ## Next steps
-1. Once job `47896056` finishes: build a results notebook for it
-   (`notebooks/results_clause_status.ipynb`), comparing both task
-   solve_rates against the 12.3%/4.3% baseline, same eval.
-2. If it helps: make `use_clause_status=True` the default and re-run the
-   nhead scan with it. If it doesn't: document as a negative result here
-   and in LOG.md, move on to the variable-selection bottleneck instead
-   (e.g. an explicit "candidate variable" auxiliary signal).
-3. Consider seeding model init (`torch.manual_seed`) so future comparisons
-   aren't this noisy -- currently un-decided, not yet done.
+1. Attack the variable-selection bottleneck directly (open problem 1) --
+   e.g. an auxiliary loss/signal for "which variable", not more
+   bookkeeping tokens.
+2. Consider seeding model init (`torch.manual_seed`) before trusting any
+   future single-digit-percent comparison -- not yet done, undecided
+   where in the training loop to add it without changing data seeding.
+3. Still all-SAT regime (open problem 3): try a higher `alpha` once
+   `solve_rate` improves at the easy end, to test real SAT/UNSAT
+   discrimination.
