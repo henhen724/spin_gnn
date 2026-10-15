@@ -14,3 +14,7 @@ whatever you need. At most 3 lines appended per session.
   runs (0.0%, 0.67%) below both baseline runs (12.3%, 4.3%); not adopted.
 - 2026-10-14: Introduced STATUS.md/LOG.md tracking convention for this
   project (first time either file existed).
+- 2026-10-15: Seeded model init (`torch.manual_seed`, was never called) --
+  bit-identical on CPU, but GPU run-to-run variance only shrank (2.9x ->
+  2.1x spread at the best config), not eliminated (cuDNN nondeterminism
+  unaddressed); not a solve_rate improvement, just partial repro fix.

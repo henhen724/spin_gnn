@@ -8,48 +8,46 @@ agents' threads, not touched here.
 ## Current best result
 `solve_rate=12.3%` (free-running generation, verified correct), config
 `d_model=128, nhead=2, num_layers=16, lr=3e-4, norm_first=True`,
-`n_vars=16, alpha=1.25 (m_clauses=20), n_hints=0`. Noisy: a repeat run at
-the identical config landed at 4.3% (model init is unseeded -- data seed
-is fixed at 0 throughout). Checkpoint:
-`$SCRATCH/spin_gnn/sat2_hparam_sweep/m020_d0128_h02_L16_ff00512_lr3e-04_pre`.
-Goal is `solve_rate>=50%`; not close yet. Commit `1590cae`.
-Results notebook: `notebooks/results_prenorm_scan.ipynb`.
+`n_vars=16, alpha=1.25 (m_clauses=20), n_hints=0`. Still the peak of 4
+samples at this exact config now: 12.3%, 7.0%, 4.3%, 3.3% (mean ~6.7%) --
+see "This session" below. Goal is `solve_rate>=50%`; not close. Commit
+`0ec522d`. Results notebooks: `notebooks/results_prenorm_scan.ipynb`,
+`results_clause_status.ipynb` (negative), `results_seedfix_validation.ipynb`.
 
 ## Running jobs
 None.
 
-## Negative result this session
-Hypothesis: explicit `[SATISFIED]`/`[REACTIVATED]` clause-status tokens
-(`use_clause_status=True`, implemented+tested, opt-in, default False --
-every old checkpoint still loads unaffected) would raise `solve_rate`
-above the 12.3%/4.3% baseline. **Not supported**: two runs, identical
-config otherwise, got 0.0% and 0.67% -- both well below *both* baseline
-runs (Slurm `47896056`, see `notebooks/results_clause_status.ipynb`).
-Plausible cause: the extra tags lengthen every sequence a lot, which may
-dilute training signal rather than reduce bookkeeping burden as
-hypothesized. Feature stays in the codebase (opt-in) but is not adopted.
-Output: `$SCRATCH/spin_gnn/runs/2026-10-14_clause-status-tokens/task{0,1}/`
-(the per-row `checkpoint_dir` string inside those CSVs still says
-`2026-10-15` -- a harmless stale path string from before a post-hoc `mv`,
-not a data error; the actual checkpoint files are under `2026-10-14`).
+## This session (2026-10-15)
+Hypothesis: unseeded model init (`torch.manual_seed` was never called) is
+the dominant cause of the 3-25x run-to-run `solve_rate` noise seen in
+every sweep. Fix implemented (`train_sat_transformer2.py`, seeds from
+`sat_cfg.seed`) and tested: **CPU runs are now bit-identical for the same
+seed** (new regression test). **GPU runs (the actual training path) are
+only partially helped**: two seed=0 GPU runs at the current-best config
+gave 7.0%/3.3% (ratio 2.1x) vs. the pre-fix 12.3%/4.3% (ratio 2.9x) --
+smaller spread, not eliminated, because cuDNN's own algorithm/reduction
+nondeterminism isn't pinned by `manual_seed` alone. **Not a solve_rate
+improvement** -- purely a reproducibility fix, honestly only partial on
+GPU. Slurm `47916082`. Output:
+`$SCRATCH/spin_gnn/runs/2026-10-15_seed-fix-validation/task{0,1}/`.
 
 ## Open problems
-1. Per-token diagnostic (`scripts/_sat2_step_accuracy_probe.py`, on the
-   12.3% checkpoint) found the real bottleneck is choosing *which*
+1. Per-token diagnostic found the real bottleneck is choosing *which*
    variable to act on next (35-42% accuracy, near chance), not value
-   prediction (96-100%) -- untouched by this session's experiment.
-2. Run-to-run noise is large (~3-25x seen so far) because model init isn't
-   seeded -- single/double-run comparisons should not be trusted much.
+   prediction (96-100%) -- still untouched by any fix so far.
+2. GPU run-to-run noise is reduced but not eliminated (see above) --
+   still treat any single GPU run as unreliable; full determinism would
+   need `torch.use_deterministic_algorithms(True)` (untried, unknown
+   speed cost).
 3. Still all-SAT in the sampled regime (`alpha=1.25`) -- no real UNSAT
    discrimination has been tested yet.
 
 ## Next steps
 1. Attack the variable-selection bottleneck directly (open problem 1) --
    e.g. an auxiliary loss/signal for "which variable", not more
-   bookkeeping tokens.
-2. Consider seeding model init (`torch.manual_seed`) before trusting any
-   future single-digit-percent comparison -- not yet done, undecided
-   where in the training loop to add it without changing data seeding.
-3. Still all-SAT regime (open problem 3): try a higher `alpha` once
-   `solve_rate` improves at the easy end, to test real SAT/UNSAT
-   discrimination.
+   bookkeeping tokens (already tried and rejected, see LOG.md).
+2. If GPU determinism matters more going forward, try
+   `torch.use_deterministic_algorithms(True)` and measure the speed cost
+   before deciding whether to adopt it.
+3. Try a higher `alpha` once `solve_rate` improves at the easy end, to
+   test real SAT/UNSAT discrimination (open problem 3).
