@@ -110,6 +110,10 @@ class SATReasoningConfig:
     alpha: float = 1.25  # m_clauses = round(alpha * n_vars) = 20 at n_vars=16
     n_hints: int = 0
     seed: int = 0
+    # False = the original 12-special-token vocab (every prior checkpoint).
+    # True = also emit [SATISFIED]/[REACTIVATED] clause-status tags; see
+    # ksat2_tokens.Vocab's docstring.
+    use_clause_status: bool = False
 
 
 @dataclass

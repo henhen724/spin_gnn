@@ -36,7 +36,7 @@ from .sat_transformer2 import SATReasoningTransformer, sat2_accuracy, sat2_nll_l
 
 def build_vocab(sat_cfg: SATReasoningConfig):
     m_clauses = max(1, round(sat_cfg.alpha * sat_cfg.n_vars))
-    return Vocab(sat_cfg.n_vars, m_clauses)
+    return Vocab(sat_cfg.n_vars, m_clauses, use_clause_status=sat_cfg.use_clause_status)
 
 
 def build_instances(sat_cfg: SATReasoningConfig, n_instances, seed_start):
@@ -148,7 +148,7 @@ def save_checkpoint(out_dir, sat_cfg, model_cfg, model, vocab, model_max_len, ba
     torch.save(model.state_dict(), os.path.join(out_dir, "model.pt"))
     config = {
         "n_vars": sat_cfg.n_vars, "k": sat_cfg.k, "alpha": sat_cfg.alpha, "n_hints": sat_cfg.n_hints,
-        "m_clauses": vocab.m_clauses, "vocab_size": vocab.size,
+        "m_clauses": vocab.m_clauses, "vocab_size": vocab.size, "use_clause_status": vocab.use_clause_status,
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,
@@ -162,7 +162,7 @@ def save_checkpoint(out_dir, sat_cfg, model_cfg, model, vocab, model_max_len, ba
 def load_checkpoint(out_dir, device="cpu"):
     with open(os.path.join(out_dir, "config.json")) as f:
         config = json.load(f)
-    vocab = Vocab(config["n_vars"], config["m_clauses"])
+    vocab = Vocab(config["n_vars"], config["m_clauses"], use_clause_status=config.get("use_clause_status", False))
     model = SATReasoningTransformer(
         vocab.size, d_model=config["d_model"], num_layers=config["num_layers"],
         nhead=config["nhead"], max_len=config["max_len"], dim_feedforward=config.get("dim_feedforward"),
@@ -181,6 +181,7 @@ if __name__ == "__main__":
     ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--alpha", type=float, default=1.25)
     ap.add_argument("--n-hints", type=int, default=0)
+    ap.add_argument("--use-clause-status", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--d-model", type=int, default=64)
     ap.add_argument("--num-layers", type=int, default=2)
@@ -195,7 +196,8 @@ if __name__ == "__main__":
     ap.add_argument("--out-dir", type=str, default=None)
     args = ap.parse_args()
 
-    sat_cfg = SATReasoningConfig(n_vars=args.n_vars, k=args.k, alpha=args.alpha, n_hints=args.n_hints, seed=args.seed)
+    sat_cfg = SATReasoningConfig(n_vars=args.n_vars, k=args.k, alpha=args.alpha, n_hints=args.n_hints,
+                                  seed=args.seed, use_clause_status=args.use_clause_status)
     model_cfg = SATReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
         norm_first=args.norm_first,

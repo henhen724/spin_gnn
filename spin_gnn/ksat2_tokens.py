@@ -8,8 +8,16 @@ be fed through nn.Embedding rather than ksat.py's real-valued vectors.
 Sequence grammar (see ksat2.py's module docstring for the event semantics):
   BEGIN_HINTS   (VAR (TRUE|FALSE))*
   BEGIN_STATEMENT   (CLAUSE_c (NOT? VAR)*)*                for c in 0..m-1
-  BEGIN_REASONING   ((NO_UNIT | IS_UNIT CLAUSE_c) SET VAR (TRUE|FALSE) | BACKTRACK VAR)*
+  BEGIN_REASONING   ((NO_UNIT | IS_UNIT CLAUSE_c) SET VAR (TRUE|FALSE) SATISFIED* | BACKTRACK VAR REACTIVATED*)*
   SAT (VAR (TRUE|FALSE))*   |   UNSAT
+
+SATISFIED/REACTIVATED (each followed by one CLAUSE_c token, zero or more
+repeats) are opt-in via `Vocab(..., use_clause_status=True)` -- off by
+default so every existing checkpoint's vocabulary (and therefore its
+embedding/readout shapes) is reconstructed identically by
+`Vocab(n_vars, m_clauses)`, the 2-arg call every prior caller uses. ksat2.py's
+solver always computes `event["satisfied"]`/`["reactivated"]`; whether those
+lists get turned into tokens is purely a tokenizer-side choice.
 """
 import numpy as np
 
@@ -17,14 +25,17 @@ SPECIAL_NAMES = [
     "BEGIN_HINTS", "BEGIN_STATEMENT", "NOT", "BEGIN_REASONING",
     "NO_UNIT", "IS_UNIT", "SET", "TRUE", "FALSE", "SAT", "UNSAT", "BACKTRACK",
 ]
+CLAUSE_STATUS_NAMES = ["SATISFIED", "REACTIVATED"]
 
 
 class Vocab:
-    def __init__(self, n_vars, m_clauses):
+    def __init__(self, n_vars, m_clauses, use_clause_status=False):
         self.n_vars = n_vars
         self.m_clauses = m_clauses
-        self.n_special = len(SPECIAL_NAMES)
-        for i, name in enumerate(SPECIAL_NAMES):
+        self.use_clause_status = use_clause_status
+        self._special_names = SPECIAL_NAMES + (CLAUSE_STATUS_NAMES if use_clause_status else [])
+        self.n_special = len(self._special_names)
+        for i, name in enumerate(self._special_names):
             setattr(self, name, i)
         self.var_offset = self.n_special
         self.clause_offset = self.n_special + n_vars
@@ -50,7 +61,7 @@ class Vocab:
 
     def name(self, t):
         if t < self.n_special:
-            return SPECIAL_NAMES[t]
+            return self._special_names[t]
         if self.is_var_token(t):
             return f"X{self.var_index(t) + 1}"
         if self.is_clause_token(t):
@@ -80,10 +91,15 @@ def encode_instance(clauses, n_vars, hints, trace, vocab):
             tokens.append(vocab.var_token(v))
 
     tokens.append(vocab.BEGIN_REASONING)
+    emit_status = getattr(vocab, "use_clause_status", False)
     for event in trace["events"]:
         if event["kind"] == "unassign":
             tokens.append(vocab.BACKTRACK)
             tokens.append(vocab.var_token(event["var"]))
+            if emit_status:
+                for c in event.get("reactivated", []):
+                    tokens.append(vocab.REACTIVATED)
+                    tokens.append(vocab.clause_token(c))
             continue
         if event["kind"] == "unit_prop":
             tokens.append(vocab.IS_UNIT)
@@ -93,6 +109,10 @@ def encode_instance(clauses, n_vars, hints, trace, vocab):
         tokens.append(vocab.SET)
         tokens.append(vocab.var_token(event["var"]))
         tokens.append(vocab.TRUE if event["value"] == 1 else vocab.FALSE)
+        if emit_status:
+            for c in event.get("satisfied", []):
+                tokens.append(vocab.SATISFIED)
+                tokens.append(vocab.clause_token(c))
 
     if trace["satisfiable"]:
         tokens.append(vocab.SAT)
@@ -177,12 +197,29 @@ def decode(tokens, vocab):
                 literals[read_var()] = sign
             result["clauses"][c] = literals
 
+        emit_status = getattr(vocab, "use_clause_status", False)
+
+        def read_status_tags(tag_tok):
+            nonlocal i
+            clauses = []
+            while emit_status and peek() == tag_tok:
+                i += 1  # consume the tag
+                if i >= n or not vocab.is_clause_token(tokens[i]):
+                    raise ParseError(f"expected a clause token after status tag at position {i}")
+                clauses.append(vocab.clause_index(tokens[i]))
+                i += 1
+            return clauses
+
         expect(vocab.BEGIN_REASONING, "BEGIN_REASONING")
         while peek() in (vocab.NO_UNIT, vocab.IS_UNIT, vocab.BACKTRACK):
             if peek() == vocab.BACKTRACK:
                 i += 1
                 var = read_var()
-                result["events"].append({"kind": "unassign", "var": var, "value": None, "clause": None})
+                reactivated = read_status_tags(vocab.REACTIVATED) if emit_status else []
+                result["events"].append({
+                    "kind": "unassign", "var": var, "value": None, "clause": None,
+                    "satisfied": [], "reactivated": reactivated,
+                })
                 continue
             clause_idx = None
             if peek() == vocab.IS_UNIT:
@@ -196,8 +233,12 @@ def decode(tokens, vocab):
             expect(vocab.SET, "SET")
             var = read_var()
             value = read_value()
+            satisfied = read_status_tags(vocab.SATISFIED) if emit_status else []
             kind = "unit_prop" if clause_idx is not None else "decision_or_flip"
-            result["events"].append({"kind": kind, "var": var, "value": value, "clause": clause_idx})
+            result["events"].append({
+                "kind": kind, "var": var, "value": value, "clause": clause_idx,
+                "satisfied": satisfied, "reactivated": [],
+            })
 
         if peek() == vocab.SAT:
             i += 1
@@ -230,11 +271,18 @@ def render(tokens, vocab):
     for event in decoded["events"]:
         val_str = "T" if event["value"] == 1 else "F"
         if event["kind"] == "unassign":
-            lines.append(f"UNASSIGN X{event['var'] + 1}")
-        elif event["kind"] == "unit_prop":
-            lines.append(f"UNIT(CLAUSE{event['clause'] + 1}) SET X{event['var'] + 1}={val_str}")
+            line = f"UNASSIGN X{event['var'] + 1}"
+            if event.get("reactivated"):
+                line += "  REACTIVATED: " + ",".join(f"CLAUSE{c + 1}" for c in event["reactivated"])
+            lines.append(line)
+            continue
+        if event["kind"] == "unit_prop":
+            line = f"UNIT(CLAUSE{event['clause'] + 1}) SET X{event['var'] + 1}={val_str}"
         else:
-            lines.append(f"SET X{event['var'] + 1}={val_str}")
+            line = f"SET X{event['var'] + 1}={val_str}"
+        if event.get("satisfied"):
+            line += "  SATISFIED: " + ",".join(f"CLAUSE{c + 1}" for c in event["satisfied"])
+        lines.append(line)
     if decoded["outcome"] == "SAT":
         assign_str = " ".join(f"X{v + 1}={'T' if val == 1 else 'F'}" for v, val in sorted(decoded["assignment"].items()))
         lines.append(f"SAT: {assign_str}")

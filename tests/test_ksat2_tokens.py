@@ -95,3 +95,75 @@ def test_render_smoke():
     assert "HINTS" in text
     assert "CLAUSE1" in text
     assert ("SAT" in text) or ("UNSAT" in text)
+
+
+def test_default_vocab_size_unchanged_backward_compat():
+    """Every existing checkpoint's embedding/readout shapes were built from
+    this exact formula (12 special tokens) -- must never silently change for
+    the default (use_clause_status=False) call every prior caller uses."""
+    vocab = Vocab(n_vars=16, m_clauses=20)
+    assert vocab.use_clause_status is False
+    assert vocab.n_special == 12
+    assert vocab.size == 12 + 16 + 20 == 48
+
+
+def test_use_clause_status_adds_exactly_two_special_tokens():
+    plain = Vocab(n_vars=5, m_clauses=7)
+    status = Vocab(n_vars=5, m_clauses=7, use_clause_status=True)
+    assert status.n_special == plain.n_special + 2
+    assert status.size == plain.size + 2
+    assert status.SATISFIED == plain.n_special
+    assert status.REACTIVATED == plain.n_special + 1
+    # var/clause offsets shift to make room, but ranges still don't overlap
+    assert status.var_token(0) == status.n_special
+    assert status.clause_token(0) == status.n_special + 5
+
+
+def test_encode_decode_roundtrip_with_clause_status_matches_ground_truth():
+    found_satisfied = found_reactivated = False
+    for seed in range(60):
+        cfg_n_vars = 8
+        clauses, n_vars, hints, trace, _ = _instance(seed=seed, n_vars=cfg_n_vars, alpha=5.0)
+        vocab = Vocab(n_vars, clauses.shape[0], use_clause_status=True)
+        tokens = encode_instance(clauses, n_vars, hints, trace, vocab)
+        decoded = decode(tokens, vocab)
+
+        assert decoded["well_formed"], decoded["error"]
+        assert len(decoded["events"]) == len(trace["events"])
+        for decoded_event, true_event in zip(decoded["events"], trace["events"]):
+            assert decoded_event["satisfied"] == true_event["satisfied"]
+            assert decoded_event["reactivated"] == true_event["reactivated"]
+            if true_event["satisfied"]:
+                found_satisfied = True
+            if true_event["reactivated"]:
+                found_reactivated = True
+    assert found_satisfied, "test range should hit at least one SATISFIED tag"
+    assert found_reactivated, "test range should hit at least one REACTIVATED tag (needs a backtrack)"
+
+
+def test_decode_without_clause_status_vocab_ignores_satisfied_concept():
+    """A plain (use_clause_status=False) vocab never looks for SATISFIED/
+    REACTIVATED tokens at all -- encode_instance with it must not emit them,
+    and decode must not crash trying to recognize them (they don't exist in
+    this vocab's token space)."""
+    clauses, n_vars, hints, trace, vocab = _instance(seed=5, n_vars=8, alpha=5.0)
+    assert vocab.use_clause_status is False
+    tokens = encode_instance(clauses, n_vars, hints, trace, vocab)
+    decoded = decode(tokens, vocab)
+    assert decoded["well_formed"]
+    for event in decoded["events"]:
+        assert event["satisfied"] == []
+        assert event["reactivated"] == []
+
+
+def test_render_shows_satisfied_and_reactivated_tags():
+    for seed in range(30):
+        clauses, n_vars, hints, trace, _ = _instance(seed=seed, n_vars=8, alpha=5.0)
+        if not any(e["satisfied"] for e in trace["events"]):
+            continue
+        vocab = Vocab(n_vars, clauses.shape[0], use_clause_status=True)
+        tokens = encode_instance(clauses, n_vars, hints, trace, vocab)
+        text = render(tokens, vocab)
+        assert "SATISFIED:" in text
+        return
+    pytest.fail("no seed in range produced a SATISFIED event to render")
