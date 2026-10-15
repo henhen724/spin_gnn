@@ -109,7 +109,7 @@ class SATReasoningConfig:
     k: int = 3
     alpha: float = 1.25  # m_clauses = round(alpha * n_vars) = 20 at n_vars=16
     n_hints: int = 0
-    seed: int = 0
+    seed: int = 0  # also seeds torch's global RNG (model init) in train_sat2_model
     # False = the original 12-special-token vocab (every prior checkpoint).
     # True = also emit [SATISFIED]/[REACTIVATED] clause-status tags; see
     # ksat2_tokens.Vocab's docstring.

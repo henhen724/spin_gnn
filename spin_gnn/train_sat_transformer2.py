@@ -83,6 +83,19 @@ def evaluate(model, dataset, indices, device, batch_size=32):
 
 def train_sat2_model(sat_cfg: SATReasoningConfig, model_cfg: SATReasoningModelConfig, train_cfg: SATReasoningTrainConfig):
     device = train_cfg.device if torch.cuda.is_available() else "cpu"
+    # Previously unseeded: every prior run drew model init (and every
+    # dropout mask during training) from whatever state torch's global RNG
+    # happened to be in at process start -- the dominant source of the
+    # ~3-25x run-to-run solve_rate variance seen across every sweep so far
+    # (e.g. 12.3% vs 4.3% at an otherwise-identical config). Seeding it from
+    # sat_cfg.seed -- the same value that already controls data
+    # sampling/batch order -- makes two runs with the same --seed fully
+    # reproducible (data-seed and model-seed share one knob, standard
+    # practice), and two runs with different --seed genuinely independent
+    # replicates. Not a guarantee of bit-for-bit determinism on GPU (cuDNN
+    # algorithm selection/reduction order aren't pinned here), but this
+    # removes the dominant noise source either way.
+    torch.manual_seed(sat_cfg.seed)
     vocab = build_vocab(sat_cfg)
 
     train_instances = build_instances(sat_cfg, train_cfg.n_train_instances, sat_cfg.seed)

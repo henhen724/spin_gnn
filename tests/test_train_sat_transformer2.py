@@ -19,6 +19,36 @@ def _tiny_configs():
     return sat_cfg, model_cfg, train_cfg
 
 
+def test_same_seed_gives_identical_training_run():
+    """Regression test for the noise fix: train_sat2_model now calls
+    torch.manual_seed(sat_cfg.seed) before model construction, so two runs
+    with the same seed must produce bit-identical weights and history on
+    CPU (no GPU nondeterminism here) -- this is exactly the ~3-25x
+    run-to-run solve_rate noise seen in every sweep so far, now eliminated
+    for same-seed reruns."""
+    sat_cfg, model_cfg, train_cfg = _tiny_configs()
+    result1 = train_sat2_model(sat_cfg, model_cfg, train_cfg)
+    result2 = train_sat2_model(sat_cfg, model_cfg, train_cfg)
+
+    for (name1, p1), (name2, p2) in zip(result1["model"].named_parameters(), result2["model"].named_parameters()):
+        assert name1 == name2
+        torch.testing.assert_close(p1, p2, msg=f"parameter {name1} differs between same-seed runs")
+    assert result1["history"] == result2["history"]
+
+
+def test_different_seed_gives_different_init():
+    sat_cfg1, model_cfg, train_cfg = _tiny_configs()
+    sat_cfg2 = SATReasoningConfig(**{**sat_cfg1.__dict__, "seed": 1})
+    result1 = train_sat2_model(sat_cfg1, model_cfg, train_cfg)
+    result2 = train_sat2_model(sat_cfg2, model_cfg, train_cfg)
+
+    any_different = any(
+        not torch.equal(p1, p2)
+        for p1, p2 in zip(result1["model"].parameters(), result2["model"].parameters())
+    )
+    assert any_different, "different seeds should not coincidentally produce identical weights"
+
+
 def test_build_instances_and_vocab_consistent():
     sat_cfg = SATReasoningConfig(n_vars=8, k=3, alpha=2.0)
     vocab = build_vocab(sat_cfg)
