@@ -11,7 +11,7 @@ agents' threads, not touched here.
 `n_vars=16, alpha=1.25 (m_clauses=20), n_hints=0`. Still the peak of 4
 samples at this exact config now: 12.3%, 7.0%, 4.3%, 3.3% (mean ~6.7%) --
 see "This session" below. Goal is `solve_rate>=50%`; not close. Commit
-`0ec522d`. Results notebooks: `notebooks/results_prenorm_scan.ipynb`,
+`0965d6c`. Results notebooks: `notebooks/results_prenorm_scan.ipynb`,
 `results_clause_status.ipynb` (negative), `results_seedfix_validation.ipynb`.
 
 ## Running jobs
