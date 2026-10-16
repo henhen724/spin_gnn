@@ -18,3 +18,8 @@ scale_sweep/
 amp_results/
 sudoku_dd_results/
 sudoku_mcmc_results/
+runs/
+sudoku_checkpoints/
+sudoku_hparam_sweep/
+sudoku_transition/
+_sudoku2_smoke/

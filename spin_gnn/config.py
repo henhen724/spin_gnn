@@ -130,3 +130,57 @@ class SATReasoningTrainConfig:
     epochs: int = 50
     device: str = "cuda"
     max_len: int = 0  # 0 = no cap (sequences are short in this encoding, unlike ksat.py's)
+
+
+@dataclass
+class SudokuReasoningConfig:
+    """Random DD-Sudoku instance generation for the event-based
+    reasoning-trace encoding, see spin_gnn/sudoku_trace.py. n_nodes/degree/
+    n_colors must satisfy spin_gnn.sudoku_dd.planted_regular_graph's
+    constraints (n_colors | n_nodes, n_colors*(n_colors-1) | degree*n_nodes).
+    Deliberately small-N (same scale as SATReasoningConfig.n_vars=16, not
+    sudoku_sweep.py's N~10^3-10^5 phase-transition regime) -- the point here
+    is whether a transformer can learn the DD process at all, not
+    large-N statistics.
+
+    rho is the target hint fraction, drawn once per instance uniformly in
+    [rho, rho_max] (rho_max == rho => fixed target density). Hints
+    themselves are sampled via the slides' own protocol (see
+    train_sudoku_transformer.build_instances / sudoku_dd.removal_path):
+    greedy random-order hint removal, only accepting a removal that still
+    leaves the coloring fully DD-recoverable. This guarantees every instance
+    is fully resolvable by construction -- there is no "unresolved" case,
+    matching the slides' own methodology exactly -- so rho/rho_max here only
+    controls the mix of reasoning depths (shallow/high-rho vs. deep/low-rho,
+    down to each path's own minimal density), not resolved-vs-unresolved."""
+
+    n_nodes: int = 24
+    degree: int = 5
+    n_colors: int = 4
+    rho: float = 0.3
+    rho_max: float = 0.95
+    seed: int = 0
+
+
+@dataclass
+class SudokuReasoningModelConfig:
+    d_model: int = 64
+    num_layers: int = 2
+    nhead: int = 1
+    dim_feedforward: int = 0  # 0 = 4 * d_model, same convention as SATReasoningModelConfig
+    # True (unlike SATReasoningModelConfig's norm_first=False default): the
+    # k-SAT v2 work found post-norm collapses at depth (0% well-formed output
+    # at num_layers in {12,16}) and pre-norm is the standard fix -- applying
+    # that lesson from the start here rather than waiting to rediscover it.
+    norm_first: bool = True
+
+
+@dataclass
+class SudokuReasoningTrainConfig:
+    n_train_instances: int = 2000
+    n_val_instances: int = 200
+    batch_size: int = 32
+    lr: float = 1e-3
+    epochs: int = 50
+    device: str = "cuda"
+    max_len: int = 0  # 0 = no cap

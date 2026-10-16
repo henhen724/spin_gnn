@@ -13,3 +13,35 @@ you need. At most 3 lines appended per session.
   transition for `d=7` (gamma(rho) jumps right at rho_c=0.27) but not yet
   for `d=5` (greedy stuck above its rho_c=0.46) -- see
   `notebooks/results_transition.ipynb`.
+- 2026-10-15: Separate side task: built an event-based DD-Sudoku
+  reasoning-trace tokenizer (`sudoku_trace.py`/`sudoku_tokens.py`) mirroring
+  the master branch's k-SAT v2 lessons, reused `SATReasoningTransformer`
+  as-is. First attempt sampled hints independently at random (wrong --
+  not the slides' protocol); fixed `build_instances` to use
+  `sudoku_dd.removal_path`'s greedy hint-removal instead (every instance
+  guaranteed resolvable). Corrected run (`48032796`) gets
+  outcome_accuracy=0.995 but `solve_rate=0.005` -- see STATUS.md. Added
+  checkpoint snapshotting + a pinned-rho `eval_solve_by_rho` and ran a
+  checkpoint-vs-difficulty sweep (`48144619`/`48145554`,
+  `notebooks/sudoku_transition.ipynb`): confirms the model learns the
+  easy/shallow end first (epoch 50: `0.16` at `rho=0.95`, `0.00` at
+  `rho<=0.8`) rather than failing uniformly, though far short of ~100%.
+  Extended to `rho` up to `1.0` (`48146991`/`48150261`): `solve_rate`
+  plateaus at `~0.3` even on the fully trivial all-hinted case, while
+  `outcome_accuracy`/`well_formed_rate`=1.0 -- a capacity/precision
+  ceiling, not a difficulty-positioning issue.
+- 2026-10-16: Model-size hyperparameter scan
+  (`spin_gnn.sudoku_hparam_sweep`) over `num_layers x dim_feedforward` at
+  `d_model=64, nhead=4`, targeting `mean_o1_solve_rate` -- `solve_rate`
+  averaged over a fixed `k=0..4` uncolored-node grid (`rho=(24-k)/24`),
+  the near-trivial end held at a constant small `k` rather than scaled by
+  `n_nodes`. Round 1 (`48157903`, `L in {2,4,6,8} x ff in
+  {128,256,512,1024}`, 150 epochs): best `L=8,ff=1024` reaches
+  `mean_o1_solve_rate=0.904` (up from baseline's ~0.5) -- both depth and
+  width matter, neither alone enough -- but still undertrained at epoch
+  150 (`val_accuracy` still rising). Round 2 (`48162371`, `L in
+  {8,10,12} x ff in {1024,2048}`, 300 epochs) reached the goal:
+  `L=12,ff=1024` hits `mean_o1_solve_rate=0.980` (`agg_solve_rate=0.72`,
+  vs. the original `0.005` baseline); `L=8,ff=1024` close behind at
+  `0.968` with fewer params. `ff=2048` underperformed `ff=1024` at every
+  `L` (likely undertrained at 300 epochs for the larger size).
