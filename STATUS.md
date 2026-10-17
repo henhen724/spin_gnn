@@ -165,3 +165,38 @@ shallow-but-wide and deep-but-narrow configs both plateaued well below
 ~100% (see round 1). Recommended config for future sudoku-dd transformer
 work: `d_model=64, nhead=4, num_layers=8-12, dim_feedforward=1024,
 epochs=300, n_train_instances=5000`.
+
+**Attention-distance analysis.** To test the hypothesis that the remaining
+gap on the full `rho` range (`agg_solve_rate=0.72`, vs. ~100% on the O(1)
+near-trivial end) is driven by learned attention being too local relative
+to the distances DD needs: `spin_gnn.sudoku_attention_distance` reimplements
+the DD frontier algorithm with provenance tracking (which earlier node's
+color newly established each required neighbor-color bit) plus a
+token-position mirror of `encode_instance`'s layout, giving an exact
+per-deduction "how many tokens back does this need to look" number; and
+extracts real per-layer attention weights from `SATReasoningTransformer` by
+manually replicating its pre-norm forward pass layer-by-layer (PyTorch's
+eval-mode fused fast path for `nn.TransformerEncoderLayer` never exposes
+attention weights, confirmed via `inspect.getsource`) -- validated exactly
+against `model.forward()`'s logits (max diff `0.0`) before trusting it.
+Run on the best checkpoint's 300-instance validation set (Slurm `48267874`,
+`<20s` on 4 CPUs): **required distance is huge** -- median 179 tokens out of
+a 210-token `max_len` (`BEGIN_GRAPH`'s one-time neighbor listing sits near
+the sequence start; essentially every deduction in a multi-round trace
+needs it) -- but **measured attention does not decay sharply with
+distance**, staying roughly flat from distance ~20 out past 150 at every
+layer (`notebooks/sudoku_attention_distance_comparison.png`, left/middle
+panels). The actual gap is **targeting, not reach**: attention weight
+placed on the exact token a deduction needs is only `~1.0-1.7x` a
+distance-matched random baseline (peaking at middle layers 4-7; right
+panel) -- barely distinguishable from attending by raw distance/recency
+alone, not real content-based lookup of "this specific neighbor's color."
+This reframes the hypothesis: a relative/distance-aware positional scheme
+(ALiBi, RoPE) is unlikely to help much on its own, since attention already
+reaches the needed distances without decaying -- the open problem is making
+attention *content-selective* at long range, consistent with STATUS's
+earlier "capacity/precision ceiling on exact copying" finding rather than a
+pure distance-positioning bug. Not yet explored: whether this improves with
+the already-recommended larger `num_layers`/`dim_feedforward`, or needs an
+architecture change aimed at content-addressing specifically (e.g. explicit
+key/value indexing by node id) rather than positional embeddings.

@@ -30,6 +30,15 @@ you need. At most 3 lines appended per session.
   plateaus at `~0.3` even on the fully trivial all-hinted case, while
   `outcome_accuracy`/`well_formed_rate`=1.0 -- a capacity/precision
   ceiling, not a difficulty-positioning issue.
+- 2026-10-17: Attention-distance analysis (`spin_gnn.sudoku_attention_distance[_analysis]`,
+  Slurm `48267874`) on the best checkpoint (`L=12,ff=1024`): DD's required
+  reference distance is huge (median 179/210 max_len -- BEGIN_GRAPH sits
+  near the sequence start, every later round needs it) but measured
+  attention does *not* decay sharply with distance -- it stays roughly flat
+  out past distance 150. The real gap is targeting, not reach: attention at
+  the exact needed token is only ~1.0-1.7x a distance-matched random
+  baseline (peak at middle layers 4-7), i.e. barely better than attending
+  by distance alone. See `notebooks/sudoku_attention_distance_comparison.png`.
 - 2026-10-16: Model-size hyperparameter scan
   (`spin_gnn.sudoku_hparam_sweep`) over `num_layers x dim_feedforward` at
   `d_model=64, nhead=4`, targeting `mean_o1_solve_rate` -- `solve_rate`
