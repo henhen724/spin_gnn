@@ -30,6 +30,17 @@ you need. At most 3 lines appended per session.
   plateaus at `~0.3` even on the fully trivial all-hinted case, while
   `outcome_accuracy`/`well_formed_rate`=1.0 -- a capacity/precision
   ceiling, not a difficulty-positioning issue.
+- 2026-10-17: Attention-targeting evolution over training
+  (`spin_gnn.sudoku_attention_evolution`, Slurm `48287024`, retrained
+  L=12/ff=1024 with checkpoint snapshots at epochs
+  0/5/10/25/50/75/100/150/200/250/300): targeting enrichment *does* train --
+  rises from ~1.0 (untrained/random) to ~1.35-1.38 by epoch 50-75 alongside
+  val_accuracy -- but then plateaus/slightly regresses to ~1.22-1.26 for the
+  rest of training (epoch 100-300), while val_accuracy keeps slowly rising
+  (0.56->0.57). So the attention head learns *some* targeting early, then
+  stalls well before the model stops improving -- later accuracy gains come
+  from something other than sharper attention targeting. See
+  `notebooks/sudoku_attention_evolution.png`.
 - 2026-10-17: Attention-distance analysis (`spin_gnn.sudoku_attention_distance[_analysis]`,
   Slurm `48267874`) on the best checkpoint (`L=12,ff=1024`): DD's required
   reference distance is huge (median 179/210 max_len -- BEGIN_GRAPH sits

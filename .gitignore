@@ -24,3 +24,4 @@ sudoku_hparam_sweep/
 sudoku_transition/
 _sudoku2_smoke/
 sudoku_attention_distance/
+sudoku_attention_evolution/
