@@ -30,6 +30,18 @@ you need. At most 3 lines appended per session.
   plateaus at `~0.3` even on the fully trivial all-hinted case, while
   `outcome_accuracy`/`well_formed_rate`=1.0 -- a capacity/precision
   ceiling, not a difficulty-positioning issue.
+- 2026-10-17: Tested "more heads for id-matching" directly: swept `nhead in
+  {2,4,8,16,32}` at fixed `d_model=64, num_layers=12, dim_feedforward=1024,
+  300 epochs` (Slurm `48296020` train + `48297775/48297914/48297915/
+  48297776` attention analysis). **Opposite of the hypothesis**: `nhead=4`
+  (head_dim=16, the original default) is the peak -- `agg_solve_rate`
+  degrades monotonically on both sides as head count moves away from it
+  (`0.71@h2 -> 0.72@h4 -> 0.51@h8 -> 0.33@h16 -> 0.10@h32`), and attention-
+  targeting enrichment tracks the same shape (peaks `~1.26` at `h=4`, falls
+  to `~1.08` at `h=32`, barely above the untargeted baseline). More heads
+  means smaller `head_dim` (`64/nhead`), which apparently isn't enough room
+  to represent a clean id-matching subspace -- the lever is per-head
+  dimensionality, not head count. See `notebooks/sudoku_nhead_sweep.png`.
 - 2026-10-17: Attention-targeting evolution over training
   (`spin_gnn.sudoku_attention_evolution`, Slurm `48287024`, retrained
   L=12/ff=1024 with checkpoint snapshots at epochs
