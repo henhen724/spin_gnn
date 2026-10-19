@@ -30,6 +30,20 @@ you need. At most 3 lines appended per session.
   plateaus at `~0.3` even on the fully trivial all-hinted case, while
   `outcome_accuracy`/`well_formed_rate`=1.0 -- a capacity/precision
   ceiling, not a difficulty-positioning issue.
+- 2026-10-19: 900-epoch retrain of `d_model in {64,128}` at `nhead=4,L=12,
+  ff=1024` (Slurm `48513926`, epochs the only variable; enrichment `48522086/
+  48522087`). **H1 (ceiling is training-budget-limited): refuted** --
+  `agg_solve_rate` 0.720->0.720 (d64) / 0.773->0.767 (d128) and enrichment
+  1.255->1.246 (d64) / 1.249->1.129 (d128), while `val_nll` worsens
+  1.20->1.37 and 1.67->2.16: the extra 600 epochs only overfit. **H2
+  (d128's easy-case regression was undertraining): confirmed** --
+  `mean_o1_solve_rate` 0.896->0.968, `solve_rate_k0` 0.55->0.94, so the
+  d_model sweep's "wider is worse on easy cases" reading is retracted as a
+  budget confound. New best balance: `d_model=128 @ 900ep`,
+  `agg_solve_rate=0.767` (+0.047 over previous best) at
+  `mean_o1_solve_rate=0.968`. Three levers (head count, head width, budget)
+  are now all negative on content-targeting. See
+  `notebooks/sudoku_long_train_2026-10-19_results.ipynb`.
 - 2026-10-18: Tested the opposite direction from the nhead sweep: keep
   `nhead=4` fixed and scale `d_model` up (64->128->256, so `head_dim`
   16->32->64) to give each head more room without fragmenting into more
