@@ -21,6 +21,7 @@ sudoku_mcmc_results/
 runs/
 sudoku_checkpoints/
 sudoku_hparam_sweep/
+sudoku_hparam_sweep_*/
 sudoku_transition/
 _sudoku2_smoke/
 sudoku_attention_distance/

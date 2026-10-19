@@ -49,13 +49,10 @@ working on `spin_gnn` (checked `ListAgents`/`squeue`).
    analyze `<m>` vs `rho` for `d=5,7`; extend `gamma(rho)` to `d=4,6,8`.
 2. Transformer: parameters and steps are both exhausted as levers, so the
    next test should target content-addressing itself -- an explicit
-   copy/pointer over node ids, or a relative/rotary positional scheme (the
-   latter is the weaker bet: `48267874` showed attention already reaches the
-   needed distances without decay). Diagnostic alternative, cheaper and more
-   decisive: restate the needed neighbour rows next to each deduction in the
-   token layout, which tests whether long-range *retrieval* is the binding
-   constraint at all before building a mechanism for it.
-3. Optionally re-run `d_model=256` at 900 epochs to de-confound open
-   problem 3.
-4. Decide whether to push the accumulated unpushed commits (`79ede2e`
-   through this session's) to `origin/sudoku-dd`.
+   copy/pointer over node ids (a relative/rotary scheme is the weaker bet:
+   `48267874` showed attention already reaches far without decay). Cheaper,
+   more decisive diagnostic first: restate the needed neighbour rows next to
+   each deduction in the token layout, testing whether long-range *retrieval*
+   binds at all before building a mechanism for it.
+3. Optionally re-run `d_model=256` at 900 epochs (open problem 3), and push
+   the unpushed commits (`79ede2e`..`e4eba53`) to `origin/sudoku-dd`.
