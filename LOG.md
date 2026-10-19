@@ -30,6 +30,28 @@ you need. At most 3 lines appended per session.
   plateaus at `~0.3` even on the fully trivial all-hinted case, while
   `outcome_accuracy`/`well_formed_rate`=1.0 -- a capacity/precision
   ceiling, not a difficulty-positioning issue.
+- 2026-10-18: Tested the opposite direction from the nhead sweep: keep
+  `nhead=4` fixed and scale `d_model` up (64->128->256, so `head_dim`
+  16->32->64) to give each head more room without fragmenting into more
+  heads (Slurm `48446043` train + `48449673/48449674` attention analysis).
+  **Also doesn't help.** Mean attention-targeting enrichment is flat-to-down
+  (`1.255@d64 -> 1.249@d128 -> 1.144@d256`), and the per-layer shape gets
+  *worse distributed*: at `d64` enrichment peaks smoothly across middle
+  layers (`~1.66-1.72` at layers 4-5); at `d128/d256` most layers drop to
+  ~baseline or below (e.g. layer 2: `0.79@d128`, `0.46@d256` -- worse than
+  attending by distance alone) while one or two late layers spike sharply
+  (`2.89@d128` layer 9, `2.44/2.13@d256` layers 10-11). `mean_o1_solve_rate`
+  (near-trivial end) also degrades with width (`0.980 -> 0.896 -> 0.842`),
+  and `solve_rate_k0` (zero uncolored nodes -- pure copy, no reasoning
+  needed) collapses (`~0.98 -> 0.55 -> 0.24`) even as `agg_solve_rate` (full
+  training rho range) improves (`0.72 -> 0.77 -> 0.85`) and `final_val_nll`
+  gets much worse (`1.2 -> 1.67 -> 2.41`). Net: bigger `d_model` buys some
+  full-range solve rate but at the cost of precision on the easiest cases
+  and no gain in content-addressing -- combined with the nhead-sweep result,
+  this says `head_dim=16` (the original default) is close to optimal for
+  this task's id-matching, and scaling either axis (more heads or more
+  per-head width) alone doesn't raise the content-addressing ceiling found
+  in the evolution analysis. See `notebooks/sudoku_dmodel_sweep.png`.
 - 2026-10-17: Tested "more heads for id-matching" directly: swept `nhead in
   {2,4,8,16,32}` at fixed `d_model=64, num_layers=12, dim_feedforward=1024,
   300 epochs` (Slurm `48296020` train + `48297775/48297914/48297915/
