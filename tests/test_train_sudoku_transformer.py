@@ -4,11 +4,13 @@ the pipeline runs and every metric key exists/is in a sane range, not that
 the model actually learns anything at this size."""
 from dataclasses import replace
 
+import pytest
 import torch
 
 from spin_gnn.config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
 from spin_gnn.train_sudoku_transformer import (
-    build_instances, build_vocab, load_checkpoint, save_checkpoint, train_sudoku_model,
+    build_instances, build_vocab, eval_solve_by_rho, load_checkpoint, save_checkpoint,
+    solve_rate, train_sudoku_model,
 )
 
 
@@ -124,3 +126,64 @@ def test_random_hint_mode_trains_end_to_end():
     sm = result["solve_metrics"]
     assert 0.0 <= sm["solve_rate"] <= 1.0
     assert 0.0 <= sm["outcome_accuracy"] <= 1.0
+
+
+def test_truncated_rate_catches_a_starved_generation_budget():
+    """A tiny max_new_tokens must register as truncation, not as a reasoning
+    failure. This is the confound that would otherwise fake a transition:
+    deeper traces are longer, so a budget that only binds at low hint density
+    produces a solve_rate collapse with no reasoning content at all."""
+    sudoku_cfg, model_cfg, train_cfg = _tiny_configs()
+    result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
+    model, vocab = result["model"], result["vocab"]
+    instances = result["val_instances"]
+
+    starved = solve_rate(model, instances, vocab, "cpu", max_new_tokens=3)
+    assert starved["truncated_rate"] == 1.0, starved
+    assert starved["solve_rate"] == 0.0
+
+    # The other half of the metric needs a model that actually terminates. The
+    # toy model above never emits SOLVED at any budget, so it cannot
+    # distinguish "ran out of room" from "cannot reason" -- a stub that always
+    # emits SOLVED can, and that is exactly the case that must NOT be counted.
+    class _AlwaysSolved:
+        pos_embed = torch.zeros(result["model_max_len"], 1)
+
+        def eval(self):
+            return self
+
+        def __call__(self, seq):
+            logits = torch.full((1, seq.shape[1], vocab.size), -10.0)
+            logits[..., vocab.SOLVED] = 10.0
+            return logits
+
+    stub = solve_rate(_AlwaysSolved(), instances, vocab, "cpu", max_new_tokens=result["model_max_len"])
+    assert stub["truncated_rate"] == 0.0, stub
+
+
+def test_eval_by_rho_reports_realized_density_and_deduction_time():
+    """Below the greedy path's own floor a requested rho cannot be delivered,
+    so realized_rho must reveal the floor instead of echoing the request --
+    otherwise sub-floor bins look like distinct densities when they are one
+    point measured repeatedly. dd_mean_T must also rise as rho falls, since
+    that divergence is the transition being looked for."""
+    sudoku_cfg, model_cfg, train_cfg = _tiny_configs()
+    result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
+    records = eval_solve_by_rho(
+        result["model"], result["vocab"], "cpu", sudoku_cfg,
+        rho_grid=[0.95, 0.7, 0.1], n_per_bin=8, seed_start=12345,
+        max_new_tokens=result["model_max_len"],
+    )
+    by_rho = {r["rho"]: r for r in records}
+    assert by_rho[0.95]["realized_rho"] == pytest.approx(0.95, abs=0.06)
+    # The 0.1 request is unreachable, so it must come back at the path's floor,
+    # well above what was asked for. The floor itself is config-dependent (it
+    # sits near 0.20 at this d=4/q=3 toy setting but near 0.46 at the d=5/q=4
+    # setting the real models use -- 3 colors means DD forces a node from only
+    # 2 distinct neighbour colors, so it tolerates much sparser hints), hence
+    # the assertion is "above the request", not a fixed density.
+    assert by_rho[0.1]["realized_rho"] > 0.15, by_rho[0.1]["realized_rho"]
+    assert by_rho[0.1]["dd_mean_T"] > by_rho[0.95]["dd_mean_T"], records
+    # Removal-path instances are resolvable by construction at every density,
+    # so a solve_rate drop can never be the instance becoming unsolvable.
+    assert all(r["dd_resolved_frac"] == 1.0 for r in records)

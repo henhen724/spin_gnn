@@ -192,9 +192,17 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
     Returns a dict: solve_rate (fraction reaching a fully correct, checked
     solution), outcome_accuracy (fraction whose SOLVED/UNRESOLVED call is
     right regardless of whether the colors it lists are valid),
-    well_formed_rate (fraction that parse without a grammar violation)."""
+    well_formed_rate (fraction that parse without a grammar violation), and
+    truncated_rate (fraction that never emitted a terminal SOLVED/UNRESOLVED
+    at all, i.e. ran out of token budget mid-trace).
+
+    truncated_rate separates "could not reason" from "was not allowed to
+    finish writing". Harder instances have deeper traces and therefore longer
+    token sequences, so a generation budget that is tight only at low hint
+    density would mimic a reasoning collapse exactly where a transition is
+    expected. Any solve_rate drop should be read alongside it."""
     rng = rng or np.random.default_rng()
-    n_solved = n_outcome_correct = n_well_formed = 0
+    n_solved = n_outcome_correct = n_well_formed = n_truncated = 0
     ev_rows = ev_rows_correct = ev_slots = ev_slots_correct = 0
     for adj, colors, hints, trace in instances:
         full_tokens = encode_instance(adj, trace, vocab)
@@ -205,6 +213,11 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
 
         if decoded["well_formed"]:
             n_well_formed += 1
+        # generate() only stops early on a terminal token, so a continuation
+        # with neither one spent its whole budget without finishing.
+        continuation = generated[reasoning_start:]
+        if not ((continuation == vocab.SOLVED) | (continuation == vocab.UNRESOLVED)).any():
+            n_truncated += 1
         true_outcome = "SOLVED" if trace["resolved"] else "UNRESOLVED"
         if decoded["outcome"] == true_outcome:
             n_outcome_correct += 1
@@ -223,6 +236,7 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
         "solve_rate": n_solved / n if n else None,
         "outcome_accuracy": n_outcome_correct / n if n else None,
         "well_formed_rate": n_well_formed / n if n else None,
+        "truncated_rate": n_truncated / n if n else None,
         "n_instances": n,
     }
     if getattr(vocab, "scratchpad", False):
@@ -253,7 +267,22 @@ def eval_solve_by_rho(
     Those are identically 1.0 and 1.0 under the default removal-path
     hint_mode, but under hint_mode="random" they are the reference transition
     curve, so every bin carries its own model-vs-DD comparison rather than
-    relying on a separately-seeded reference run."""
+    relying on a separately-seeded reference run.
+
+    Two further keys make the bins safe to plot as a transition curve:
+
+    `realized_rho` -- the hint density actually achieved. Under removal-path
+    hints a greedy path cannot go below its own rho_min (~0.46 at N=24, d=5,
+    q=4), so every requested rho under that floor silently yields rho_min
+    instead. Those bins are duplicates of the floor, not distinct densities,
+    and plotting them against the *requested* rho invents a flat tail below
+    rho_min that is really one point measured repeatedly. Always use
+    realized_rho as the x-axis.
+
+    `dd_mean_T` -- mean number of DD rounds, i.e. the serial reasoning depth
+    the model must reproduce. Its divergence as rho -> rho_min IS the
+    hint-density transition in this ensemble, so it is the quantity a drop in
+    solve_rate has to be lined up against."""
     records = []
     for rho in rho_grid:
         bin_cfg = replace(sudoku_cfg, rho=float(rho), rho_max=float(rho))
@@ -262,7 +291,9 @@ def eval_solve_by_rho(
         n = len(instances)
         records.append({
             "rho": float(rho),
+            "realized_rho": sum(len(h) for _, _, h, _ in instances) / (n * sudoku_cfg.n_nodes) if n else None,
             **metrics,
+            "dd_mean_T": sum(len(t["rounds"]) for _, _, _, t in instances) / n if n else None,
             "dd_resolved_frac": sum(bool(t["resolved"]) for _, _, _, t in instances) / n if n else None,
             "dd_frac_recovered": sum(
                 (sudoku_cfg.n_nodes - len(t["unresolved_nodes"])) / sudoku_cfg.n_nodes
