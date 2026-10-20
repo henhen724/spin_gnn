@@ -125,7 +125,12 @@ def page_model_transition(pdf, path):
         h1, l1 = ax.get_legend_handles_labels()
         h2, l2 = tw.get_legend_handles_labels()
         ax.legend(h1 + h2, l1 + l2, fontsize=10, loc="center left")
-    fig.tight_layout(rect=[0, 0.02, 1, 0.90])
+    fig.text(0.5, 0.025,
+             "CAVEAT: rho and T are collinear in this ensemble (removing hints is what lengthens the "
+             "chain), so\nr(solve,T) = -0.97 vs r(solve,rho) = +0.94 cannot attribute the collapse to "
+             "depth rather than density.",
+             ha="center", fontsize=11, color="#b22222")
+    fig.tight_layout(rect=[0, 0.09, 1, 0.90])
     pdf.savefig(fig, dpi=150)
     plt.close(fig)
 
@@ -380,7 +385,9 @@ def main():
             "2. The gradient exists at N=24, so the transition is testable on existing checkpoints. "
             "This retires the earlier plan to scale N to ~1700 tokens. MEASURED: solve_rate falls "
             "0.99 -> 0.44 monotonically as DD's depth rises T=1.0 -> 6.0, with truncated_rate = 0.000 "
-            "in every bin, so this is reasoning depth and not generation budget.",
+            "in every bin, so it is not a generation-budget artifact. But rho and T are collinear here, "
+            "so which of the two controls the collapse is NOT yet resolved -- that needs equal-rho "
+            "instances binned by T.",
             f"3. Probes: bookkeeping (known_mask, {peak('known_mask'):.2f}) is computed early and "
             f"strongly; DD's deducibility predicate (frontier_mask, {peak('frontier_mask'):.2f} vs a "
             f"0.57 control) is barely present. next_color is computed late (0.46 at L7 -> 0.65 at L12).",
