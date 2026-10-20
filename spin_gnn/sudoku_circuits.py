@@ -205,12 +205,22 @@ def run_patching(model, vocab, device, cases, positions_of_interest):
 
 
 def run_head_ablation(model, vocab, device, cases):
-    """Zero one attention head's contribution (its slice of out_proj's input,
-    which is the only place heads are still separable) and measure the loss of
-    the counterfactual effect.
+    """Zero one attention head's contribution and measure the loss of the
+    counterfactual effect.
 
     effect_retained = 1.0 means the head is irrelevant to the flip; 0.0 means
-    ablating it destroys the flip entirely."""
+    ablating it destroys the flip entirely.
+
+    out_proj consumes the heads concatenated along the last dim, so dropping
+    head h is exactly zeroing columns [h*d_head, (h+1)*d_head) of its weight;
+    the bias is left alone because it belongs to no head. The columns are
+    edited in place and restored rather than hooked, because
+    nn.MultiheadAttention takes the functional fast path and passes
+    out_proj.weight to F.multi_head_attention_forward as a plain tensor -- the
+    out_proj MODULE is never called, so a forward_pre_hook on it never fires.
+    An earlier version hooked it and silently reported effect_retained == 1.0
+    for all 7200 (layer, head, case) rows, i.e. a no-op dressed as "no head
+    matters"."""
     n_layers = len(model.encoder.layers)
     nhead = model.encoder.layers[0].self_attn.num_heads
     d_model = model.encoder.layers[0].self_attn.embed_dim
@@ -227,17 +237,16 @@ def run_head_ablation(model, vocab, device, cases):
             continue
         for layer in range(n_layers):
             for head in range(nhead):
-                def pre_hook(_m, inputs, head=head):
-                    x = inputs[0].clone()
-                    x[..., head * d_head:(head + 1) * d_head] = 0.0
-                    return (x,)
-                h = model.encoder.layers[layer].self_attn.out_proj.register_forward_pre_hook(pre_hook)
+                W = model.encoder.layers[layer].self_attn.out_proj.weight
+                sl = slice(head * d_head, (head + 1) * d_head)
+                saved = W.data[:, sl].clone()
                 try:
                     with torch.no_grad():
+                        W.data[:, sl] = 0.0
                         eff = (_logit_diff(model(corrupt_t), pos, vocab, case)
                                - _logit_diff(model(clean_t), pos, vocab, case))
                 finally:
-                    h.remove()
+                    W.data[:, sl] = saved
                 rows.append({
                     "node": case["node"], "layer": layer, "head": head,
                     "ablated_effect": eff, "effect_retained": eff / base_effect,

@@ -1,0 +1,60 @@
+{
+  "clean_correct": 0.9733333333333334,
+  "corrupt_flipped": 0.26666666666666666,
+  "both": 0.26666666666666666,
+  "logit_effect": 12.262327477137248,
+  "localized": true,
+  "n_cases": 150,
+  "top_heads": [
+    {
+      "layer": 0,
+      "head": 0,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 0,
+      "head": 1,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 0,
+      "head": 2,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 0,
+      "head": 3,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 1,
+      "head": 0,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 1,
+      "head": 1,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 1,
+      "head": 2,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 1,
+      "head": 3,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 2,
+      "head": 0,
+      "effect_retained": 1.0
+    },
+    {
+      "layer": 2,
+      "head": 1,
+      "effect_retained": 1.0
+    }
+  ]
+}

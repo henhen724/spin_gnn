@@ -137,6 +137,31 @@ def test_measurement_plumbing_runs_on_an_untrained_model():
     torch.testing.assert_close(a, b)
 
 
+def test_head_ablation_actually_perturbs_the_model():
+    """The counterpart of the patching sanity check, and the test this file was
+    missing: every assertion above passes while the ablation does nothing at
+    all. nn.MultiheadAttention hands out_proj.weight to the functional fast
+    path, so the out_proj module is never called and a forward_pre_hook on it
+    never fires -- the first real run came back with effect_retained == 1.0 on
+    all 7200 rows, which reads as "no head matters" but means "nothing was
+    ablated".
+
+    Zeroing a head must move the effect on at least one (layer, head), and the
+    weights must come back exactly afterwards."""
+    vocab, cases = _cases(12)
+    model = _tiny_model(vocab)
+    before = [l.self_attn.out_proj.weight.detach().clone() for l in model.encoder.layers]
+
+    rows = run_head_ablation(model, vocab, "cpu", cases[:4])
+    assert rows, "no ablation rows"
+    retained = [r["effect_retained"] for r in rows]
+    assert not all(v == 1.0 for v in retained), "ablation is a no-op: nothing was zeroed"
+    assert any(abs(v - 1.0) > 1e-3 for v in retained), retained[:8]
+
+    for layer, w0 in zip(model.encoder.layers, before):
+        torch.testing.assert_close(layer.self_attn.out_proj.weight.detach(), w0)
+
+
 def test_patching_the_prediction_site_at_the_last_layer_fully_recovers():
     """Sanity check on the recovery metric's normalization: splicing the clean
     residual into the very position and layer that produce the logits must

@@ -1,0 +1,5 @@
+checkpoint,layer,d_sae,l1_coeff,n_positions,frac_variance_explained,l0,n_dead_features,hit_target_l0,l1_final,n_alive,n_interpretable,best_frontier_f1,family_counts
+d0128_h04_L12_ff01024_lr1e-03_pre,0,2048,1.0,26448,0.9862219952046871,1.8589307320024198,1915,True,1.0,121,24,0.07430087774991989,"{""next_node"": 23, ""remaining"": 1}"
+d0128_h04_L12_ff01024_lr1e-03_pre,4,2048,1.0,26448,0.9543406888842583,16.333749243799154,0,True,1.0,2048,135,0.25380009412765503,"{""next_node"": 129, ""remaining"": 6}"
+d0128_h04_L12_ff01024_lr1e-03_pre,8,2048,1.0,26448,0.928754448890686,24.91980490018149,0,True,1.0,2048,117,0.2276197075843811,"{""next_node"": 110, ""remaining"": 7}"
+d0128_h04_L12_ff01024_lr1e-03_pre,12,2048,1.0,26448,0.911434531211853,33.710110405323654,0,True,1.0,2048,89,0.261414498090744,"{""next_node"": 80, ""remaining"": 9}"

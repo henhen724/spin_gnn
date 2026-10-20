@@ -28,6 +28,14 @@
 # Sanity check built into the metric: patching the prediction position at the
 # final layer must give recovery = 1.0 by construction (asserted in
 # tests/test_sudoku_circuits.py). Treat that cell as a control, not a result.
+#
+# v3 RERUN of 48583444. Its patching map was sound and is kept (it is what
+# the deck shows), but its head ablation was a NO-OP: all 7200 rows came back
+# at effect_retained == 1.0 exactly. nn.MultiheadAttention passes
+# out_proj.weight to the functional fast path, so the out_proj module never
+# runs and the forward_pre_hook on it never fired. Ablation now zeros the
+# head's columns of out_proj.weight directly (equivalent, hook-free) and a
+# test asserts the ablation actually moves the effect.
 
 set -euo pipefail
 module purge
@@ -48,4 +56,4 @@ python -m spin_gnn.sudoku_circuits \
     --checkpoint "${EP900}/d0128_h04_L12_ff01024_lr1e-03_pre" \
     --n-instances 600 \
     --n-cases 150 \
-    --out-dir "${OUT_DIR}/d0128_L12_v2"
+    --out-dir "${OUT_DIR}/d0128_L12_v3"
