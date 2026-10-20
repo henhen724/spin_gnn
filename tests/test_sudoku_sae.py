@@ -103,3 +103,51 @@ def test_predicate_set_covers_the_named_families():
     # Every predicate must be a (P,)-shaped boolean mask.
     for _name, mask in dd_predicates(labels, 6, 4):
         assert mask.shape == (50,) and mask.dtype == bool
+
+
+def test_target_l0_search_rescues_a_dense_dictionary():
+    """A fixed l1_coeff does not transport across activation widths: the
+    reconstruction term is a SUM over dimensions, so it grows with d_model
+    while the L1 term does not. l1_coeff=0.1 (calibrated at d_model=12) left
+    the real d_model=128 run at L0=84..278 of 2048 with ZERO dead features --
+    dense, hence uninterpretable, while still reporting FVE=0.992.
+
+    Here a wide planted problem reproduces that, and the search must fix it."""
+    from spin_gnn.sudoku_sae import train_sae_to_target_l0
+    rng = np.random.default_rng(3)
+    d_model, n_atoms, P = 96, 10, 3000
+    dictionary = rng.normal(size=(n_atoms, d_model))
+    dictionary /= np.linalg.norm(dictionary, axis=1, keepdims=True)
+    codes = (rng.random((P, n_atoms)) < 0.2) * rng.random((P, n_atoms)) * 3.0
+    x = torch.as_tensor(codes @ dictionary, dtype=torch.float32)
+
+    # The starting l1 is the one that was too weak; the target is set below
+    # what it achieves, so the search has to escalate to succeed.
+    _loose, _f, hist_loose, _ = train_sae(x, d_sae=256, l1_coeff=0.1, epochs=300, lr=3e-3, seed=0)
+    target = 4.0
+    assert hist_loose[-1]["l0"] > target + 2.0, "planted problem too easy to test the search"
+
+    _sae, _feats, hist, _ = train_sae_to_target_l0(
+        x, d_sae=256, target_l0=target, l1_start=0.1, epochs=300, lr=3e-3, seed=0,
+    )
+    assert hist[-1]["l0"] < hist_loose[-1]["l0"], (hist[-1]["l0"], hist_loose[-1]["l0"])
+    assert hist[-1]["l0"] <= target + 2.0, hist[-1]["l0"]
+    assert hist[-1]["hit_target_l0"]
+    # It had to raise l1 above the start to get there, and the path must be
+    # recorded so a dictionary that never got sparse is visible in the output
+    # instead of being reported as a clean result.
+    assert hist[-1]["l1_coeff"] > 0.1, hist[-1]["l1_coeff"]
+    assert len(hist[-1]["l1_search_path"]) > 1
+
+
+def test_target_l0_search_reports_failure_instead_of_hiding_it():
+    """Given an unreachable target and no room to search, the result must come
+    back flagged, since the caller's feature labels depend on it."""
+    from spin_gnn.sudoku_sae import train_sae_to_target_l0
+    rng = np.random.default_rng(4)
+    x = torch.as_tensor(rng.normal(size=(600, 24)), dtype=torch.float32)
+    _sae, _feats, hist, _ = train_sae_to_target_l0(
+        x, d_sae=64, target_l0=0.001, l1_start=1e-6, max_tries=2, epochs=60, lr=3e-3, seed=0,
+    )
+    assert hist[-1]["hit_target_l0"] is False
+    assert len(hist[-1]["l1_search_path"]) == 2

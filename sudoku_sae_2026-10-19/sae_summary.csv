@@ -1,0 +1,8 @@
+checkpoint,layer,d_sae,l1_coeff,n_positions,frac_variance_explained,l0,n_dead_features,n_alive,n_interpretable,best_frontier_f1,family_counts
+d0128_h04_L12_ff01024_lr1e-03_pre,0,2048,0.1,26448,0.9998084801482037,2.2343466424682394,1851,120,26,0.07430087774991989,"{""kind_is_node"": 2, ""next_node"": 23, ""remaining"": 1}"
+d0128_h04_L12_ff01024_lr1e-03_pre,2,2048,0.1,26448,0.9947183085605502,83.82236842105263,2,2045,231,0.23281043767929077,"{""kind_is_node"": 25, ""known"": 84, ""next_node"": 115, ""remaining"": 7}"
+d0128_h04_L12_ff01024_lr1e-03_pre,4,2048,0.1,26448,0.9918994009494781,175.98548094373865,0,2048,391,0.3145029842853546,"{""frontier"": 1, ""kind_is_node"": 123, ""known"": 187, ""next_node"": 70, ""next_node_nbr_count"": 3, ""remaining"": 7}"
+d0128_h04_L12_ff01024_lr1e-03_pre,6,2048,0.1,26448,0.9921468533575535,212.02359346642467,0,2048,406,0.3303222060203552,"{""frontier"": 2, ""kind_is_node"": 102, ""known"": 251, ""next_node"": 42, ""next_node_nbr_count"": 4, ""remaining"": 5}"
+d0128_h04_L12_ff01024_lr1e-03_pre,8,2048,0.1,26448,0.9919619588181376,239.68148820326678,0,2048,497,0.2933249771595001,"{""kind_is_node"": 121, ""known"": 339, ""next_color"": 3, ""next_node"": 26, ""next_node_nbr_count"": 7, ""remaining"": 1}"
+d0128_h04_L12_ff01024_lr1e-03_pre,10,2048,0.1,26448,0.9918431723490357,260.5389443436177,0,2048,592,0.30479204654693604,"{""frontier"": 1, ""kind_is_node"": 108, ""known"": 450, ""next_color"": 11, ""next_node"": 15, ""next_node_nbr_count"": 6, ""remaining"": 1}"
+d0128_h04_L12_ff01024_lr1e-03_pre,12,2048,0.1,26448,0.9922190182842314,277.5783802177858,0,2048,713,0.2648544907569885,"{""kind_is_node"": 98, ""known"": 592, ""next_color"": 10, ""next_node"": 7, ""next_node_nbr_count"": 4, ""remaining"": 2}"

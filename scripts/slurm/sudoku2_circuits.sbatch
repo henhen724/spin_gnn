@@ -48,4 +48,4 @@ python -m spin_gnn.sudoku_circuits \
     --checkpoint "${EP900}/d0128_h04_L12_ff01024_lr1e-03_pre" \
     --n-instances 600 \
     --n-cases 150 \
-    --out-dir "${OUT_DIR}/d0128_L12"
+    --out-dir "${OUT_DIR}/d0128_L12_v2"

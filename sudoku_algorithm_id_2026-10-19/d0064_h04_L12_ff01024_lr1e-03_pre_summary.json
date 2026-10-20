@@ -1,0 +1,26 @@
+[
+  {
+    "baseline": "ascending",
+    "n": 2154,
+    "follows_dd": 0.38765088207985143,
+    "follows_baseline": 0.17734447539461468
+  },
+  {
+    "baseline": "ascending_after",
+    "n": 1461,
+    "follows_dd": 0.23819301848049282,
+    "follows_baseline": 0.41478439425051333
+  },
+  {
+    "baseline": "most_known_nbrs",
+    "n": 1896,
+    "follows_dd": 0.4356540084388186,
+    "follows_baseline": 0.14767932489451477
+  },
+  {
+    "baseline": "random_uncolored",
+    "n": 2497,
+    "follows_dd": 0.4857829395274329,
+    "follows_baseline": 0.11293552262715258
+  }
+]

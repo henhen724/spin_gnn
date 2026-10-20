@@ -135,6 +135,46 @@ def train_sae(acts, d_sae, l1_coeff=0.1, epochs=1500, batch_size=2048, lr=3e-3, 
     return sae, f.cpu(), history, (mu.cpu(), sigma.cpu())
 
 
+def train_sae_to_target_l0(acts, d_sae, target_l0=32.0, l1_start=0.1, max_tries=7,
+                           tolerance=2.0, **kwargs):
+    """Search l1_coeff geometrically until L0 lands at or below `target_l0`.
+
+    A fixed l1_coeff does not transport across activation widths. The
+    reconstruction term is a SUM over dimensions, so it grows with d_model
+    while the L1 term does not; l1_coeff=0.1, calibrated on a 12-dimensional
+    planted code, is therefore ~10x too weak at d_model=128 and yields
+    L0 = 84..278 of 2048 features with ZERO dead features -- a dense
+    dictionary whose feature labels mean nothing, while still reporting
+    FVE=0.992 and so looking healthy on reconstruction alone. That is the
+    exact failure this function exists to prevent.
+
+    Returns the first fit meeting the target, or the sparsest one tried, with
+    the search path attached so a dictionary that never got sparse is visible
+    in the output rather than silently reported as a result.
+    """
+    path = []
+    best = None
+    l1 = l1_start
+    for _ in range(max_tries):
+        sae, feats, history, norm = train_sae(acts, d_sae, l1_coeff=l1, **kwargs)
+        l0, fve = history[-1]["l0"], history[-1]["frac_variance_explained"]
+        path.append({"l1_coeff": l1, "l0": l0, "frac_variance_explained": fve,
+                     "n_dead_features": history[-1]["n_dead_features"]})
+        print(f"  l1={l1:.4g} -> L0={l0:.1f} FVE={fve:.3f}")
+        if best is None or l0 < best[2][-1]["l0"]:
+            best, best_l1 = (sae, feats, history, norm), l1
+        if l0 <= target_l0 + tolerance:
+            break
+        # L0 responds roughly logarithmically to l1, so step geometrically and
+        # grow the step when still far off.
+        l1 *= 4.0 if l0 > 4 * target_l0 else 2.0
+    sae, feats, history, norm = best
+    history[-1]["l1_search_path"] = path
+    history[-1]["l1_coeff"] = best_l1  # the l1 that produced THIS fit, not the last tried
+    history[-1]["hit_target_l0"] = history[-1]["l0"] <= target_l0 + tolerance
+    return sae, feats, history, norm
+
+
 def dd_predicates(labels, n_nodes, n_colors, max_nbr_count=None):
     """Named boolean predicates over positions, as (name, (P,) bool array)."""
     preds = []
@@ -198,7 +238,12 @@ def main():
     ap.add_argument("--layer", type=int, nargs="+", default=[4, 8, 12],
                     help="0 = token+position embedding, i>=1 = output of block i-1")
     ap.add_argument("--expansion", type=int, default=16, help="d_sae = expansion * d_model")
-    ap.add_argument("--l1-coeff", type=float, default=0.1)
+    ap.add_argument("--l1-coeff", type=float, default=0.1,
+                    help="with --target-l0, the starting point of the search")
+    ap.add_argument("--target-l0", type=float, default=32.0,
+                    help="search l1_coeff until mean L0 reaches this; 0 disables the search and "
+                         "uses --l1-coeff as-is. A dense dictionary makes every feature label "
+                         "meaningless while still reporting a high FVE, so leave this on.")
     ap.add_argument("--sae-epochs", type=int, default=1500)
     ap.add_argument("--n-instances", type=int, default=1500)
     ap.add_argument("--max-positions-per-instance", type=int, default=40)
@@ -226,10 +271,16 @@ def main():
             print(f"skipping layer {layer}: model has {acts.shape[0] - 1} blocks")
             continue
         print(f"layer {layer}: training SAE (d_sae={args.expansion * acts.shape[2]})")
-        sae, feats, history, _ = train_sae(
-            acts[layer], args.expansion * acts.shape[2], l1_coeff=args.l1_coeff,
-            epochs=args.sae_epochs, device=device, seed=args.seed,
-        )
+        if args.target_l0 > 0:
+            sae, feats, history, _ = train_sae_to_target_l0(
+                acts[layer], args.expansion * acts.shape[2], target_l0=args.target_l0,
+                l1_start=args.l1_coeff, epochs=args.sae_epochs, device=device, seed=args.seed,
+            )
+        else:
+            sae, feats, history, _ = train_sae(
+                acts[layer], args.expansion * acts.shape[2], l1_coeff=args.l1_coeff,
+                epochs=args.sae_epochs, device=device, seed=args.seed,
+            )
         rows = score_features(feats, labels, sudoku_cfg.n_nodes, sudoku_cfg.n_colors)
 
         torch.save(sae.state_dict(), os.path.join(args.out_dir, f"sae_layer{layer:02d}.pt"))
@@ -253,6 +304,10 @@ def main():
             "n_positions": int(acts.shape[1]),
             "frac_variance_explained": history[-1]["frac_variance_explained"],
             "l0": history[-1]["l0"], "n_dead_features": history[-1]["n_dead_features"],
+            # False means the dictionary stayed dense and the feature labels in
+            # features_layer*.csv must not be read as semantics.
+            "hit_target_l0": history[-1].get("hit_target_l0", None),
+            "l1_final": history[-1].get("l1_coeff", args.l1_coeff),
             "n_alive": len(alive), "n_interpretable": len(interp),
             "best_frontier_f1": best_frontier,
             "family_counts": json.dumps(fam, sort_keys=True),

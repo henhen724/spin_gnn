@@ -1,0 +1,6 @@
+{
+  "clean_correct": 0.9733333333333334,
+  "corrupt_flipped": 0.26666666666666666,
+  "both": 0.26666666666666666,
+  "localized": false
+}

@@ -305,14 +305,28 @@ def main():
 
     _write(os.path.join(args.out_dir, "behavior.csv"), beh)
 
-    # Only localize a circuit that behavior says exists.
-    if both < 2.0 / vocab.n_colors:
-        print("\nflip rate near chance -- the model does not follow the forcing rule on these "
-              "cases, so patching and ablation would be localizing nothing. Stopping here.")
+    # Gate on the EFFECT SIZE, not the flip rate. Patching and ablation are
+    # scored in logit_diff and normalized by (clean - corrupt), so they are
+    # well-conditioned whenever that gap is large -- even if it never crosses
+    # the argmax boundary. An earlier version gated on the flip rate and so
+    # skipped localization on a run where the corruption moved the logit gap
+    # by 12.3 (-16.70 -> -4.44) at a flip rate of 0.267: a large, perfectly
+    # localizable causal effect that happened to stay sub-threshold. A small
+    # gap is the real degenerate case, because then the denominator is noise.
+    effect = abs(np.mean([r["corrupt_logit_diff"] - r["clean_logit_diff"] for r in beh]))
+    print(f"  mean |effect| on the logit gap  {effect:.3f}")
+    if effect < 0.5:
+        print("\nthe corruption barely moves the logit gap, so patching would divide by noise. "
+              "Stopping here.")
         with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
             json.dump({"clean_correct": clean_acc, "corrupt_flipped": flip, "both": both,
-                       "localized": False}, f, indent=2)
+                       "logit_effect": float(effect), "localized": False}, f, indent=2)
         return
+    if both < 2.0 / vocab.n_colors:
+        print("\nNOTE: the flip rate is near chance, so the model does not APPLY the forcing rule "
+              "at decision level. The logit effect above is still large, so what gets localized "
+              "below is where that sub-threshold sensitivity to neighbour colors lives -- not a "
+              "circuit that determines the answer.")
 
     patch = run_patching(model, vocab, args.device, cases, default_sites)
     _write(os.path.join(args.out_dir, "patching.csv"), patch)
@@ -336,7 +350,7 @@ def main():
 
     with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
         json.dump({"clean_correct": clean_acc, "corrupt_flipped": flip, "both": both,
-                   "localized": True, "n_cases": n,
+                   "logit_effect": float(effect), "localized": True, "n_cases": n,
                    "top_heads": [{"layer": l, "head": h, "effect_retained": float(r)}
                                  for r, (l, h) in ranked]}, f, indent=2)
 
