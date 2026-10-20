@@ -1,0 +1,23 @@
+{
+  "n_nodes": 24,
+  "degree": 5,
+  "n_colors": 4,
+  "rho": 0.3,
+  "rho_max": 0.95,
+  "vocab_size": 34,
+  "scratchpad": false,
+  "hint_mode": "removal",
+  "d_model": 128,
+  "num_layers": 12,
+  "nhead": 4,
+  "dim_feedforward": 1024,
+  "norm_first": true,
+  "max_len": 210,
+  "baseline_accuracy": 0.03525264394829612,
+  "solve_metrics": {
+    "solve_rate": 0.7466666666666667,
+    "outcome_accuracy": 0.9933333333333333,
+    "well_formed_rate": 0.9933333333333333,
+    "n_instances": 150
+  }
+}

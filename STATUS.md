@@ -1,65 +1,60 @@
-# STATUS
-
-Project: DD Sudoku (direct-deduction coloring) on random regular graphs --
-reproducing the reasoning-depth phase transition, plus a side task
-pretraining a transformer on DD reasoning traces. Branch `sudoku-dd`. See
-`SUDOKU_DD.md` for model/code. Separate from `master` (k-SAT) and AMP work.
+# STATUS — spin_gnn, branch `sudoku-dd` (2026-10-19)
 
 ## Current best result
-**Phase transition (main task):** `d=7` recovers the claimed transition
-(`gamma(rho)` jumps at `rho_c=0.27`); `d=5` does not yet (greedy floor
-`rho~0.478`). See LOG for the sweep (`47921119`).
 
-**Where the hint-density transition actually is (2026-10-19, new):** NOT in
-independent random hints -- that ensemble is subcritical at every density
-(`48579017`: recovery beyond hints peaks at +0.12 and is identical N=24..384;
-cascade depth only 1.64->3.36 over 16x N). This **retires the "scale N to
-~1700 tokens" plan** on the delivered slide deck's last page. It is in the
-removal-path ensemble the models already train on, as a divergence of DD
-deduction time T as rho -> rho_min: `48581590` gives rho_min = 0.442/0.462/
-0.475/0.475/0.479/0.477 and T(0.90)->T(~0.50) rising 4.1x/4.8x/5.4x/5.7x/
-6.0x/7.9x for N = 24/48/96/192/384/996. The gradient exists at N=24, so it is
-testable on existing checkpoints.
+`d0128_h04_L12_ff01024_lr1e-03_pre` @900ep (Slurm `48513926_1`), **agg_solve_rate = 0.767**.
+Nothing beat it this session: scratchpad variant 0.740 (`48579019`), i.e. −0.027.
 
-**Transformer side task:** best is `d_model=128, nhead=4, num_layers=12,
-dim_feedforward=1024, epochs=900` (`48513926_1`, dir
-`sudoku_hparam_sweep_2026-10-19_ep900/d0128_h04_L12_ff01024_lr1e-03_pre`):
-`agg_solve_rate=0.767` at `mean_o1_solve_rate=0.968`. Three levers are all
-negative on the attention-targeting metric: more heads (`48296020`), wider
-heads (`48446043`), 3x budget (`48513926`).
+## Delivered today
 
-**Interpretability (2026-10-19, new):** probes on the best checkpoint
-(`48580216`) show the model represents bookkeeping but NOT DD's predicate:
-`known_mask` balanced-acc 0.593 (layer-0 control) -> **0.920** by layer 3-4,
-while `frontier_mask` (deducibility, needs graph table joined to known set)
-only reaches **0.669** from a 0.569 control. `next_color` is computed late
-(0.459 at L7 -> 0.651 at L12). Reads as "track what's colored, then guess the
-next pair", not "compute the deducible set, then pick from it" -- but a weak
-linear probe is not proof of absence, which is what the causal job tests.
+Deck + executed notebook in `notebooks/sudoku_interp_2026-10-19/` (commit `4d5c3bb`),
+uploaded to OneDrive. Both carry the caveats below rather than only the clean story.
 
-## Running jobs
-- `48579019` scratchpad training, `48579545` random-hint training (both R).
-- `48580229` checkpoint series (R) -> `48582169` series probes (dependency,
-  answers "when during training").
-- `48581589` hint-density transition eval, `48581592` SAE, `48582016` circuits
-  (all PD).
-No other session is on `spin_gnn` (checked `ListAgents`/`squeue`).
+## The two findings
+
+1. **The hint-density transition is real and already measurable at N=24** (`48581589`):
+   solve_rate 0.99 → 0.44 monotonically, `truncated_rate = 0.000` in *every* bin, so it is
+   not a generation-budget artifact. DD's floor `rho_min ≈ 0.477` is N-independent
+   (converged by N=96, `48581590`). The independent-**random**-hint ensemble has no
+   transition at any N (`48579545`: flat 0.64–0.78, highest at both extremes) — this
+   retires the old "scale N to ~1700 tokens" plan.
+   *Not established:* whether depth `T` or density `rho` controls the collapse.
+   `r(solve,T) = −0.966` vs `r(solve,rho) = +0.944` — collinear by construction.
+2. **The model is not running DD.** Four independent lines agree:
+   - probes (`48580216`): `known_mask` 0.91 vs `frontier_mask` 0.67 (layer-0 control 0.57)
+   - algorithm ID on disagreements only (`48582589`): loses to `ascending_after`
+     (DD 0.334 / heuristic 0.361); worse at d0064 (0.238 / 0.415)
+   - causal counterfactual (`48583444`): flip rate 0.267 vs 0.25 chance
+   - SAE (`48583439`, now sparse, `hit_target_l0=True`): no `frontier` family at any layer
+   Best description: **bookkeeping of which nodes are colored + the sorted-emission
+   convention + sub-threshold sensitivity to neighbour colors.**
+   That sensitivity is real (logit gap moves 12.3) and localized: `edited_hint` (L0–5) →
+   **recolored neighbour's** graph row (L6–9) → prediction position (L8–11). The predicted
+   node's own row carries ~0.00 throughout — color-to-node binding, not DD's neighbour-list
+   join. Head ablation (`48585025`): no single head necessary (worst L10H3 keeps 0.807),
+   and the top 5 sit in exactly the L6–L10 handoff window.
+
+## Running / queued
+
+- `48580229` spin_gnn_sudoku2_series — checkpoint series, RUNNING ~47 min
+- `48582169` spin_gnn_sudoku2_serprobe — PENDING, gated on the above. **This is the
+  "when during training" answer**; the deck has a placeholder page for it.
 
 ## Open problems
-1. Phase transition: `d=5` unconfirmed (needs `sudoku_mcmc.anneal`, never run
-   for results); `<m>` order parameter not done; `d=4,6,8` data unanalyzed.
-2. Transformer: content-addressing ceiling (1.13-1.26x enrichment) survives
-   head count, width and budget. `agg_solve_rate` pinned ~0.77 while the
-   near-trivial end is ~0.97.
-3. `d_model=256` only ever run at 300 epochs, budget-confounded.
-4. Whether the weak `frontier_mask` probe means the model lacks DD's frontier
-   or merely encodes it nonlinearly -- `48582016` (causal) decides this.
+
+- Depth vs density is confounded. Next measurement: bin **equal-rho** instances by `T`.
+- SAE `n_dead_features = 0` with all 2048 alive at L4–12 → "alive" is a weak criterion
+  (fires ≥once in 26,448 positions); sparse per position, not well concentrated.
+- The 23 `next_node` SAE features at **layer 0** cannot be computing anything (raw
+  token+position embedding) — they are position features riding the sorted-emission
+  confound. Treat deeper `next_node` counts with the same suspicion.
+- `frontier_mask` at 0.67 is weak but above the 0.57 control; unclear if that residual is
+  real structure or probe leakage from `known_mask`.
 
 ## Next steps
-1. Read out `48581589` (does solve_rate collapse where `dd_mean_T` diverges?
-   `truncated_rate` is reported per bin to rule out the length confound),
-   `48581592` (SAE -- check reported L0 before trusting feature labels) and
-   `48582016`, then build a results notebook + slide PDF and upload.
-2. `48582169` lines DD-structure emergence against the `series.csv`
-   solve_rate curve.
-3. Phase transition main task: `sudoku_mcmc.anneal` for `d=5`; `<m>` vs rho.
+
+1. Read `48582169` when it lands → "when during training does DD appear?" → rebuild deck
+   (the page is already wired, `--series-probes`).
+2. Equal-rho / varied-`T` eval to disentangle depth from density.
+3. Untouched main task: `sudoku_mcmc.anneal` for `d=5`, `<m>` order parameter,
+   `gamma(rho)` for `d=4,6,8`; `d_model=256` @900ep.

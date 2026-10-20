@@ -113,3 +113,17 @@ you need. At most 3 lines appended per session.
   vs. the original `0.005` baseline); `L=8,ff=1024` close behind at
   `0.968` with fewer params. `ff=2048` underperformed `ff=1024` at every
   `L` (likely undertrained at 300 epochs for the larger size).
+
+- 2026-10-19: Located the hint-density transition. Random-hint ensemble has none at any N
+  (48579545); removal-path does, already at N=24 — solve_rate 0.99→0.44, truncated_rate 0.000
+  everywhere, rho_min≈0.477 N-independent (48581589, 48581590). rho and T collinear, so
+  depth-vs-density is unresolved. Deck+notebook delivered (commit 4d5c3bb).
+- 2026-10-19: Four tests agree the model is NOT running DD: probes known 0.91 vs frontier 0.67
+  (48580216), loses the disagreement vote to ascending_after 0.334/0.361 (48582589), flip rate
+  0.267 vs 0.25 chance (48583444), no frontier SAE family (48583439). Patching localizes a real
+  sub-threshold color route: edited_hint L0-5 → recolored neighbour's row L6-9 → predict L8-11,
+  never through the predicted node's own row.
+- 2026-10-19: Fixed two measurement bugs that had produced publishable-looking nonsense — SAE
+  l1_coeff didn't transport across d_model (dense dictionary at FVE 0.992), and head ablation
+  hooked out_proj, which nn.MultiheadAttention never calls, giving effect_retained==1.0 on all
+  7200 rows. Both now have regression tests.

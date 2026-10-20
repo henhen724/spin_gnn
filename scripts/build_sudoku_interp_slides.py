@@ -339,7 +339,7 @@ def main():
     ap.add_argument("--transition", default=f"{SCRATCH}/spin_gnn/sudoku_hint_density_transition_2026-10-19/transition.csv")
     ap.add_argument("--probes", default=f"{SCRATCH}/spin_gnn/sudoku_probes_2026-10-19/probes.csv")
     ap.add_argument("--sae", default=f"{SCRATCH}/spin_gnn/sudoku_sae_2026-10-19_sparse/sae_summary.csv")
-    ap.add_argument("--circuits", default=f"{SCRATCH}/spin_gnn/sudoku_circuits_2026-10-19/d0128_L12_v2")
+    ap.add_argument("--circuits", default=f"{SCRATCH}/spin_gnn/sudoku_circuits_2026-10-19/d0128_L12_v3")
     ap.add_argument("--algorithm-id", default=f"{SCRATCH}/spin_gnn/sudoku_algorithm_id_2026-10-19/d0128_h04_L12_ff01024_lr1e-03_pre.csv")
     ap.add_argument("--series-probes", default=f"{SCRATCH}/spin_gnn/sudoku_series_probes_2026-10-19/series_probes.csv")
     ap.add_argument("--series", default=f"{SCRATCH}/spin_gnn/sudoku_checkpoint_series_2026-10-19/series.csv")
