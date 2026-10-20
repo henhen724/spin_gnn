@@ -162,6 +162,46 @@ def page_probes(pdf, path, title="Probes: bookkeeping yes, DD predicate no"):
     plt.close(fig)
 
 
+def page_algorithm_id(pdf, path):
+    """Head-to-head vote, scored ONLY where DD and the baseline disagree.
+
+    This is the page that answers "what algorithm", because agreement rates on
+    the full trace are uninformative: solve_with_dd_trace emits each round as
+    sorted(...), so node ids ascend within a round and a pure ordering rule
+    already matches DD most of the time with no deducibility at all."""
+    rows = _read(path)
+    if not rows:
+        return _missing(pdf, "Which rule wins where DD and a heuristic disagree?", path)
+    order = ["ascending_after", "ascending", "most_known_nbrs", "random_uncolored"]
+    stats = []
+    for b in order:
+        sub = [r for r in rows if r["baseline"] == b]
+        if not sub:
+            continue
+        n = len(sub)
+        stats.append((b, sum(r["model_follows_dd"] == "True" for r in sub) / n,
+                      sum(r["model_follows_baseline"] == "True" for r in sub) / n, n))
+    fig = _page(pdf, "Which rule wins where DD and a heuristic disagree?")
+    ax = fig.subplots()
+    y = np.arange(len(stats))
+    ax.barh(y - 0.2, [s[1] for s in stats], height=0.38, color="#d62728", label="follows DD")
+    ax.barh(y + 0.2, [s[2] for s in stats], height=0.38, color="#1f77b4", label="follows heuristic")
+    for i, s in enumerate(stats):
+        ax.text(max(s[1], s[2]) + 0.015, i, f"n={s[3]}", va="center", fontsize=11, color="#555555")
+    ax.set_yticks(y)
+    ax.set_yticklabels([s[0] for s in stats], fontsize=13)
+    ax.set_xlabel("fraction of disagreement positions", fontsize=SMALL)
+    ax.set_xlim(0, 1.0)
+    ax.legend(fontsize=12, loc="lower right")
+    ax.grid(alpha=0.3, axis="x")
+    ax.annotate("ascending_after = 'next uncolored id above the last emitted, wrapping'\n"
+                "the only baseline that exploits the sorted-emission convention -- and it beats DD",
+                xy=(0.02, 0.02), xycoords="figure fraction", fontsize=12, color="#444444")
+    fig.tight_layout(rect=[0, 0.09, 1, 0.91])
+    pdf.savefig(fig, dpi=150)
+    plt.close(fig)
+
+
 def page_sae(pdf, path):
     rows = _read(path)
     if not rows:
@@ -293,8 +333,9 @@ def main():
     ap.add_argument("--dd-curve", default=f"{SCRATCH}/spin_gnn/sudoku_dd_removal_small_n_2026-10-19/removal_path_T_vs_rho.csv")
     ap.add_argument("--transition", default=f"{SCRATCH}/spin_gnn/sudoku_hint_density_transition_2026-10-19/transition.csv")
     ap.add_argument("--probes", default=f"{SCRATCH}/spin_gnn/sudoku_probes_2026-10-19/probes.csv")
-    ap.add_argument("--sae", default=f"{SCRATCH}/spin_gnn/sudoku_sae_2026-10-19/sae_summary.csv")
-    ap.add_argument("--circuits", default=f"{SCRATCH}/spin_gnn/sudoku_circuits_2026-10-19/d0128_L12")
+    ap.add_argument("--sae", default=f"{SCRATCH}/spin_gnn/sudoku_sae_2026-10-19_sparse/sae_summary.csv")
+    ap.add_argument("--circuits", default=f"{SCRATCH}/spin_gnn/sudoku_circuits_2026-10-19/d0128_L12_v2")
+    ap.add_argument("--algorithm-id", default=f"{SCRATCH}/spin_gnn/sudoku_algorithm_id_2026-10-19/d0128_h04_L12_ff01024_lr1e-03_pre.csv")
     ap.add_argument("--series-probes", default=f"{SCRATCH}/spin_gnn/sudoku_series_probes_2026-10-19/series_probes.csv")
     ap.add_argument("--series", default=f"{SCRATCH}/spin_gnn/sudoku_checkpoint_series_2026-10-19/series.csv")
     ap.add_argument("--headline", default="")
@@ -311,9 +352,11 @@ def main():
         return max(vals) if vals else float("nan")
 
     headline = args.headline or (
-        f"Probes: known_mask {peak('known_mask'):.2f} vs frontier_mask {peak('frontier_mask'):.2f} "
-        f"(layer-0 control ~0.57) -- the model tracks WHICH NODES ARE COLORED, "
-        f"not WHICH ARE DEDUCIBLE."
+        "The transition IS there: solve_rate 0.99 -> 0.44 as DD's deduction depth goes 1 -> 6.\n"
+        "But the model is not running DD -- it tracks which nodes are colored "
+        f"(known_mask {peak('known_mask'):.2f}) rather than which are deducible "
+        f"(frontier_mask {peak('frontier_mask'):.2f}, control 0.57), and loses the\n"
+        "head-to-head vote against a sorted-order heuristic."
     )
     sub = (f"git {os.popen('git rev-parse --short HEAD').read().strip()}  |  "
            f"best checkpoint d0128_h04_L12_ff01024 @900ep (agg_solve_rate=0.767)  |  "
@@ -325,6 +368,7 @@ def main():
         page_where_transition(pdf, args.dd_curve)
         page_model_transition(pdf, args.transition)
         page_probes(pdf, args.probes)
+        page_algorithm_id(pdf, args.algorithm_id)
         page_sae(pdf, args.sae)
         page_circuits(pdf, args.circuits)
         page_when(pdf, args.series_probes, args.series)
@@ -334,13 +378,24 @@ def main():
             "removal-path ensemble the models already train on, as a divergence of DD's deduction "
             "time T as rho approaches the floor rho_min = 0.478 (N-independent).",
             "2. The gradient exists at N=24, so the transition is testable on existing checkpoints. "
-            "This retires the earlier plan to scale N to ~1700 tokens.",
+            "This retires the earlier plan to scale N to ~1700 tokens. MEASURED: solve_rate falls "
+            "0.99 -> 0.44 monotonically as DD's depth rises T=1.0 -> 6.0, with truncated_rate = 0.000 "
+            "in every bin, so this is reasoning depth and not generation budget.",
             f"3. Probes: bookkeeping (known_mask, {peak('known_mask'):.2f}) is computed early and "
             f"strongly; DD's deducibility predicate (frontier_mask, {peak('frontier_mask'):.2f} vs a "
             f"0.57 control) is barely present. next_color is computed late (0.46 at L7 -> 0.65 at L12).",
             "4. Causal test: " + (
-                f"flip rate {circ.get('corrupt_flipped', float('nan')):.2f} vs 0.25 chance, "
-                f"localized={circ.get('localized')}" if circ else "pending."),
+                f"the model does NOT apply the forcing rule at decision level (flip rate "
+                f"{circ.get('corrupt_flipped', float('nan')):.2f} vs 0.25 chance), but neighbour-color "
+                f"information does flow: the corruption moves the logit gap by "
+                f"{circ.get('logit_effect', float('nan')):.1f}. Patching localizes that flow to "
+                f"edited_hint (L0-5) -> graph row of the RECOLORED NEIGHBOUR (L6-9) -> prediction "
+                f"position (L8-11). The row of the node being predicted carries ~0.00 throughout, so "
+                f"this is color-to-node binding, not DD's neighbour-list join."
+                if circ else "pending."),
+            "5. Honest gaps: head ablation in this run was a no-op (fixed, rerunning as 48585025); "
+            "'when during training' awaits the checkpoint series; and the scratchpad variant came in "
+            "at agg_solve_rate 0.740 vs the 0.767 baseline, i.e. no improvement.",
         ])
     size = os.path.getsize(args.out) / 1e6
     print(f"wrote {args.out} ({size:.3f} MB)")
