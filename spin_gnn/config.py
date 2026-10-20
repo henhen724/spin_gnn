@@ -160,6 +160,12 @@ class SudokuReasoningConfig:
     rho: float = 0.3
     rho_max: float = 0.95
     seed: int = 0
+    # "removal" (default): the slides' greedy hint-removal protocol described
+    # above -- every instance resolvable by construction, rho sets reasoning
+    # depth only. "random": independent uniform hints at exactly
+    # round(rho * n_nodes) nodes, so DD fails below its threshold and the
+    # distribution actually contains a hint-density solvability transition.
+    hint_mode: str = "removal"
     # Restate each deduction's evidence (its neighbors' already-known colors)
     # immediately before the deduction, making every step locally determined --
     # see sudoku_tokens.py's module docstring. Off by default so existing

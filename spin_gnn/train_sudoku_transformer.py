@@ -41,7 +41,7 @@ from .sat_dataset2 import SATTokenDataset, iterate_token_batches
 from .sat_transformer2 import SATReasoningTransformer, sat2_accuracy, sat2_nll_loss
 from .sudoku_dd import planted_regular_graph, removal_path
 from .sudoku_tokens import Vocab, check_evidence, check_solution, decode, encode_instance
-from .sudoku_trace import solve_with_dd_trace
+from .sudoku_trace import sample_hints, solve_with_dd_trace
 
 # torch defaults to one thread per visible CPU, which is a severe pessimization
 # for a model this tiny (e.g. 64 threads on a Sherlock login node for a d_model=16
@@ -73,7 +73,15 @@ def build_instances(sudoku_cfg: SudokuReasoningConfig, n_instances, seed_start):
     target density `rho` (drawn uniformly in [sudoku_cfg.rho, rho_max]) picks
     where along that path to stop; if a path's own minimal density (rho_min)
     is above the target (not every density is reachable by every path), it
-    falls back to that path's sparsest reachable point instead."""
+    falls back to that path's sparsest reachable point instead.
+
+    With `hint_mode="random"` the hints are instead drawn independently and
+    uniformly (sudoku_trace.sample_hints) at exactly round(rho * n_nodes)
+    nodes, so DD genuinely fails below its threshold and the instance set
+    contains both SOLVED and UNRESOLVED cases. That is the only mode in
+    which a hint-density *solvability* transition exists at all -- the
+    removal-path construction has none by definition, since it accepts a
+    removal only if DD still recovers everything."""
     instances = []
     for i in range(n_instances):
         # planted_regular_graph's multi-edge removal occasionally fails to find a
@@ -96,13 +104,23 @@ def build_instances(sudoku_cfg: SudokuReasoningConfig, n_instances, seed_start):
             rho_rng.uniform(sudoku_cfg.rho, sudoku_cfg.rho_max)
             if sudoku_cfg.rho_max > sudoku_cfg.rho else sudoku_cfg.rho
         )
-        path_rng = np.random.default_rng(seed_start + i + 20_000_000)
-        path = removal_path(adj, colors, sudoku_cfg.n_colors, path_rng, snapshot_rhos=(target_rho,))
-        t_final = path["snapshots"].get(target_rho, path["final_t"])
-        hints = {int(v): int(colors[v]) for v in np.flatnonzero(t_final == 0)}
-
-        trace = solve_with_dd_trace(adj, colors, hints, sudoku_cfg.n_colors)
-        assert trace["resolved"], "removal_path-derived hint sets must always be fully resolvable"
+        hint_mode = getattr(sudoku_cfg, "hint_mode", "removal")
+        if hint_mode == "random":
+            hint_rng = np.random.default_rng(seed_start + i + 30_000_000)
+            n_hints = int(round(target_rho * sudoku_cfg.n_nodes))
+            hints = sample_hints(
+                sudoku_cfg.n_nodes, max(0, min(sudoku_cfg.n_nodes, n_hints)), colors, hint_rng,
+            )
+            trace = solve_with_dd_trace(adj, colors, hints, sudoku_cfg.n_colors)
+        elif hint_mode == "removal":
+            path_rng = np.random.default_rng(seed_start + i + 20_000_000)
+            path = removal_path(adj, colors, sudoku_cfg.n_colors, path_rng, snapshot_rhos=(target_rho,))
+            t_final = path["snapshots"].get(target_rho, path["final_t"])
+            hints = {int(v): int(colors[v]) for v in np.flatnonzero(t_final == 0)}
+            trace = solve_with_dd_trace(adj, colors, hints, sudoku_cfg.n_colors)
+            assert trace["resolved"], "removal_path-derived hint sets must always be fully resolvable"
+        else:
+            raise ValueError(f"unknown hint_mode={hint_mode!r} (expected 'removal' or 'random')")
         instances.append((adj, colors, hints, trace))
     return instances
 
@@ -229,13 +247,28 @@ def eval_solve_by_rho(
     checkpoint; call once per checkpoint to get a family of curves.
 
     Returns a list of dicts, one per rho in rho_grid, each the dict
-    returned by solve_rate() plus a "rho" key."""
+    returned by solve_rate() plus a "rho" key and the DD ground truth on the
+    *same* instances: `dd_resolved_frac` (fraction DD itself solves
+    completely) and `dd_frac_recovered` (mean fraction of nodes DD colors).
+    Those are identically 1.0 and 1.0 under the default removal-path
+    hint_mode, but under hint_mode="random" they are the reference transition
+    curve, so every bin carries its own model-vs-DD comparison rather than
+    relying on a separately-seeded reference run."""
     records = []
     for rho in rho_grid:
         bin_cfg = replace(sudoku_cfg, rho=float(rho), rho_max=float(rho))
         instances = build_instances(bin_cfg, n_per_bin, seed_start)
         metrics = solve_rate(model, instances, vocab, device, max_new_tokens)
-        records.append({"rho": float(rho), **metrics})
+        n = len(instances)
+        records.append({
+            "rho": float(rho),
+            **metrics,
+            "dd_resolved_frac": sum(bool(t["resolved"]) for _, _, _, t in instances) / n if n else None,
+            "dd_frac_recovered": sum(
+                (sudoku_cfg.n_nodes - len(t["unresolved_nodes"])) / sudoku_cfg.n_nodes
+                for _, _, _, t in instances
+            ) / n if n else None,
+        })
     return records
 
 
@@ -323,6 +356,7 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
         "n_nodes": sudoku_cfg.n_nodes, "degree": sudoku_cfg.degree, "n_colors": sudoku_cfg.n_colors,
         "rho": sudoku_cfg.rho, "rho_max": sudoku_cfg.rho_max, "vocab_size": vocab.size,
         "scratchpad": getattr(sudoku_cfg, "scratchpad", False),
+        "hint_mode": getattr(sudoku_cfg, "hint_mode", "removal"),
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,

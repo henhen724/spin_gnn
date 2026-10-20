@@ -2,6 +2,8 @@
 mirroring test_train_sat_transformer2.py's structure. Tiny scale -- checks
 the pipeline runs and every metric key exists/is in a sane range, not that
 the model actually learns anything at this size."""
+from dataclasses import replace
+
 import torch
 
 from spin_gnn.config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
@@ -70,3 +72,55 @@ def test_checkpoint_roundtrip(tmp_path):
     assert vocab2.n_nodes == sudoku_cfg.n_nodes
     for p1, p2 in zip(result["model"].parameters(), model2.parameters()):
         torch.testing.assert_close(p1.cpu(), p2.cpu())
+
+
+def test_random_hint_mode_produces_both_outcomes_and_exact_density():
+    """The whole point of hint_mode="random": unlike the removal-path default,
+    it must produce genuinely unresolvable instances, which is what makes a
+    hint-density solvability transition exist in the data. Swept across rho
+    because any single density can land entirely on one side."""
+    outcomes = set()
+    for rho in (0.2, 0.5, 0.9):
+        cfg = SudokuReasoningConfig(
+            n_nodes=24, degree=4, n_colors=3, rho=rho, rho_max=rho, hint_mode="random",
+        )
+        instances = build_instances(cfg, n_instances=12, seed_start=0)
+        assert len(instances) == 12
+        for adj, colors, hints, trace in instances:
+            # exactly round(rho * n_nodes) hints, unlike removal mode where the
+            # path's own minimal density can overshoot the target
+            assert len(hints) == round(rho * 24)
+            for node, color in hints.items():
+                assert colors[node] == color
+            outcomes.add(bool(trace["resolved"]))
+    assert outcomes == {True, False}, f"random hints must yield both outcomes, got {outcomes}"
+
+
+def test_removal_mode_is_unchanged_and_always_resolvable():
+    """Guards the default path against the hint_mode refactor."""
+    cfg = SudokuReasoningConfig(n_nodes=24, degree=4, n_colors=3, rho=0.5, rho_max=0.5)
+    assert cfg.hint_mode == "removal"
+    for adj, colors, hints, trace in build_instances(cfg, n_instances=10, seed_start=0):
+        assert trace["resolved"]
+        assert not trace["unresolved_nodes"]
+
+
+def test_unknown_hint_mode_raises():
+    cfg = SudokuReasoningConfig(n_nodes=24, degree=4, n_colors=3, rho=0.5, rho_max=0.5, hint_mode="bogus")
+    try:
+        build_instances(cfg, n_instances=1, seed_start=0)
+    except ValueError as e:
+        assert "bogus" in str(e)
+    else:
+        raise AssertionError("unknown hint_mode must raise")
+
+
+def test_random_hint_mode_trains_end_to_end():
+    """Unresolved instances exercise the UNRESOLVED branch of the grammar and
+    of solve_rate's outcome check, which the removal-path default never hits."""
+    sudoku_cfg, model_cfg, train_cfg = _tiny_configs()
+    sudoku_cfg = replace(sudoku_cfg, rho=0.3, rho_max=0.9, hint_mode="random")
+    result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
+    sm = result["solve_metrics"]
+    assert 0.0 <= sm["solve_rate"] <= 1.0
+    assert 0.0 <= sm["outcome_accuracy"] <= 1.0

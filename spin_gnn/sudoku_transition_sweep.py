@@ -10,6 +10,15 @@ over a fixed rho grid with pinned-density bins (each bin's instances all
 target that one rho, not the training [rho, rho_max] spread), and writes
 one CSV row per (epoch, rho) pair.
 
+Two different transitions, selected by --hint-mode:
+  "removal" (default) -- the easy/hard *difficulty* transition. Instances are
+    resolvable by construction at every density, so rho sets reasoning depth
+    only and there is no solvability threshold to see.
+  "random" -- the hint-density *solvability* transition. Hints are drawn
+    independently, so DD itself fails below threshold; each output row then
+    carries dd_resolved_frac/dd_frac_recovered measured on the very same
+    instances, which is the reference curve the model is compared against.
+
 Usage: python -m spin_gnn.sudoku_transition_sweep --out-csv $SCRATCH/....csv
 """
 import argparse
@@ -42,6 +51,11 @@ def main():
     ap.add_argument("--rho-grid", type=str, default="0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.95")
     ap.add_argument("--n-per-bin", type=int, default=50)
     ap.add_argument("--eval-seed-start", type=int, default=10_000_000_000)
+    ap.add_argument("--hint-mode", type=str, default="removal", choices=["removal", "random"],
+                    help="'random' samples hints independently so DD can fail; required for a "
+                         "hint-density solvability transition to exist in the data at all")
+    ap.add_argument("--scratchpad", action="store_true",
+                    help="restate each deduction's evidence before it (sudoku_tokens scratchpad grammar)")
     ap.add_argument("--out-csv", type=str, required=True)
     args = ap.parse_args()
 
@@ -50,7 +64,7 @@ def main():
 
     sudoku_cfg = SudokuReasoningConfig(
         n_nodes=args.n_nodes, degree=args.degree, n_colors=args.n_colors, rho=args.rho, rho_max=args.rho_max,
-        seed=args.seed,
+        seed=args.seed, hint_mode=args.hint_mode, scratchpad=args.scratchpad,
     )
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
@@ -81,8 +95,12 @@ def main():
             rows.append({"epoch": epoch, **r})
         print(f"checkpoint epoch={epoch}: " + ", ".join(f"rho={r['rho']:.2f}:sr={r['solve_rate']:.2f}" for r in records))
 
+    # Dynamic fieldnames: eval_solve_by_rho's dict grew DD-ground-truth and
+    # (under --scratchpad) evidence-accuracy keys, and hardcoding the list
+    # would silently drop them.
+    fieldnames = list(dict.fromkeys(k for r in rows for k in r))
     with open(args.out_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["epoch", "rho", "solve_rate", "outcome_accuracy", "well_formed_rate", "n_instances"])
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
     print(f"wrote {len(rows)} rows to {args.out_csv}")
