@@ -160,6 +160,11 @@ class SudokuReasoningConfig:
     rho: float = 0.3
     rho_max: float = 0.95
     seed: int = 0
+    # Restate each deduction's evidence (its neighbors' already-known colors)
+    # immediately before the deduction, making every step locally determined --
+    # see sudoku_tokens.py's module docstring. Off by default so existing
+    # checkpoints and their token ids are unaffected.
+    scratchpad: bool = False
 
 
 @dataclass

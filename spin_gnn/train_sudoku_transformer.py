@@ -40,7 +40,7 @@ from .config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuRea
 from .sat_dataset2 import SATTokenDataset, iterate_token_batches
 from .sat_transformer2 import SATReasoningTransformer, sat2_accuracy, sat2_nll_loss
 from .sudoku_dd import planted_regular_graph, removal_path
-from .sudoku_tokens import Vocab, check_solution, decode, encode_instance
+from .sudoku_tokens import Vocab, check_evidence, check_solution, decode, encode_instance
 from .sudoku_trace import solve_with_dd_trace
 
 # torch defaults to one thread per visible CPU, which is a severe pessimization
@@ -54,7 +54,10 @@ torch.set_num_threads(min(4, os.cpu_count() or 1))
 
 
 def build_vocab(sudoku_cfg: SudokuReasoningConfig):
-    return Vocab(sudoku_cfg.n_nodes, sudoku_cfg.n_colors, sudoku_cfg.degree)
+    return Vocab(
+        sudoku_cfg.n_nodes, sudoku_cfg.n_colors, sudoku_cfg.degree,
+        scratchpad=getattr(sudoku_cfg, "scratchpad", False),
+    )
 
 
 def build_instances(sudoku_cfg: SudokuReasoningConfig, n_instances, seed_start):
@@ -174,6 +177,7 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
     well_formed_rate (fraction that parse without a grammar violation)."""
     rng = rng or np.random.default_rng()
     n_solved = n_outcome_correct = n_well_formed = 0
+    ev_rows = ev_rows_correct = ev_slots = ev_slots_correct = 0
     for adj, colors, hints, trace in instances:
         full_tokens = encode_instance(adj, trace, vocab)
         reasoning_start = int(np.flatnonzero(full_tokens == vocab.BEGIN_REASONING)[0]) + 1
@@ -189,13 +193,28 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
             if check_solution(decoded, colors, vocab.n_nodes):
                 n_solved += 1
 
+        if getattr(vocab, "scratchpad", False):
+            ev = check_evidence(decoded)
+            ev_rows += ev["n_rows"]
+            ev_rows_correct += ev["n_rows_correct"]
+            ev_slots += ev["n_slots"]
+            ev_slots_correct += ev["n_slots_correct"]
+
     n = len(instances)
-    return {
+    metrics = {
         "solve_rate": n_solved / n if n else None,
         "outcome_accuracy": n_outcome_correct / n if n else None,
         "well_formed_rate": n_well_formed / n if n else None,
         "n_instances": n,
     }
+    if getattr(vocab, "scratchpad", False):
+        # Separates "can it copy the evidence it already wrote down" from "is
+        # the deduction right" -- if solve_rate stays flat, this says which
+        # half is at fault.
+        metrics["evidence_row_accuracy"] = ev_rows_correct / ev_rows if ev_rows else None
+        metrics["evidence_slot_accuracy"] = ev_slots_correct / ev_slots if ev_slots else None
+        metrics["n_evidence_rows"] = ev_rows
+    return metrics
 
 
 def eval_solve_by_rho(
@@ -303,6 +322,7 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
     config = {
         "n_nodes": sudoku_cfg.n_nodes, "degree": sudoku_cfg.degree, "n_colors": sudoku_cfg.n_colors,
         "rho": sudoku_cfg.rho, "rho_max": sudoku_cfg.rho_max, "vocab_size": vocab.size,
+        "scratchpad": getattr(sudoku_cfg, "scratchpad", False),
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,
@@ -316,7 +336,10 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
 def load_checkpoint(out_dir, device="cpu"):
     with open(os.path.join(out_dir, "config.json")) as f:
         config = json.load(f)
-    vocab = Vocab(config["n_nodes"], config["n_colors"], config["degree"])
+    vocab = Vocab(
+        config["n_nodes"], config["n_colors"], config["degree"],
+        scratchpad=config.get("scratchpad", False),
+    )
     model = SATReasoningTransformer(
         vocab.size, d_model=config["d_model"], num_layers=config["num_layers"],
         nhead=config["nhead"], max_len=config["max_len"], dim_feedforward=config.get("dim_feedforward"),

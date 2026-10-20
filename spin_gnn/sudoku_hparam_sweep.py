@@ -31,7 +31,7 @@ from .train_sudoku_transformer import eval_solve_by_rho, save_checkpoint, train_
 def run_one(args):
     sudoku_cfg = SudokuReasoningConfig(
         n_nodes=args.n_nodes, degree=args.degree, n_colors=args.n_colors, rho=args.rho, rho_max=args.rho_max,
-        seed=args.seed,
+        seed=args.seed, scratchpad=args.scratchpad,
     )
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
@@ -58,6 +58,7 @@ def run_one(args):
     tag = (
         f"d{args.d_model:04d}_h{args.nhead:02d}_L{args.num_layers:02d}"
         f"_ff{resolved_ff:05d}_lr{args.lr:.0e}_{norm_tag}"
+        + ("_sp" if args.scratchpad else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
     save_checkpoint(
@@ -77,6 +78,10 @@ def run_one(args):
         "agg_outcome_accuracy": result["solve_metrics"]["outcome_accuracy"],
         "mean_o1_solve_rate": mean_o1_solve_rate,
         **{f"solve_rate_k{k}": rec["solve_rate"] for k, rec in zip(o1_ks, o1_records)},
+        "scratchpad": args.scratchpad,
+        "max_len": result["model_max_len"],
+        "evidence_row_accuracy": result["solve_metrics"].get("evidence_row_accuracy"),
+        "evidence_slot_accuracy": result["solve_metrics"].get("evidence_slot_accuracy"),
         "checkpoint_dir": out_dir,
     }
 
@@ -99,6 +104,8 @@ if __name__ == "__main__":
     ap.add_argument("--rho", type=float, default=0.3)
     ap.add_argument("--rho-max", type=float, default=0.95)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--scratchpad", action="store_true",
+                    help="restate each deduction's evidence before it (sudoku_tokens scratchpad grammar)")
     ap.add_argument("--d-model", type=int, default=64)
     ap.add_argument("--nhead", type=int, default=4)
     ap.add_argument("--num-layers", type=int, default=2)

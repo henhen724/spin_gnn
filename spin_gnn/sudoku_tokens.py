@@ -14,18 +14,43 @@ semantics):
   BEGIN_GRAPH       (NODE (NODE){degree})*                 -- node then its neighbors, any order/subset
   BEGIN_REASONING   (BEGIN_ROUND (NODE COLOR)+)*
   SOLVED  |  UNRESOLVED (NODE)*
+
+With `Vocab(..., scratchpad=True)` the reasoning section instead restates,
+immediately before each deduction, the colors of that node's neighbors as
+known *before* the current round (COLOR_UNKNOWN for neighbors not yet
+colored):
+  BEGIN_REASONING   (BEGIN_ROUND (BEGIN_EVIDENCE NODE C{degree} NODE COLOR)+)*
+where `C` is a color token or COLOR_UNKNOWN. This makes every deduction
+locally determined -- the answer is the one color missing from the restated
+evidence row -- testing whether long-range *retrieval* of neighbor colors is
+what limits solve_rate (see STATUS.md: attention reaches the needed
+distances without decaying, but only weakly prefers the right token). The
+node id is emitted twice per deduction (once heading the evidence row, once
+in the deduction pair) so the deduction pair itself stays byte-identical to
+the non-scratchpad grammar, keeping decode()/check_solution() semantics and
+the per-deduction token comparison unchanged.
 """
 import numpy as np
 
 SPECIAL_BASE_NAMES = ["BEGIN_HINTS", "BEGIN_GRAPH", "BEGIN_REASONING", "BEGIN_ROUND", "SOLVED", "UNRESOLVED"]
+SCRATCHPAD_SPECIAL_NAMES = ["BEGIN_EVIDENCE", "COLOR_UNKNOWN"]
 
 
 class Vocab:
-    def __init__(self, n_nodes, n_colors, degree):
+    def __init__(self, n_nodes, n_colors, degree, scratchpad=False):
         self.n_nodes = n_nodes
         self.n_colors = n_colors
         self.degree = degree
-        self._special_names = SPECIAL_BASE_NAMES + [f"COLOR_{c}" for c in range(n_colors)]
+        self.scratchpad = scratchpad
+        # Scratchpad specials are appended after the base names (and before the
+        # COLOR_* block) only when enabled, so a scratchpad=False vocab keeps
+        # byte-identical token ids to every checkpoint trained before this flag
+        # existed.
+        self._special_names = (
+            SPECIAL_BASE_NAMES
+            + (SCRATCHPAD_SPECIAL_NAMES if scratchpad else [])
+            + [f"COLOR_{c}" for c in range(n_colors)]
+        )
         self.n_special = len(self._special_names)
         for i, name in enumerate(self._special_names):
             setattr(self, name, i)
@@ -52,6 +77,20 @@ class Vocab:
     def color_index(self, t):
         return self._color_tokens.index(t)
 
+    def evidence_color_token(self, c):
+        """Color token for an evidence slot: `c is None` (neighbor not yet
+        colored) maps to COLOR_UNKNOWN. Scratchpad vocabs only."""
+        if not self.scratchpad:
+            raise ValueError("evidence tokens require Vocab(scratchpad=True)")
+        return self.COLOR_UNKNOWN if c is None else self.color_token(c)
+
+    def is_evidence_color_token(self, t):
+        return self.scratchpad and (t == self.COLOR_UNKNOWN or self.is_color_token(t))
+
+    def evidence_color_index(self, t):
+        """Inverse of evidence_color_token: None for COLOR_UNKNOWN."""
+        return None if t == self.COLOR_UNKNOWN else self.color_index(t)
+
     def name(self, t):
         if t < self.n_special:
             return self._special_names[t]
@@ -60,9 +99,36 @@ class Vocab:
         return f"<oob:{t}>"
 
 
+def evidence_rounds(adj, trace):
+    """Per-round evidence for each deduction, as
+    [[(node, [neighbor_color_or_None, ...], deduced_color), ...], ...].
+
+    A neighbor's color counts as evidence only if it was known strictly
+    *before* the current round -- which is exactly what DD used to force the
+    deduction (sudoku_trace.solve_with_dd_trace deduces a node while
+    processing the frontier of the previous round, so its `seen` bitmask at
+    that moment reflects hints plus all earlier rounds, never same-round
+    siblings). Using the post-round state instead would leak information the
+    solver did not have.
+    """
+    known = dict(trace["hints"])
+    rounds = []
+    for round_events in trace["rounds"]:
+        rounds.append([
+            (node, [known.get(int(u)) for u in adj[node]], c)
+            for node, c in round_events
+        ])
+        for node, c in round_events:
+            known[node] = c
+    return rounds
+
+
 def encode_instance(adj, trace, vocab):
     """adj: (N, degree) int neighbor table. trace: sudoku_trace.solve_with_dd_trace's
-    return dict. Returns an (T,) int64 array of token ids."""
+    return dict. Returns an (T,) int64 array of token ids.
+
+    Emits the scratchpad (per-deduction evidence restatement) grammar when
+    `vocab.scratchpad` is set -- see the module docstring."""
     tokens = [vocab.BEGIN_HINTS]
     for node, c in sorted(trace["hints"].items()):
         tokens.append(vocab.node_token(node))
@@ -75,11 +141,22 @@ def encode_instance(adj, trace, vocab):
             tokens.append(vocab.node_token(int(j)))
 
     tokens.append(vocab.BEGIN_REASONING)
-    for round_events in trace["rounds"]:
-        tokens.append(vocab.BEGIN_ROUND)
-        for node, c in round_events:
-            tokens.append(vocab.node_token(node))
-            tokens.append(vocab.color_token(c))
+    if vocab.scratchpad:
+        for round_evidence in evidence_rounds(adj, trace):
+            tokens.append(vocab.BEGIN_ROUND)
+            for node, evidence, c in round_evidence:
+                tokens.append(vocab.BEGIN_EVIDENCE)
+                tokens.append(vocab.node_token(node))
+                for ev in evidence:
+                    tokens.append(vocab.evidence_color_token(ev))
+                tokens.append(vocab.node_token(node))
+                tokens.append(vocab.color_token(c))
+    else:
+        for round_events in trace["rounds"]:
+            tokens.append(vocab.BEGIN_ROUND)
+            for node, c in round_events:
+                tokens.append(vocab.node_token(node))
+                tokens.append(vocab.color_token(c))
 
     if trace["resolved"]:
         tokens.append(vocab.SOLVED)
@@ -107,12 +184,17 @@ def decode(tokens, vocab):
     Returns: {"hints": {node: color}, "graph": {node: [neighbors]},
     "rounds": [[(node, color), ...], ...], "outcome": "SOLVED"|"UNRESOLVED"|None,
     "unresolved_nodes": [...], "well_formed": bool, "error": str or None}.
+
+    For a scratchpad vocab, "evidence" additionally holds the restated
+    evidence rows, [[(node, [color_or_None, ...]), ...], ...] parallel to
+    "rounds" -- kept so the restatement itself can be scored for correctness
+    separately from the deduction (see check_evidence).
     """
     tokens = [int(t) for t in tokens]
     i = 0
     n = len(tokens)
     result = {
-        "hints": {}, "graph": {}, "rounds": [], "outcome": None,
+        "hints": {}, "graph": {}, "rounds": [], "evidence": [], "outcome": None,
         "unresolved_nodes": [], "well_formed": False, "error": None,
     }
 
@@ -141,6 +223,31 @@ def decode(tokens, vocab):
         i += 1
         return c
 
+    def read_evidence_color():
+        nonlocal i
+        if i >= n or not vocab.is_evidence_color_token(tokens[i]):
+            raise ParseError(f"expected a color or COLOR_UNKNOWN token at position {i}")
+        c = vocab.evidence_color_index(tokens[i])
+        i += 1
+        return c
+
+    def read_round_events():
+        """One BEGIN_ROUND body: returns (events, evidence_rows)."""
+        nonlocal i
+        events, evidence_rows = [], []
+        if vocab.scratchpad:
+            while peek() == vocab.BEGIN_EVIDENCE:
+                i += 1
+                ev_node = read_node()
+                evidence_rows.append((ev_node, [read_evidence_color() for _ in range(vocab.degree)]))
+                node = read_node()
+                events.append((node, read_color()))
+        else:
+            while peek() is not None and vocab.is_node_token(peek()):
+                node = read_node()
+                events.append((node, read_color()))
+        return events, evidence_rows
+
     try:
         expect(vocab.BEGIN_HINTS, "BEGIN_HINTS")
         while peek() is not None and vocab.is_node_token(peek()):
@@ -155,13 +262,11 @@ def decode(tokens, vocab):
         expect(vocab.BEGIN_REASONING, "BEGIN_REASONING")
         while peek() == vocab.BEGIN_ROUND:
             i += 1
-            round_events = []
-            while peek() is not None and vocab.is_node_token(peek()):
-                node = read_node()
-                round_events.append((node, read_color()))
+            round_events, evidence_rows = read_round_events()
             if not round_events:
                 raise ParseError(f"empty BEGIN_ROUND at position {i}")
             result["rounds"].append(round_events)
+            result["evidence"].append(evidence_rows)
 
         if peek() == vocab.SOLVED:
             i += 1
@@ -188,6 +293,38 @@ def decoded_colors(decoded):
         for node, c in round_events:
             colors[node] = c
     return colors
+
+
+def check_evidence(decoded):
+    """Scratchpad self-consistency: does each restated evidence row match the
+    colors the model itself has already claimed (hints plus earlier rounds),
+    read through its own decoded graph section?
+
+    Deliberately scored against the model's *own* claims rather than the true
+    trace, so it stays meaningful on freely generated output whose round
+    structure need not match ground truth -- it isolates "can it copy the
+    neighbor colors it already wrote down" from "is the deduction right".
+    Returns {"n_rows", "n_rows_correct", "n_slots", "n_slots_correct"};
+    rows whose node is missing from the decoded graph are skipped.
+    """
+    graph = decoded["graph"]
+    known = dict(decoded["hints"])
+    n_rows = n_rows_correct = n_slots = n_slots_correct = 0
+    for round_events, evidence_rows in zip(decoded["rounds"], decoded["evidence"]):
+        for node, evidence in evidence_rows:
+            if node not in graph:
+                continue
+            expected = [known.get(int(u)) for u in graph[node]]
+            n_rows += 1
+            n_rows_correct += int(list(evidence) == expected)
+            n_slots += len(expected)
+            n_slots_correct += sum(int(a == b) for a, b in zip(evidence, expected))
+        for node, c in round_events:
+            known[node] = c
+    return {
+        "n_rows": n_rows, "n_rows_correct": n_rows_correct,
+        "n_slots": n_slots, "n_slots_correct": n_slots_correct,
+    }
 
 
 def check_solution(decoded, true_colors, n_nodes):
@@ -223,6 +360,10 @@ def render(tokens, vocab):
     for r, round_events in enumerate(decoded["rounds"], start=1):
         ev = " ".join(f"N{v}=C{c}" for v, c in round_events)
         lines.append(f"ROUND {r}: {ev}")
+        if r <= len(decoded["evidence"]):
+            for node, evidence in decoded["evidence"][r - 1]:
+                slots = ",".join("?" if c is None else f"C{c}" for c in evidence)
+                lines.append(f"  evidence N{node}: [{slots}]")
     if decoded["outcome"] == "SOLVED":
         lines.append("SOLVED")
     elif decoded["outcome"] == "UNRESOLVED":
