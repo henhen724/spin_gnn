@@ -38,6 +38,9 @@ module load devel math python/3.12.1 py-pytorch/2.4.1_py312 py-numpy/1.26.3_py31
 source "${SCRATCH}/spin_gnn_venv/bin/activate"
 export PYTHONPATH="${SCRATCH}/spin_gnn_venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 export NUMBA_CACHE_DIR="${SCRATCH}/numba_cache"
+# Slurm stdout is block-buffered, so progress lines otherwise stay invisible
+# for the whole run and cannot be polled.
+export PYTHONUNBUFFERED=1
 cd "${SLURM_SUBMIT_DIR}"
 
 EP900="${SCRATCH}/spin_gnn/sudoku_hparam_sweep_2026-10-19_ep900"
