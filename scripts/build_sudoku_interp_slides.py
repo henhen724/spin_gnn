@@ -297,7 +297,8 @@ def page_when(pdf, series_probe_csv, series_csv):
     fig = _page(pdf, "When during training does DD structure appear?")
     ax = fig.subplots()
     for target, color, label in [("known_mask", "#2ca02c", "known_mask (bookkeeping)"),
-                                 ("frontier_mask", "#d62728", "frontier_mask (DD predicate)")]:
+                                 ("frontier_mask", "#d62728", "frontier_mask (DD predicate)"),
+                                 ("next_color", "#ff7f0e", "next_color (which color goes here)")]:
         pts = {}
         for r in rows:
             if r["target"] != target:
@@ -321,7 +322,14 @@ def page_when(pdf, series_probe_csv, series_csv):
         ax.legend(h1 + h2, l1 + l2, fontsize=12, loc="lower right")
     else:
         ax.legend(fontsize=12, loc="lower right")
-    fig.tight_layout(rect=[0, 0.02, 1, 0.91])
+    fig.text(0.5, 0.035,
+             "Answer: never. Bookkeeping is done by epoch 5, before the model can solve anything "
+             "(solve_rate 0.007); the DD predicate\nthen moves 0.654 -> 0.679 over 895 more epochs "
+             "while solve_rate grows 100x. What develops with competence is next_color\n"
+             "(0.327 -> 0.655): the node is picked by an ordering convention learned in 5 epochs, "
+             "and training goes into choosing the colour.",
+             ha="center", fontsize=11)
+    fig.tight_layout(rect=[0, 0.12, 1, 0.91])
     pdf.savefig(fig, dpi=150)
     plt.close(fig)
 
@@ -358,10 +366,9 @@ def main():
 
     headline = args.headline or (
         "The transition IS there: solve_rate 0.99 -> 0.44 as DD's deduction depth goes 1 -> 6.\n"
-        "But the model is not running DD -- it tracks which nodes are colored "
-        f"(known_mask {peak('known_mask'):.2f}) rather than which are deducible "
-        f"(frontier_mask {peak('frontier_mask'):.2f}, control 0.57), and loses the\n"
-        "head-to-head vote against a sorted-order heuristic."
+        "But the model is not running DD, and never starts: bookkeeping is in place by epoch 5, "
+        "before it can solve anything,\nwhile the deducibility predicate stays flat for 895 more "
+        "epochs. What training buys is which COLOR to place, not which node is deducible."
     )
     sub = (f"git {os.popen('git rev-parse --short HEAD').read().strip()}  |  "
            f"best checkpoint d0128_h04_L12_ff01024 @900ep (agg_solve_rate=0.767)  |  "
@@ -390,7 +397,11 @@ def main():
             "instances binned by T.",
             f"3. Probes: bookkeeping (known_mask, {peak('known_mask'):.2f}) is computed early and "
             f"strongly; DD's deducibility predicate (frontier_mask, {peak('frontier_mask'):.2f} vs a "
-            f"0.57 control) is barely present. next_color is computed late (0.46 at L7 -> 0.65 at L12).",
+            f"0.57 control) is barely present. next_color is computed late (0.46 at L7 -> 0.65 at L12). "
+            f"CAVEAT: the frontier_mask number should not be read as a weak DD trace at all -- the "
+            f"deducibility-free rule 'not known' scores 0.73 on the same metric, above the model, while "
+            f"a procedure-matched probe on the known bits scores 0.59, below it. Balanced accuracy on a "
+            f"15%-positive target is miscalibrated both ways; needs an AUC rescore.",
             "4. Causal test: " + (
                 f"the model does NOT apply the forcing rule at decision level (flip rate "
                 f"{circ.get('corrupt_flipped', float('nan')):.2f} vs 0.25 chance), but neighbour-color "
@@ -400,9 +411,17 @@ def main():
                 f"position (L8-11). The row of the node being predicted carries ~0.00 throughout, so "
                 f"this is color-to-node binding, not DD's neighbour-list join."
                 if circ else "pending."),
-            "5. Honest gaps: head ablation in this run was a no-op (fixed, rerunning as 48585025); "
-            "'when during training' awaits the checkpoint series; and the scratchpad variant came in "
-            "at agg_solve_rate 0.740 vs the 0.767 baseline, i.e. no improvement.",
+            "5. When during training: NEVER. Bookkeeping reaches 0.93 by epoch 5, before the model can "
+            "solve anything (solve_rate 0.007); the DD predicate then moves 0.654 -> 0.679 over 895 more "
+            "epochs while solve_rate grows 100x. The one target that develops WITH competence is "
+            "next_color (0.33 -> 0.66, r=0.96 with solve_rate), while next_node is finished by epoch 5 "
+            "like the rest of the bookkeeping. Best current description of the algorithm: pick the next "
+            "node by the sorted-emission convention (learned almost immediately), then spend training "
+            "learning which color goes there.",
+            "6. Honest gaps: one training trajectory, no seed replicates, so the tier split in (5) is an "
+            "observation rather than a finding; depth-vs-density in (2) is still confounded; the "
+            "frontier_mask metric in (3) needs an AUC rescore before any number from it is quoted; and "
+            "nothing has beaten agg_solve_rate 0.767 (scratchpad variant 0.740, i.e. -0.027).",
         ])
     size = os.path.getsize(args.out) / 1e6
     print(f"wrote {args.out} ({size:.3f} MB)")
