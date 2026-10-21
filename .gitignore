@@ -26,3 +26,20 @@ sudoku_transition/
 _sudoku2_smoke/
 sudoku_attention_distance/
 sudoku_attention_evolution/
+
+# Model weights never belong in git (project convention: checkpoints live on
+# $SCRATCH and are copied to $OAK by hand when worth keeping). 27 model.pt files
+# totalling 267MB were already committed before these patterns existed -- see
+# STATUS "Open problems"; they are left tracked rather than untracked here,
+# because untracking does not shrink the history and this is the user's call.
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.h5
+
+# Dated run-output directories. These are written into the repo working tree
+# because $SCRATCH/spin_gnn IS the tree, so each new one needs ignoring.
+sudoku_*_2026-*/
+sudoku_sae_*/
+sudoku_circuits_*/
