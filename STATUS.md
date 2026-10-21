@@ -37,14 +37,15 @@ deck, on OneDrive; supersedes the `sudoku_interp_2026-10-19` deck.
 - **`frontier_mask`'s 0.679 is uninterpretable, not weak evidence** (`48825742`, labels only,
   no model). The deducibility-free rule `1 − known` scores **0.734** (above the model), but a
   procedure-matched BCE probe on the known bits alone scores **0.588** (below it) — balanced
-  accuracy on a ~15%-positive target is miscalibrated both ways. `shuffled = 0.5000`, so the
-  pooling itself is sound. Fix: rescore with AUC, an extra column on the existing sweep.
-  Until then, quote no number from this probe.
+  accuracy on a ~15%-positive target is miscalibrated both ways (`shuffled = 0.5000`, so the
+  pooling is sound). Fix: an AUC column on the existing sweep. Quote no number until then.
 - Training is ~18x longer than needed: solve_rate saturates by epoch 50 (0.787) at the level
   it still has at epoch 900 (0.740) while `val_nll` rises monotonically 1.138 → 2.136.
-- SAE: all 2048 features "alive" at L4–12 → too weak a criterion. The 23 `next_node` features
-  at **layer 0** cannot compute anything — position features riding the sorted-emission
-  confound; distrust deeper `next_node` counts too.
+- SAE: all 2048 features "alive" at L4–12 → too weak a criterion. The 23 layer-0 `next_node`
+  features cannot compute anything — sorted-emission confound; distrust deeper counts too.
+- **27 `model.pt` files (267MB) are committed**; `.gitignore` had no `*.pt` until `3273932`.
+  Patterns added, files left tracked — untracking won't shrink history, so rewriting is
+  hshunt's call.
 
 ## Next steps
 
