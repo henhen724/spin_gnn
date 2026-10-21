@@ -132,4 +132,6 @@ you need. At most 3 lines appended per session.
 
 - `48582169`: DD never appears — `known_mask` 0.925 by ep5 (solve_rate 0.007), `frontier_mask` 0.654→0.679 over 895 more epochs, `next_color` the only target tracking solve_rate (0.327→0.655, r=0.963). Notebook + deck `7c50b99`, uploaded.
 - `48825742` (labels only): `frontier_mask` 0.679 is uninterpretable, not weak evidence — `1−known` scores 0.734 above it, procedure-matched known-bits probe 0.588 below it, `shuffled` 0.5000. Needs AUC rescore; against my pre-registered reading.
-- Series side-note: solve_rate saturates at ep50, `val_nll` rises monotonically after, so 850 of 900 epochs are overfitting. Nothing beat agg_solve_rate 0.767.
+- Series side-note: solve_rate saturates at ep50, `val_nll` rises monotonically after, so 850 of 900 epochs are overfitting (within a run — see the r=+0.17 line below before reading val_nll across runs).
+- Best result was never 0.767: `sweep.csv` already held **0.847** (d0256 @300ep) on the same eval, unranked since the headline metric changed. `scripts/sweep_leaderboard.py` (`90d02f5`+) now prints both metrics so it cannot recur. d0256 is also the sweep's worst model at rho=1.0 (k0 0.24 vs 1.00).
+- Over all 31 runs, `r(agg_solve_rate, val_nll) = +0.17` and `r(agg, n_params) = +0.713` — validation loss is ~uninformative about the metric of record, which undercuts my own case for the data4x run. Submitted `48854232` (ep900), `48854233` (n_train 4x, the first run ever to vary it), `48862411` (d384), `48861799` (probe rescore on AUROC/AP, seeds 0–2).
