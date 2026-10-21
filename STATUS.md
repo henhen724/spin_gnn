@@ -1,60 +1,60 @@
-# STATUS — spin_gnn, branch `sudoku-dd` (2026-10-19)
+# STATUS — spin_gnn, branch `sudoku-dd` (2026-10-21)
 
 ## Current best result
 
 `d0128_h04_L12_ff01024_lr1e-03_pre` @900ep (Slurm `48513926_1`), **agg_solve_rate = 0.767**.
-Nothing beat it this session: scratchpad variant 0.740 (`48579019`), i.e. −0.027.
+Still unbeaten; nothing was trained this session, so there is no new number against it.
 
-## Delivered today
+## The three findings
 
-Deck + executed notebook in `notebooks/sudoku_interp_2026-10-19/` (commit `4d5c3bb`),
-uploaded to OneDrive. Both carry the caveats below rather than only the clean story.
+1. **The hint-density transition is real and measurable at N=24** (`48581589`): solve_rate
+   0.99 → 0.44 monotonically, `truncated_rate = 0.000` in every bin. DD's floor
+   `rho_min ≈ 0.477` is N-independent (`48581590`). The independent-**random**-hint ensemble
+   has no transition at any N (`48579545`) — retires the "scale N to ~1700 tokens" plan.
+   *Not established:* depth `T` vs density `rho`, collinear by construction
+   (`r(solve,T) = −0.966` vs `r(solve,rho) = +0.944`).
+2. **The model is not running DD.** Four lines agree: probes (`48580216`), algorithm ID on
+   disagreements (`48582589`, loses to `ascending_after` 0.334/0.361), causal counterfactual
+   (`48583444`, flip rate 0.267 vs 0.25 chance), SAE (`48583439`, no `frontier` family).
+   Neighbour-color sensitivity *is* real (logit gap moves 12.3) and localized: `edited_hint`
+   (L0–5) → **recolored neighbour's** graph row (L6–9) → prediction position (L8–11); the
+   predicted node's own row ~0.00 throughout. Head ablation (`48585025`): no single head
+   necessary, top 5 in the L6–L10 window.
+3. **DD never appears during training** (`48580229` + `48582169`, new). `known_mask` hits
+   0.925 by **epoch 5**, when solve_rate is 0.007; `frontier_mask` goes 0.654 → 0.679 over
+   895 more epochs while solve_rate grows ~100x. The one target developing *with* competence
+   is `next_color` (0.327 → 0.655, `r = 0.963`); `next_node`, `known_mask`, `remaining_mask`
+   all finish by epoch 5. Best algorithm description: **pick the node by the sorted-emission
+   convention (learned in 5 epochs), then spend training on which color goes there.**
+   One trajectory, no seed replicates → an observation, not yet a finding.
 
-## The two findings
-
-1. **The hint-density transition is real and already measurable at N=24** (`48581589`):
-   solve_rate 0.99 → 0.44 monotonically, `truncated_rate = 0.000` in *every* bin, so it is
-   not a generation-budget artifact. DD's floor `rho_min ≈ 0.477` is N-independent
-   (converged by N=96, `48581590`). The independent-**random**-hint ensemble has no
-   transition at any N (`48579545`: flat 0.64–0.78, highest at both extremes) — this
-   retires the old "scale N to ~1700 tokens" plan.
-   *Not established:* whether depth `T` or density `rho` controls the collapse.
-   `r(solve,T) = −0.966` vs `r(solve,rho) = +0.944` — collinear by construction.
-2. **The model is not running DD.** Four independent lines agree:
-   - probes (`48580216`): `known_mask` 0.91 vs `frontier_mask` 0.67 (layer-0 control 0.57)
-   - algorithm ID on disagreements only (`48582589`): loses to `ascending_after`
-     (DD 0.334 / heuristic 0.361); worse at d0064 (0.238 / 0.415)
-   - causal counterfactual (`48583444`): flip rate 0.267 vs 0.25 chance
-   - SAE (`48583439`, now sparse, `hit_target_l0=True`): no `frontier` family at any layer
-   Best description: **bookkeeping of which nodes are colored + the sorted-emission
-   convention + sub-threshold sensitivity to neighbour colors.**
-   That sensitivity is real (logit gap moves 12.3) and localized: `edited_hint` (L0–5) →
-   **recolored neighbour's** graph row (L6–9) → prediction position (L8–11). The predicted
-   node's own row carries ~0.00 throughout — color-to-node binding, not DD's neighbour-list
-   join. Head ablation (`48585025`): no single head necessary (worst L10H3 keeps 0.807),
-   and the top 5 sit in exactly the L6–L10 handoff window.
-
-## Running / queued
-
-- `48580229` spin_gnn_sudoku2_series — checkpoint series, RUNNING ~47 min
-- `48582169` spin_gnn_sudoku2_serprobe — PENDING, gated on the above. **This is the
-  "when during training" answer**; the deck has a placeholder page for it.
+Delivered: `notebooks/sudoku_when_during_training_2026-10-21/` (`7c50b99`), notebook + 9-page
+deck, on OneDrive; supersedes the `sudoku_interp_2026-10-19` deck.
 
 ## Open problems
 
-- Depth vs density is confounded. Next measurement: bin **equal-rho** instances by `T`.
-- SAE `n_dead_features = 0` with all 2048 alive at L4–12 → "alive" is a weak criterion
-  (fires ≥once in 26,448 positions); sparse per position, not well concentrated.
-- The 23 `next_node` SAE features at **layer 0** cannot be computing anything (raw
-  token+position embedding) — they are position features riding the sorted-emission
-  confound. Treat deeper `next_node` counts with the same suspicion.
-- `frontier_mask` at 0.67 is weak but above the 0.57 control; unclear if that residual is
-  real structure or probe leakage from `known_mask`.
+- Depth vs density still confounded. Next measurement: bin **equal-rho** instances by `T`.
+- **`frontier_mask`'s 0.679 is uninterpretable, not weak evidence** (`48825742`, labels only,
+  no model). The deducibility-free rule `1 − known` scores **0.734** (above the model), but a
+  procedure-matched BCE probe on the known bits alone scores **0.588** (below it) — balanced
+  accuracy on a ~15%-positive target is miscalibrated both ways. `shuffled = 0.5000`, so the
+  pooling itself is sound. Fix: rescore with AUC, an extra column on the existing sweep.
+  Until then, quote no number from this probe.
+- Training is ~18x longer than needed: solve_rate saturates by epoch 50 (0.787) at the level
+  it still has at epoch 900 (0.740) while `val_nll` rises monotonically 1.138 → 2.136.
+- SAE: all 2048 features "alive" at L4–12 → too weak a criterion. The 23 `next_node` features
+  at **layer 0** cannot compute anything — position features riding the sorted-emission
+  confound; distrust deeper `next_node` counts too.
 
 ## Next steps
 
-1. Read `48582169` when it lands → "when during training does DD appear?" → rebuild deck
-   (the page is already wired, `--series-probes`).
-2. Equal-rho / varied-`T` eval to disentangle depth from density.
-3. Untouched main task: `sudoku_mcmc.anneal` for `d=5`, `<m>` order parameter,
-   `gamma(rho)` for `d=4,6,8`; `d_model=256` @900ep.
+1. AUC rescore of the probe sweep, so finding 2's probe line becomes quotable.
+2. Equal-rho / varied-`T` eval to disentangle depth from density — last open transition question.
+3. `d_model=256` @900ep — the untried config, and the only shot queued at beating 0.767.
+4. Untouched main task: `sudoku_mcmc.anneal` for `d=5`, `<m>` order parameter, `gamma(rho)`
+   for `d=4,6,8`.
+
+## Running / queued
+
+No `spin_gnn_*` jobs. (9 other jobs on the account — `mls_*`, `wr_*`, `h43moments`,
+`eta10conv` — belong to other projects' sessions; leave them alone.)

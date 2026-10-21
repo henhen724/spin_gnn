@@ -127,3 +127,17 @@ you need. At most 3 lines appended per session.
   l1_coeff didn't transport across d_model (dense dictionary at FVE 0.992), and head ablation
   hooked out_proj, which nn.MultiheadAttention never calls, giving effect_retained==1.0 on all
   7200 rows. Both now have regression tests.
+
+## 2026-10-21
+
+- Series probes (`48582169`) answer "when during training does DD appear": never. `known_mask`
+  0.925 by epoch 5 at solve_rate 0.007; `frontier_mask` 0.654 → 0.679 over 895 more epochs.
+  `next_color` is the only target tracking solve_rate (0.327 → 0.655, r=0.963) — node choice is
+  an ordering convention learned in 5 epochs, training goes into color choice. Deck + notebook
+  in `notebooks/sudoku_when_during_training_2026-10-21/` (`7c50b99`), uploaded.
+- `48825742` (labels only, no model) settles the `frontier_mask` 0.679 question against my own
+  pre-registered reading: `1 − known` scores 0.734 (above the model) but a procedure-matched
+  probe on known bits scores 0.588 (below it). The metric is miscalibrated both ways, so the
+  number is uninterpretable rather than refuted. `shuffled = 0.5000`. Needs an AUC rescore.
+- Also noted from the series: solve_rate saturates at epoch 50 and `val_nll` rises monotonically
+  thereafter, so 850 of the 900 epochs are pure overfitting. Nothing beat agg_solve_rate 0.767.
