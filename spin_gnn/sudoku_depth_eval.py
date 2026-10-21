@@ -94,8 +94,15 @@ def eval_solve_by_depth(
         "realized_rho_spread": float(realized.max() - realized.min()),
         "realized_rho_mean": float(realized.mean()),
         "r_solve_T_at_fixed_rho": float(np.corrcoef(solve, depth)[0, 1]) if len(records) > 2 else float("nan"),
-        # If density really is pinned, this should be noise, not structure.
-        "r_realized_rho_T": float(np.corrcoef(realized, depth)[0, 1]) if len(records) > 2 else float("nan"),
+        # If density really is pinned, this should be noise, not structure. A
+        # zero-variance realized_rho is the BEST case, not a missing value, so
+        # it is reported as an exact pin rather than left as the NaN that
+        # corrcoef returns when it divides by a zero standard deviation.
+        "r_realized_rho_T": (
+            float(np.corrcoef(realized, depth)[0, 1])
+            if len(records) > 2 and realized.std() > 0 else float("nan")
+        ),
+        "realized_rho_exactly_pinned": bool(realized.std() == 0),
     }
     return records, diagnostics
 
@@ -140,8 +147,13 @@ def main():
             print(f"  realized_rho spread across bins: {diag['realized_rho_spread']:.4f} "
                   f"(mean {diag['realized_rho_mean']:.4f})")
             print(f"  r(solve_rate, T) at fixed rho:   {diag['r_solve_T_at_fixed_rho']:+.3f}")
-            print(f"  r(realized_rho, T):              {diag['r_realized_rho_T']:+.3f}  "
-                  "<- should be ~0 if density is really pinned")
+            if diag["realized_rho_exactly_pinned"]:
+                print("  r(realized_rho, T):              n/a -- realized_rho is IDENTICAL "
+                      "in every bin, the clean case")
+            else:
+                print(f"  r(realized_rho, T):              {diag['r_realized_rho_T']:+.3f}  "
+                      "<- near 0 means density really is pinned; a large value means the "
+                      "confound moved inside the bins and this rho must be discounted")
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out_csv)) or ".", exist_ok=True)
     with open(args.out_csv, "w", newline="") as fh:
