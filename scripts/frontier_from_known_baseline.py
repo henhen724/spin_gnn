@@ -14,8 +14,11 @@ No model is involved. Everything here is computed from DD's own ground-truth
 labels, so it measures a property of the TASK, not of any network:
 
   not_known   pred = 1 - known_mask, the simplest bookkeeping rule
-  known_probe a linear probe given ONLY the N known_mask bits as features
-              (the fair ceiling on "what bookkeeping alone can imply")
+  known_probe a linear probe given ONLY the N known_mask bits as features,
+              fit by the same procedure as the model probes. NOT a ceiling on
+              "what bookkeeping alone can imply", as this script first claimed:
+              it is trained with BCE on a ~15%-positive target, so it
+              under-predicts positives and its balanced accuracy is a FLOOR.
   degree_aug  known_mask plus n_known_nbrs, i.e. bookkeeping plus a count that
               needs the graph but not the forcing rule
   shuffled    known_mask shuffled across positions, the chance control
@@ -23,6 +26,14 @@ labels, so it measures a property of the TASK, not of any network:
 Scoring is pooled over all (position, node) bits with the same tpr/tnr
 definition fit_linear_probe uses, so the numbers are directly comparable to
 the balanced_accuracy column in probes.csv / series_probes.csv.
+
+That comparability is the problem, though: the first run of this script came
+back with not_known at 0.734 (ABOVE the model's 0.679) and known_probe at
+0.588 (BELOW it), which is not a contradiction but a demonstration that
+balanced accuracy at a fixed 0-logit threshold ranks these procedures by how
+aggressively they predict positives rather than by what they know. The
+threshold-free columns -- auroc, average_precision -- are therefore reported
+alongside, and are what should be quoted.
 """
 import argparse
 import json
@@ -32,7 +43,7 @@ import torch
 
 from spin_gnn.config import SudokuReasoningConfig
 from spin_gnn.sudoku_activations import dd_state_labels
-from spin_gnn.sudoku_probes import fit_linear_probe
+from spin_gnn.sudoku_probes import auroc, average_precision, fit_linear_probe
 from spin_gnn.train_sudoku_transformer import build_instances, build_vocab
 
 
@@ -73,33 +84,44 @@ def main():
     print(f"{f_tr.shape[0]} train / {f_te.shape[0]} test positions, {f_tr.shape[1]} nodes")
     print(f"frontier positive rate: {f_te.mean():.4f}   known positive rate: {k_te.mean():.4f}")
 
+    def probe_on(x_tr, x_te):
+        m = fit_linear_probe(
+            torch.as_tensor(x_tr, dtype=torch.float32), f_tr,
+            torch.as_tensor(x_te, dtype=torch.float32), f_te,
+            "multilabel", epochs=args.probe_epochs,
+        )
+        return {k: m[k] for k in ("balanced_accuracy", "auroc", "average_precision")}
+
     res = {}
-    res["not_known"] = balanced_accuracy(1 - k_te, f_te)
-
-    res["known_probe"] = fit_linear_probe(
-        torch.as_tensor(k_tr, dtype=torch.float32), f_tr,
-        torch.as_tensor(k_te, dtype=torch.float32), f_te,
-        "multilabel", epochs=args.probe_epochs,
-    )["balanced_accuracy"]
-
-    res["degree_aug"] = fit_linear_probe(
-        torch.as_tensor(np.hstack([k_tr, nb_tr]), dtype=torch.float32), f_tr,
-        torch.as_tensor(np.hstack([k_te, nb_te]), dtype=torch.float32), f_te,
-        "multilabel", epochs=args.probe_epochs,
-    )["balanced_accuracy"]
+    # A 0/1 rule, so its AUROC equals its balanced accuracy by construction
+    # (tested in tests/test_sudoku_probes.py); reported anyway so the table
+    # has one number per column and the identity is visible rather than
+    # asserted in prose.
+    res["not_known"] = {
+        "balanced_accuracy": balanced_accuracy(1 - k_te, f_te),
+        "auroc": auroc((1 - k_te).ravel(), f_te.ravel()),
+        "average_precision": average_precision((1 - k_te).ravel(), f_te.ravel()),
+    }
+    res["known_probe"] = probe_on(k_tr, k_te)
+    res["degree_aug"] = probe_on(np.hstack([k_tr, nb_tr]), np.hstack([k_te, nb_te]))
 
     rng = np.random.default_rng(0)
-    res["shuffled"] = fit_linear_probe(
-        torch.as_tensor(k_tr[rng.permutation(len(k_tr))], dtype=torch.float32), f_tr,
-        torch.as_tensor(k_te[rng.permutation(len(k_te))], dtype=torch.float32), f_te,
-        "multilabel", epochs=args.probe_epochs,
-    )["balanced_accuracy"]
+    res["shuffled"] = probe_on(k_tr[rng.permutation(len(k_tr))], k_te[rng.permutation(len(k_te))])
+    res["positive_rate"] = {"balanced_accuracy": 0.5, "auroc": 0.5,
+                            "average_precision": float(f_te.mean())}
 
-    print("\nbalanced accuracy on frontier_mask, from label information only:")
-    for name in ("shuffled", "not_known", "known_probe", "degree_aug"):
-        print(f"  {name:>12}: {res[name]:.4f}")
+    print("\nfrontier_mask predictability from label information only:")
+    print(f"  {'':>12}  {'bal_acc':>8} {'auroc':>8} {'avg_prec':>9}")
+    for name in ("positive_rate", "shuffled", "not_known", "known_probe", "degree_aug"):
+        r = res[name]
+        print(f"  {name:>12}: {r['balanced_accuracy']:8.4f} {r['auroc']:8.4f} "
+              f"{r['average_precision']:9.4f}")
+    print("  (`positive_rate` is the chance row: AP's chance level is the base rate,")
+    print("   not 0.5, so AP must be read against it.)")
     print("\nfor comparison, the measured model probe (48580216, d0128 @900ep):")
     print("  frontier_mask peak 0.679   known_mask peak 0.919   layer-0 control 0.571")
+    print("  -- balanced accuracy, which is why the re-probe with --seed 0 1 2 is")
+    print("     needed before any of these can be compared on auroc.")
 
     if args.out_json:
         with open(args.out_json, "w") as fh:
