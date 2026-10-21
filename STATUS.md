@@ -44,8 +44,7 @@ deck, on OneDrive; supersedes the `sudoku_interp_2026-10-19` deck.
 - SAE: all 2048 features "alive" at L4–12 → too weak a criterion. The 23 layer-0 `next_node`
   features cannot compute anything — sorted-emission confound; distrust deeper counts too.
 - **27 `model.pt` files (267MB) are committed**; `.gitignore` had no `*.pt` until `3273932`.
-  Patterns added, files left tracked — untracking won't shrink history, so rewriting is
-  hshunt's call.
+  Patterns added, files left tracked — untracking won't shrink history, so rewriting is yours.
 
 ## Next steps
 
