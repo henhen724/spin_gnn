@@ -1,40 +1,47 @@
-# STATUS — spin_gnn, branch `sudoku-dd` (2026-10-21)
+# STATUS — spin_gnn, branch `sudoku-dd` (2026-10-22)
 
 ## Current best result
 
-**`d0256` @300ep, `n_train=20000` — solve_rate 0.9847 [0.9771, 0.9898]** on the shared 1500-instance pool (`48912134`), ahead of `d0384 x 20000` at 0.9720 [0.9624, 0.9792]: paired McNemar on the 53 instances where they disagree is 36–17 for d256, **exact p = 0.013**. This **reverses** their own-val ranking (0.973 d256 vs 0.987 d384), which is why the 300-instance per-run `agg_solve_rate` is retired as the metric of record. Both are copied to `$OAK/hshunt/checkpoints/spin_gnn/`.
+**`d0256` @300ep, `n_train=80000` — shared-pool solve_rate 0.9960 [0.9913, 0.9982]** (`48912548` trained, `48999377` scored), up from 0.9847 for `d0256 x 20000`: paired delta **+0.0113**, 27 discordant instances **22–5**, **exact p = 0.0015**. Archived to `$OAK/hshunt/checkpoints/spin_gnn/sudoku_dd_d0256_L12_ntrain80000_ep300_sharedpool0.9960_job48912548/`.
 
-**The metric of record is now the shared pool** (`spin_gnn.sudoku_agg_eval`, 1500 instances at `seed_start=5e10`, disjoint from every training set, scored by every checkpoint and compared paired). Per-run `agg_solve_rate` validates on `seed + n_train_instances`, so each `n_train` sees *different* instances and the data4x training range even covers the 5000-run val seeds; at p≈0.98 its SE is 0.008, so nothing above ~0.97 can be ranked there. Raw solved/not matrices go to `*_per_instance.npz` so any pair can be re-tested without re-running the job.
+**Metric of record: the shared pool** (`spin_gnn.sudoku_agg_eval`, 1500 instances at `seed_start=5e10`, disjoint from every training set, every checkpoint scored on it, compared paired with McNemar exact; Wilson intervals). Per-run 300-instance `agg_solve_rate` is retired — it validates on `seed + n_train_instances`, so each `n_train` sees different instances, and it had the top two backwards on 10-21. `48999377` wrote one authoritative 7×1500 matrix (`agg_paired_full_grid.csv` + `_per_instance.npz`), so any future pair is testable offline without a GPU.
 
-**Shared-pool leaderboard:** d256×20000 0.9847 · d384×20000 0.9720 · d384×5000 0.8760 [0.8584, 0.8917] · d256×5000 0.8200 [0.7997, 0.8386]. The last two were a "tie" at n=300 and are not (disjoint 95% intervals).
+**Width × data grid, shared-pool solve_rate** (all 300 ep, L12/ff1024/lr1e-3):
 
-## Findings (1–3 in the committed notebooks; detail in LOG)
+|        | n=5000 | n=20000 | n=80000 |
+|--------|--------|---------|---------|
+| d0128  | 0.7707 | 0.9733  |   —     |
+| d0256  | 0.8200 | 0.9847  | **0.9960** |
+| d0384  | 0.8760 | 0.9720  |   —     |
+
+**`d0128 x 20000` (4.0M params) ties `d0384 x 20000` (16.7M)** — 0.9733 vs 0.9720, overlapping intervals. At this scale data buys more than width. The six previously scored checkpoints reproduced their recorded rates to 4 decimals (pool is deterministic, nothing drifted).
+
+## Findings (notebooks committed; detail in LOG)
 
 1. **Hint-density transition is real at N=24** (`48581589`): 0.99 → 0.44, DD floor 0.477.
 2. **The model is not running DD** — probes, algorithm-ID, counterfactual, SAE all agree.
-3. **Frontier is represented early and strengthens only slightly** (`48861799` + ladder `48913017`). `frontier_mask` peak AUROC is 0.907–0.938 across 5 checkpoints spanning 0.82–0.985 solve_rate, not the flat 0.863 I reported — but **0.863 came from a `d0128` series, so width is confounded with data**. Clean within-width: d256 0.907→0.916, d384 0.916→0.938 (seeds 0/1/2, spread ±0.001; layer-0 control 0.676). A 10× cut in failures buys +0.03 AUROC, and the frontier peaks mid-stack (L5–L7; L12 only for d384×20000), so "represented but underused" survives; "flat" does not.
+3. **The frontier probe measures width, not competence** (rewritten, `48935109` + `48999377`). Across all 7 cells, `frontier_mask` peak AUROC has Spearman **+0.25** with shared-pool solve_rate but **+0.85** with `d_model`. Concretely: d256×5000 hits 0.9071 while solving 0.820; d128×20000 only 0.8831 while solving 0.973; the new best model **fell** to 0.9067 (from 0.9162) while its solve rate rose 0.985 → 0.996. Within-width data effects are small and not even signed consistently (d128 0.8578→0.8831, d256 0.9162→**0.9067**, d384 0.9163→0.9381). The old 0.863 → 0.907 "gap" was width. Frontier peaks mid-stack (L5–L7).
 4. **`val_nll` barely predicts solve_rate across models, r = +0.33** (34 runs; `n_params` +0.69, `epochs` +0.61). "val_nll fell" is not by itself evidence.
-5. **Depth costs something, independent of density** (`48863464`), *against* my pre-registered flat: at rho=0.75 realized density is **identical** across bins yet solve_rate falls 0.980 → 0.931 over T=1→4 (d0128 0.960→0.914), and at rho=0.60, 0.915 → 0.798 over T=2→6. All six cells negative (r −0.71…−0.98), each only ~1.5–2.5σ, so the consistency is the evidence. **Discount rho=0.50**: `r(realized_rho, T) = −0.82`, confound intact.
-6. **Training-set size was the binding constraint and was never varied until 10-20** — pinned at 5000 for all 31 earlier runs; 20000 gave the largest single gain in 34 runs (+0.126 own-val, and 0.82→0.985 on the shared pool). **`d384` is a separate win** (`48862411`): agg ties 0.847 but k0 0.24 → **0.99**, o1 → **0.994**.
-7. **The depth cost is NOT in the token-level slots** (`48868696`; 600 inst × 3 rho × 2 ckpts). Teacher-forced coloring is at ceiling and flat (0.977–0.997, ≤0.01/round); selection's apparent *rise* with round (+0.074…+0.115) collapses to ≈+0.009 once position (≡ candidate count) is fixed. **Refutes the chaining-colors guess I put on the deck.** Caveat: selection scores agreement with DD's *sorted order*, not correctness; finding 5 open.
-8. **What tracks competence is `next_node`, not the frontier** (`48913017`). Peak `next_node` accuracy (0.789 / 0.810 / 0.957 / 0.964) orders the four models **exactly** as the shared pool does, reversal included; `next_color` gets 3 of 4 (0.69→0.83); `frontier_mask` gets it wrong (it ranks d384×20000 first). Both next-step probes **step up** with `n_train` rather than sloping, and both peak at the **last** layer while the frontier peaks mid-stack — so late layers carry the competence gain.
+5. **Depth costs something, independent of density** (`48863464`): at rho=0.75 realized density is identical across bins yet solve_rate falls 0.980 → 0.931 over T=1→4; at rho=0.60, 0.915 → 0.798 over T=2→6. All six cells negative, each only 1.5–2.5σ. Discount rho=0.50 (`r(realized_rho, T) = −0.82`).
+6. **Training-set size was the binding constraint, unvaried until 10-20** — pinned at 5000 for all 31 earlier runs. It is still the strongest lever and **has not saturated at 80000**.
+7. **The depth cost is NOT in the token-level slots** (`48868696`). Teacher-forced coloring is at ceiling and flat; selection's rise with round collapses to ≈+0.009 once position is fixed. Refutes the chaining-colors guess. Caveat: selection scores agreement with DD's *sorted* order, not correctness.
+8. **What tracks competence is `next_node`** (strengthened to 7 cells). Peak accuracy has Spearman **+0.96** with shared-pool solve_rate and steps up with data at every width: d128 0.738→0.951, d256 0.789→0.964→**0.990**, d384 0.810→0.957. One inversion, between d384×20000 and d128×20000, whose solve rates differ by 0.0013 and are not separable. Peaks at the **last** layer, unlike the frontier.
 
 ## Open problems
 
-- Pre-registration scorecard for today: **2 held, 3 wrong**, and all three misses were me assuming a difference was unresolvable. Keep pre-registering, but stop predicting ties as the safe answer.
-- "Overfitting" was data starvation (finding 6): `48912548` at `n_train=80000` has a train/val gap of **+0.042** at epoch 125 (0.8684 / 0.9086) versus **+0.817** for the data4x runs at ep300, and is already below their val minimum of 0.957. Where the within-run optimum sits is still untested.
-- SAE: all 2048 features "alive" at L4–12 → criterion too weak; layer-0 `next_node` = the sorted-order confound, so deeper counts are suspect too (see finding 7's caveat).
+- **The easy end collapsed while the full range improved.** `48912548`: `solve_rate_k0` 0.60 → **0.07**, `mean_o1` 0.918 → **0.776**, with shared pool at 0.9960. Width did the same on 10-18, so it is not specific to the data axis. k0 = 0.07 alongside 0.996 is a contradiction — decoding failure or representation failure, untested.
+- Pre-registration scorecard for 10-22: **4 held, 3 missed** (held: ≥0.9847 with positive delta; next_node ≥0.96 → 0.9895; d128×20000 frontier in [0.855,0.895] → 0.8831; control reproduces 0.863±0.015 → 0.8578. Missed: predicted range [0.980,0.995] → 0.9960 just above; k0 ≥0.85 → 0.07; mean_o1 ≥0.96 → 0.776). Both remaining misses are the easy-end problem.
+- SAE: all 2048 features "alive" at L4–12 → criterion too weak; layer-0 `next_node` = the sorted-order confound, so deeper counts are suspect (finding 7's caveat).
 - **27 `model.pt` files (267MB) are committed** (no `*.pt` in `.gitignore` until `3273932`); untracking won't shrink history, so a rewrite is your call.
+- Whether `d0128 x 20000` deserves an `$OAK` archive too (4.0M params tied with the 16.7M model) — your call, archiving is manual by policy.
 
 ## Next steps
 
-1. Re-score `48912548` on the **shared pool**, not its own 300-instance val, and against its pre-registration (agg a tie, k0 ≥ 0.85, o1 ≥ 0.96).
-2. Finding 5 follow-up: attribute generation failures by where the first error lands (free generation, not teacher forcing — that is what finding 7 ruled out).
-3. Results **notebook** for the paired eval (the slide deck is built and sent to OneDrive; the notebook is not).
-4. Re-read the whole ladder as a 2×2 once `48935109` lands; if its prediction (a) misses, **rewrite** finding 3 rather than softening it again.
-5. Untouched main task: `sudoku_mcmc.anneal` for `d=5`, `<m>` order parameter, `gamma(rho)` for `d=4,6,8`.
+1. **Push the data axis again: `d0256 x 320000`**, one change, now that 80000 did not saturate. Pre-register the shared-pool range before it runs.
+2. Resolve the easy-end collapse: is k0=0.07 a decoding failure (greedy/ordering) or a representation failure? Inspect where the first error lands on k=0 instances.
+3. Finding 5 follow-up: attribute generation failures by where the first error lands under **free** generation (finding 7 ruled out the teacher-forced slots).
+4. Untouched main task: `sudoku_mcmc.anneal` for `d=5`, `<m>` order parameter, `gamma(rho)` for `d=4,6,8`.
 
 ## Running
 
-- `48912548` **d256 × n_train 80000**, one change from `48854233` (which is the new best). Epoch 125/300 at the last check, ~1.21 min/epoch, ~3h30 of training left inside an 8h limit. Curve healthy: val_nll flat at 0.906–0.909 over the last several epochs with almost no train/val gap, i.e. 80000 instances largely eliminated the overfitting. Pre-reg: own-val agg a tie (no room at n=300), k0 ≥ 0.85 continuing 0.24→0.60, o1 ≥ 0.96.
-- `48935109` **`d0128 × n_train=20000`, then probes, then shared-pool eval, in one allocation** — fills the missing cell of the width×data 2×2 so finding 3's 0.863→0.907 gap can be split into a width effect and a data effect. Pre-reg: (a) frontier peak AUROC in [0.855, 0.895], short of d256×5000's 0.907; (b) next_node peak ≥ 0.93, joining the other n_train=20000 models — the sharp test of finding 8; (c) shared-pool solve_rate 0.90–0.96 and **not** beating 0.9847; (d) control — the d128×5000 re-probe reproduces 0.863 ± 0.015, and if it does not, (a) is uninterpretable.
+- None. `48912548` (train, 5:33:11), `48935109` (d128×20000 + probes + eval, 1:07:26) and `48999377` (7-checkpoint pool + probes, 10:27) all COMPLETED, ExitCode 0:0.

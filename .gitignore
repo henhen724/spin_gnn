@@ -40,6 +40,8 @@ sudoku_attention_evolution/
 
 # Dated run-output directories. These are written into the repo working tree
 # because $SCRATCH/spin_gnn IS the tree, so each new one needs ignoring.
-sudoku_*_2026-*/
-sudoku_sae_*/
-sudoku_circuits_*/
+# Anchored to the root: without the leading slash these also matched
+# notebooks/sudoku_*_2026-*/, whose figures a results notebook has to carry.
+/sudoku_*_2026-*/
+/sudoku_sae_*/
+/sudoku_circuits_*/
