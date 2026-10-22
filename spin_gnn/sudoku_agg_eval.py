@@ -182,6 +182,19 @@ def main():
         w.writeheader()
         w.writerows(rows)
     print(f"\nwrote {len(rows)} rows to {args.out_csv}")
+
+    # The CSV only holds comparisons against the reference, so a question like
+    # "are the two 5000-instance models actually tied?" would need the whole
+    # job re-run. Save the raw solved/not matrix instead: every pair can then
+    # be tested afterwards from a file that costs nothing to keep.
+    npz_path = os.path.splitext(args.out_csv)[0] + "_per_instance.npz"
+    np.savez_compressed(
+        npz_path,
+        solved=np.stack([r["solved_per_instance"] for r in results]),
+        names=np.array(names, dtype=object),
+        seed_start=args.seed_start,
+    )
+    print(f"wrote the {len(results)}x{args.n_instances} solved matrix to {npz_path}")
     print(json.dumps({"shared_instance_signature": sig}, default=str))
 
 
