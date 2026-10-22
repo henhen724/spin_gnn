@@ -182,7 +182,12 @@ def probe_checkpoint(ckpt_dir, n_train_instances, n_test_instances, max_pos, dev
 
     acts_tr, lab_tr = collect_dataset(model, train_inst, vocab, device, max_pos, np.random.default_rng(seed))
     acts_te, lab_te = collect_dataset(model, test_inst, vocab, device, max_pos, np.random.default_rng(seed + 1))
-    print(f"{os.path.basename(ckpt_dir)}: {acts_tr.shape[1]} train / {acts_te.shape[1]} test positions, "
+    # The sweep tag is only unique within a sweep directory -- d0384_..._pre
+    # names both the n_train=5000 and the n_train=20000 model -- so carry the
+    # parent as well, or rows from different runs become indistinguishable.
+    label = os.path.join(os.path.basename(os.path.dirname(os.path.abspath(ckpt_dir))),
+                         os.path.basename(os.path.abspath(ckpt_dir)))
+    print(f"{label}: {acts_tr.shape[1]} train / {acts_te.shape[1]} test positions, "
           f"{acts_tr.shape[0]} layers")
 
     rows = []
@@ -193,7 +198,7 @@ def probe_checkpoint(ckpt_dir, n_train_instances, n_test_instances, max_pos, dev
                 epochs=epochs, device=device,
             )
             rows.append({
-                "checkpoint": os.path.basename(ckpt_dir), "seed": seed,
+                "checkpoint": os.path.basename(ckpt_dir), "run": label, "seed": seed,
                 "layer": layer, "target": target, "kind": kind,
                 "n_train_positions": int(acts_tr.shape[1]), "n_test_positions": int(acts_te.shape[1]),
                 **{k: round(v, 5) if isinstance(v, float) else v for k, v in m.items()},
