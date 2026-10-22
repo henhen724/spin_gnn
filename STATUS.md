@@ -29,11 +29,12 @@
 ## Next steps
 
 1. Re-score `48912548` on the **shared pool**, not its own 300-instance val, and against its pre-registration (agg a tie, k0 ≥ 0.85, o1 ≥ 0.96).
-2. **Train `d0128 × n_train=20000`** — the one run that separates width from data in the 0.863 → 0.907 frontier gap, and the only thing blocking a clean statement of finding 3.
-3. Finding 5 follow-up: attribute generation failures by where the first error lands (free generation, not teacher forcing — that is what finding 7 ruled out).
-4. Results **notebook** for the paired eval (the slide deck is built and sent; the notebook is not).
+2. Finding 5 follow-up: attribute generation failures by where the first error lands (free generation, not teacher forcing — that is what finding 7 ruled out).
+3. Results **notebook** for the paired eval (the slide deck is built and sent to OneDrive; the notebook is not).
+4. Re-read the whole ladder as a 2×2 once `48935109` lands; if its prediction (a) misses, **rewrite** finding 3 rather than softening it again.
 5. Untouched main task: `sudoku_mcmc.anneal` for `d=5`, `<m>` order parameter, `gamma(rho)` for `d=4,6,8`.
 
 ## Running
 
 - `48912548` **d256 × n_train 80000**, one change from `48854233` (which is the new best). Epoch 125/300 at the last check, ~1.21 min/epoch, ~3h30 of training left inside an 8h limit. Curve healthy: val_nll flat at 0.906–0.909 over the last several epochs with almost no train/val gap, i.e. 80000 instances largely eliminated the overfitting. Pre-reg: own-val agg a tie (no room at n=300), k0 ≥ 0.85 continuing 0.24→0.60, o1 ≥ 0.96.
+- `48935109` **`d0128 × n_train=20000`, then probes, then shared-pool eval, in one allocation** — fills the missing cell of the width×data 2×2 so finding 3's 0.863→0.907 gap can be split into a width effect and a data effect. Pre-reg: (a) frontier peak AUROC in [0.855, 0.895], short of d256×5000's 0.907; (b) next_node peak ≥ 0.93, joining the other n_train=20000 models — the sharp test of finding 8; (c) shared-pool solve_rate 0.90–0.96 and **not** beating 0.9847; (d) control — the d128×5000 re-probe reproduces 0.863 ± 0.015, and if it does not, (a) is uninterpretable.
