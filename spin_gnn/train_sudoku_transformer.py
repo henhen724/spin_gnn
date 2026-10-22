@@ -182,7 +182,8 @@ def generate(model, prompt_tokens, vocab, max_new_tokens, device="cpu", temperat
     return seq[0].cpu().numpy()
 
 
-def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0, rng=None):
+def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0, rng=None,
+               return_per_instance=False):
     """instances: list of (adj, colors, hints, trace) tuples. For each,
     prompts the model with everything through BEGIN_REASONING (hints +
     true graph) and lets it freely generate the rest -- can it derive its
@@ -200,8 +201,15 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
     finish writing". Harder instances have deeper traces and therefore longer
     token sequences, so a generation budget that is tight only at low hint
     density would mimic a reasoning collapse exactly where a transition is
-    expected. Any solve_rate drop should be read alongside it."""
+    expected. Any solve_rate drop should be read alongside it.
+
+    `return_per_instance` additionally returns a boolean array of which
+    instances were solved. Two models run on the SAME instance list can then
+    be compared pairwise, which is far more sensitive near the ceiling than
+    comparing two rates with independent standard errors: only the instances
+    the two models disagree on carry any information about the difference."""
     rng = rng or np.random.default_rng()
+    solved_flags = []
     n_solved = n_outcome_correct = n_well_formed = n_truncated = 0
     ev_rows = ev_rows_correct = ev_slots = ev_slots_correct = 0
     for adj, colors, hints, trace in instances:
@@ -219,10 +227,13 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
         if not ((continuation == vocab.SOLVED) | (continuation == vocab.UNRESOLVED)).any():
             n_truncated += 1
         true_outcome = "SOLVED" if trace["resolved"] else "UNRESOLVED"
+        solved = False
         if decoded["outcome"] == true_outcome:
             n_outcome_correct += 1
             if check_solution(decoded, colors, vocab.n_nodes):
                 n_solved += 1
+                solved = True
+        solved_flags.append(solved)
 
         if getattr(vocab, "scratchpad", False):
             ev = check_evidence(decoded)
@@ -246,6 +257,8 @@ def solve_rate(model, instances, vocab, device, max_new_tokens, temperature=0.0,
         metrics["evidence_row_accuracy"] = ev_rows_correct / ev_rows if ev_rows else None
         metrics["evidence_slot_accuracy"] = ev_slots_correct / ev_slots if ev_slots else None
         metrics["n_evidence_rows"] = ev_rows
+    if return_per_instance:
+        metrics["solved_per_instance"] = np.array(solved_flags, dtype=bool)
     return metrics
 
 
