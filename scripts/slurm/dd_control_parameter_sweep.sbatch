@@ -47,7 +47,33 @@
 #  (e) Control: unhinted_at_rho50 stays O(1) in EVERY random-hint cell, so
 #      the "threshold runs off to rho=1" result is not special to (5,4).
 #
-# SUPERSEDES 49437796, which died after 50 min with
+# SUPERSEDES 49445119, which died after 41 min on the SAME exception as the
+# run it replaced, in the other branch:
+#   ValueError: need q | N and q(q-1) | d*N (N=24, d=4, q=5)
+#   ... dd_removal_path_small_n.py line 38, planted_regular_graph
+# My previous fix guarded only the random branch, on the strength of a
+# docstring claim of mine that the removal branch does not use that
+# constructor. It does, at dd_removal_path_small_n.py:38. The claim was wrong
+# when I wrote it and I acted on it without checking. Three changes:
+#   * random_is_constructible() now gates BOTH branches.
+#   * check_grid() enumerates every (cell, size, branch) point the constructor
+#     would reject and prints the list BEFORE any measurement starts. Both
+#     failures were fully decidable from the arguments alone; this converts
+#     that whole class into a printed line.
+#   * --sizes-removal becomes 60 120 240 480 960 and --sizes-random 60 120 360.
+#     Every multiple of 60 satisfies both divisibility conditions for every
+#     (d, q) here, so all 21 cells are measurable on one common size list for
+#     the first time. Verified by dry run: 168 of 168 points constructible,
+#     none unaffordable, 5 removal sizes per cell.
+# This is the third attempt at this sweep, so it is the last one: if it fails
+# again, document and move on rather than resubmitting.
+#
+# The size change costs comparability with the N=24..996 numbers quoted in
+# finding 1, which were measured at (5,4) on the old list. (5,4) is re-measured
+# here on the new list, so the deck stays internally consistent and the two can
+# be related through that cell rather than assumed equal.
+#
+# ALSO SUPERSEDES 49437796, which died after 50 min with
 #   ValueError: need q | N and q(q-1) | d*N (N=24, d=4, q=5)
 # raised by planted_regular_graph at the 13th of 21 cells and fatal under
 # `set -e`. The constructor balances colour classes exactly and spreads each
@@ -103,17 +129,17 @@ export NUMBA_NUM_THREADS=1
 export PYTHONUNBUFFERED=1
 cd "${SLURM_SUBMIT_DIR}"
 
-OUT_DIR="${SCRATCH}/spin_gnn/sudoku_dd_control_param_2026-10-24b"
+OUT_DIR="${SCRATCH}/spin_gnn/sudoku_dd_control_param_2026-10-25"
 mkdir -p "$OUT_DIR"
 
 python -m scripts.dd_control_parameter_sweep \
     --degrees 3 4 5 6 8 10 \
     --colors 3 4 5 6 \
-    --sizes-removal 24 48 96 192 384 996 \
+    --sizes-removal 60 120 240 480 960 \
     --sizes-random 60 120 360 \
     --n-seeds-removal 400 \
     --n-seeds-removal-large 200 \
-    --large-n 192 \
+    --large-n 240 \
     --n-instances-random 300 \
     --seed-start 4242 \
     --out-dir "$OUT_DIR"

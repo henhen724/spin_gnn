@@ -103,8 +103,13 @@ def random_is_affordable(N, d, q, max_fill=0.4):
     approaches that ceiling the rejection sampler retries for a long time:
     measured on run 49431733, d=6 q=3 N=24 (fill 0.375) took 4 s, d=8 q=3 N=24
     (fill 0.500) took 49 s, and d=10 q=3 N=24 (fill 0.625) did not finish in
-    15 minutes. The removal branch does not use this constructor and is
-    unaffected.
+    15 minutes.
+
+    Applies to the random branch only, because it is the only one that builds
+    a fresh graph per grid point. (An earlier version of this docstring said
+    the removal branch does not use `planted_regular_graph` at all. That was
+    simply wrong -- `dd_removal_path_small_n.measure` calls it at line 38 --
+    and acting on it is what let 49445119 die the same death as 49437796.)
 
     Skipping is honest here rather than lossy: the cells this excludes are the
     ones whose 50% crossing came back `nan` anyway, because at that density
@@ -124,10 +129,34 @@ def random_is_constructible(N, d, q):
 
     This is a hard constraint of the constructor, not a cost heuristic like
     `random_is_affordable`, so it is checked separately and reported
-    separately: the affected cells are not expensive, they are impossible at
-    these sizes, and the removal branch they share a cell with is unaffected.
+    separately: the affected points are not expensive, they are impossible.
+
+    It governs BOTH branches. `dd_removal_path_small_n.measure` builds its
+    graph with the same constructor, so a size that is unconstructible for a
+    cell is unconstructible for that cell's removal points too; 49445119 died
+    on exactly that after I had guarded only the random branch. `check_grid`
+    below is the guard against a third repetition -- it proves every point is
+    constructible before any measurement starts.
     """
     return N % q == 0 and (d * N) % (q * (q - 1)) == 0
+
+
+def check_grid(grid, sizes_removal, sizes_random):
+    """Every (cell, size, branch) point that the constructor would reject.
+
+    Run before any measurement. Both previous attempts at this sweep died
+    mid-flight on a constraint that was fully decidable from the arguments
+    alone -- 49437796 in the random branch, 49445119 in the removal branch
+    after I guarded only the random one. Checking the whole grid up front
+    costs microseconds and converts that class of failure into a printed list.
+    """
+    bad = []
+    for d, q in grid:
+        for branch, sizes in (("removal", sizes_removal), ("random", sizes_random)):
+            for N in sizes:
+                if not random_is_constructible(N, d, q):
+                    bad.append((branch, d, q, N))
+    return bad
 
 
 def write_csv(path, rows):
@@ -159,9 +188,13 @@ def main():
     # JIT), so the removal branch is nearly free and can span the sizes needed
     # for finite-size scaling. The random branch is ~100x dearer per point --
     # planted_regular_graph retries a lot at small N -- so it gets 3 sizes.
+    # Multiples of 60. Any multiple of 60 satisfies q | N and q(q-1) | d*N for
+    # every (d, q) on this grid, so the whole grid is measurable on one common
+    # size list -- which the old 24/48/96/192/384/996 was not, having no size
+    # divisible by 5 and therefore no q=5 cell at all in either branch.
     ap.add_argument("--sizes-removal", type=int, nargs="+",
-                    default=[24, 48, 96, 192, 384, 996])
-    ap.add_argument("--sizes-random", type=int, nargs="+", default=[24, 96, 384])
+                    default=[60, 120, 240, 480, 960])
+    ap.add_argument("--sizes-random", type=int, nargs="+", default=[60, 120, 360])
     ap.add_argument("--n-seeds-removal", type=int, default=400)
     ap.add_argument("--n-seeds-removal-large", type=int, default=200)
     ap.add_argument("--large-n", type=int, default=192)
@@ -176,6 +209,12 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     grid = cells(args.degrees, args.colors)
     print(f"{len(grid)} (degree, n_colors) cells: {grid}", flush=True)
+
+    bad = check_grid(grid, args.sizes_removal, args.sizes_random)
+    n_pts = len(grid) * (len(args.sizes_removal) + len(args.sizes_random))
+    print(f"grid check: {n_pts - len(bad)} of {n_pts} points constructible", flush=True)
+    for branch, d, q, N in bad:
+        print(f"  will skip {branch} d={d} q={q} N={N}", flush=True)
 
     # Fine and wide on the removal side: the cost there is one removal path
     # per seed, and the grid only interpolates that path, so extra points are
@@ -193,6 +232,10 @@ def main():
     for d, q in grid:
         ratio = d / (q - 1)
         for N in args.sizes_removal:
+            if not random_is_constructible(N, d, q):
+                print(f"  removal d={d} q={q} N={N}: SKIPPED, planted_regular_graph "
+                      f"needs q|N and q(q-1)|d*N", flush=True)
+                continue
             n_seeds = args.n_seeds_removal_large if N >= args.large_n else args.n_seeds_removal
             t0 = time.time()
             rows = measure_removal(N, d, q, removal_rho, n_seeds, args.seed_start)
