@@ -202,7 +202,9 @@ def page_mechanism(pdf, hints, labels):
                     "before the round is appended. That is the predicted out-of-distribution signature. "
                     "d0384 instead FILLS the round it opens, which is why its 24-hint failures parse and "
                     "land in `extra_rounds` -- the control showing this is not just relabelling every "
-                    "off-distribution failure.")
+                    "off-distribution failure. Its in-distribution failures are a third thing again: it "
+                    "emits FEWER rounds than the true trace (2.48 against 2.90 at 16 hints) and colours "
+                    "wrongly, i.e. it truncates the deduction rather than over-running it.")
     else:
         footer(fig, "This is the FIRST run's labelling, which had no `empty_round` category: "
                     "`classify_failure` tested `well_formed` before `extra_rounds`, so the predicted "
@@ -294,7 +296,8 @@ def page_next(pdf, relabelled):
         ("(b) cliff appears only above 22 hints", "HELD", "0.860 at 23, 0.060 at 24"),
         ("(c) >=70% of 24-hint failures are\n      the model deducing where there\n      is nothing to deduce",
          "HELD, after\nfixing the\nclassifier" if relabelled else "PENDING\n49434190",
-         "charged to `malformed` by a test-order\nbug; parser confirms the mechanism"),
+         "280 of 282 (99%) once `empty_round` is\nsplit out; it was charged to `malformed`\nby a test-order bug"
+         if relabelled else "charged to `malformed` by a test-order\nbug; parser confirms the mechanism"),
         ("(d) the profile is a property of the\n      ensemble, not of one model", "MISSED",
          "d0384 x 5000 declines in-distribution\n(0.933 at 16 hints) while acing 24"),
     ]
