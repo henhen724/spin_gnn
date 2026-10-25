@@ -95,12 +95,43 @@ def crossing(xs, ys, level):
     return float("nan")
 
 
+def random_is_affordable(N, d, q, max_fill=0.4):
+    """Whether `planted_regular_graph` will build this cell in reasonable time.
+
+    A planted q-colouring puts N/q nodes in each class, so a node's d
+    neighbours must come from the (q-1)N/q nodes of other colours. As d
+    approaches that ceiling the rejection sampler retries for a long time:
+    measured on run 49431733, d=6 q=3 N=24 (fill 0.375) took 4 s, d=8 q=3 N=24
+    (fill 0.500) took 49 s, and d=10 q=3 N=24 (fill 0.625) did not finish in
+    15 minutes. The removal branch does not use this constructor and is
+    unaffected.
+
+    Skipping is honest here rather than lossy: the cells this excludes are the
+    ones whose 50% crossing came back `nan` anyway, because at that density
+    almost every node is hinted and the curve never crosses.
+    """
+    return d <= max_fill * (q - 1) * N / q
+
+
 def write_csv(path, rows):
+    if not rows:
+        return
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-    print(f"wrote {path} ({len(rows)} rows)", flush=True)
+
+
+def write_all(out_dir, removal_rows, random_rows, summary):
+    """Rewrite all three CSVs. Called after every cell, not once at the end.
+
+    Run 49431733 wrote nothing until the final line and so would have lost
+    every completed cell when it hit its wall clock. Rewriting three small
+    files per cell costs milliseconds against minutes of measurement.
+    """
+    write_csv(os.path.join(out_dir, "removal_path_T_vs_rho.csv"), removal_rows)
+    write_csv(os.path.join(out_dir, "random_hint_resolved.csv"), random_rows)
+    write_csv(os.path.join(out_dir, "summary.csv"), summary)
 
 
 def main():
@@ -119,6 +150,9 @@ def main():
     ap.add_argument("--large-n", type=int, default=192)
     ap.add_argument("--n-instances-random", type=int, default=300)
     ap.add_argument("--seed-start", type=int, default=4242)
+    ap.add_argument("--max-fill", type=float, default=0.4,
+                    help="skip random-ensemble cells whose planted-graph fill "
+                         "d / ((q-1)N/q) exceeds this; see random_is_affordable")
     ap.add_argument("--out-dir", type=str, required=True)
     args = ap.parse_args()
 
@@ -169,6 +203,10 @@ def main():
                   f"[{time.time() - t0:.0f}s]", flush=True)
 
         for N in args.sizes_random:
+            if not random_is_affordable(N, d, q, args.max_fill):
+                print(f"  random  d={d} q={q} N={N}: SKIPPED, planted fill "
+                      f"{d / ((q - 1) * N / q):.2f} > {args.max_fill}", flush=True)
+                continue
             t0 = time.time()
             rows = measure_random(N, d, q, random_rho, args.n_instances_random, args.seed_start)
             random_rows.extend(rows)
@@ -190,9 +228,11 @@ def main():
                   f"width={hi - lo:.3f} unhinted@50%={N * (1 - mid):.1f} "
                   f"[{time.time() - t0:.0f}s]", flush=True)
 
-    write_csv(os.path.join(args.out_dir, "removal_path_T_vs_rho.csv"), removal_rows)
-    write_csv(os.path.join(args.out_dir, "random_hint_resolved.csv"), random_rows)
-    write_csv(os.path.join(args.out_dir, "summary.csv"), summary)
+        write_all(args.out_dir, removal_rows, random_rows, summary)
+
+    write_all(args.out_dir, removal_rows, random_rows, summary)
+    print(f"done: {len(removal_rows)} removal rows, {len(random_rows)} random rows, "
+          f"{len(summary)} summary rows", flush=True)
 
 
 if __name__ == "__main__":

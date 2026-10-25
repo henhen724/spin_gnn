@@ -3,7 +3,7 @@
 #SBATCH --partition=sganguli
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
-#SBATCH --time=3:00:00
+#SBATCH --time=4:00:00
 #SBATCH --output=%x_%j.out
 #
 # Is DD's critical point reachable at an N we can afford to train on?
@@ -47,12 +47,27 @@
 #  (e) Control: unhinted_at_rho50 stays O(1) in EVERY random-hint cell, so
 #      the "threshold runs off to rho=1" result is not special to (5,4).
 #
+# SUPERSEDES 49431733, which I cancelled after 46 min. Two engineering faults,
+# both now fixed; the science and the predictions above are unchanged.
+#   * It wrote all three CSVs only after the last cell, so hitting the wall
+#     would have thrown away every completed cell. Now written after each.
+#   * My "~55 min for the random branch" estimate ignored how hard
+#     planted_regular_graph retries when the degree approaches the number of
+#     differently-coloured nodes available. Measured in that run: fill
+#     d/((q-1)N/q) = 0.375 took 4 s, 0.500 took 49 s, and 0.625 (d=10 q=3
+#     N=24) had not returned after 15 min. --max-fill 0.4 skips those cells,
+#     7 of 63 random points, every one of them an N=24 cell whose 50%
+#     crossing came back nan anyway because almost every node is hinted
+#     there. The removal branch does not use that constructor and is
+#     unaffected; 49431733 got through 36 of its 126 removal points in 46 min
+#     only because the random branch was blocking between cells.
+#
 # Cost (measured on the login node with a warm JIT): a removal path is ~1 ms
-# at N=24 and ~2.4 ms at N=192, so the whole removal branch across 20 cells
-# and six sizes is ~10 min; the random branch is ~100x dearer per point
-# (planted_regular_graph retries hard at small N) at ~55 min. ~65 min total,
-# single core; 3:00:00 covers the weak-propagation cells, whose removal paths
-# are longer than the (5,4) ones this was timed on. No GPU is needed.
+# at N=24 and ~2.4 ms at N=192, so the whole removal branch across 21 cells
+# and six sizes is ~10 min. The random branch, with the pathological cells
+# skipped, should be the ~55 min originally estimated; 4:00:00 is now a
+# margin rather than a bet, and partial results survive either way.
+# No GPU is needed.
 
 set -euo pipefail
 module purge
