@@ -47,7 +47,31 @@
 #  (e) Control: unhinted_at_rho50 stays O(1) in EVERY random-hint cell, so
 #      the "threshold runs off to rho=1" result is not special to (5,4).
 #
-# SUPERSEDES 49431733, which I cancelled after 46 min. Two engineering faults,
+# SUPERSEDES 49437796, which died after 50 min with
+#   ValueError: need q | N and q(q-1) | d*N (N=24, d=4, q=5)
+# raised by planted_regular_graph at the 13th of 21 cells and fatal under
+# `set -e`. The constructor balances colour classes exactly and spreads each
+# node's d edges evenly over the q-1 other classes, so it requires q | N; none
+# of the random sizes 24/96/384 is divisible by 5, which makes EVERY q=5 cell
+# unconstructible at those sizes. Three changes, no change to the science:
+#   * random_is_constructible() skips such points with a printed reason,
+#     separately from the random_is_affordable() cost heuristic -- those cells
+#     are impossible at a given size, not merely expensive.
+#   * --sizes-random is now 60 120 360 rather than 24 96 384. Chosen because
+#     every one is divisible by 3, 4, 5 and 6 and satisfies q(q-1) | d*N for
+#     every (d, q) on the grid, so all 21 cells become testable for prediction
+#     (e) at 63 points, against 14 cells at 37 points before. The cost is the
+#     shorter lever arm for the N-scaling, 6x rather than 16x, which is still
+#     ample to separate "flat in N" from "proportional to N".
+#   * write_all() now also runs before the random branch, not only at the end
+#     of the cell. 49437796 still lost this cell's six completed removal rows
+#     because they were in memory when the exception fired.
+# The 12 cells 49437796 did complete are NOT overwritten: they stay in
+# sudoku_dd_control_param_2026-10-24 and this run writes to ...-24b. They
+# already decided predictions (a), (c) and (d); see
+# notebooks/make_control_param_deck.py.
+#
+# ALSO SUPERSEDES 49431733, which I cancelled after 46 min. Two engineering faults,
 # both now fixed; the science and the predictions above are unchanged.
 #   * It wrote all three CSVs only after the last cell, so hitting the wall
 #     would have thrown away every completed cell. Now written after each.
@@ -79,14 +103,14 @@ export NUMBA_NUM_THREADS=1
 export PYTHONUNBUFFERED=1
 cd "${SLURM_SUBMIT_DIR}"
 
-OUT_DIR="${SCRATCH}/spin_gnn/sudoku_dd_control_param_2026-10-24"
+OUT_DIR="${SCRATCH}/spin_gnn/sudoku_dd_control_param_2026-10-24b"
 mkdir -p "$OUT_DIR"
 
 python -m scripts.dd_control_parameter_sweep \
     --degrees 3 4 5 6 8 10 \
     --colors 3 4 5 6 \
     --sizes-removal 24 48 96 192 384 996 \
-    --sizes-random 24 96 384 \
+    --sizes-random 60 120 360 \
     --n-seeds-removal 400 \
     --n-seeds-removal-large 200 \
     --large-n 192 \

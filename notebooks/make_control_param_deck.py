@@ -16,6 +16,7 @@ cells of the grid are in. Run:
     python -m notebooks.make_control_param_deck
 """
 import csv
+import glob
 import os
 
 import matplotlib
@@ -27,8 +28,30 @@ from matplotlib.backends.backend_pdf import PdfPages
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style
 
 S = os.environ.get("SCRATCH", "/scratch/users/hshunt") + "/spin_gnn"
-SRC = os.path.join(S, "sudoku_dd_control_param_2026-10-24")
 OUT = os.path.join(S, "notebooks", "sudoku_control_param_2026-10-24")
+
+
+def richest_source():
+    """The sweep directory with the most summary rows.
+
+    There is more than one because 49437796 died nine cells short and its
+    replacement writes to a `b` directory rather than overwriting it. Picking
+    by row count rather than by name means this renders from whichever run got
+    furthest, including while the replacement is still only partway through
+    and the older, larger one is still the better source.
+    """
+    best, n_best = None, -1
+    for d in sorted(glob.glob(f"{S}/sudoku_dd_control_param_*")):
+        path = os.path.join(d, "summary.csv")
+        if not os.path.exists(path):
+            continue
+        n = sum(1 for _ in open(path)) - 1
+        if n > n_best:
+            best, n_best = d, n
+    return best
+
+
+SRC = richest_source() or os.path.join(S, "sudoku_dd_control_param_2026-10-24")
 BASE = (5, 4)  # the setting every transformer run so far has used
 # Cells highlighted in the N-scaling and cheap-corner pages. Chosen to span
 # the ratio axis, with the baseline always included for comparison.
@@ -101,6 +124,8 @@ def page_title(pdf, rem, ran):
     fig.text(0.5, 0.75, f"{len(cells)} of 21 (degree, n_colors) cells x 6 sizes, "
                         f"{len(rem)} removal rows and {len(ran)} random rows",
              ha="center", size=MED - 3, color="0.35")
+    fig.text(0.5, 0.70, os.path.basename(SRC), ha="center", size=SMALL - 1,
+             color="0.55", family="monospace")
     # Compare at a FIXED, affordable N rather than at each cell's largest size:
     # "the deepest cell anywhere" is a different and much weaker claim than
     # "the deepest cell at an N we can train on", and only the second is
@@ -380,7 +405,8 @@ def main():
     if not rem:
         print("no summary.csv yet")
         return
-    print(f"{len(all_cells(rem))} cells, {len(rem)} removal rows, {len(ran)} random rows")
+    print(f"source {os.path.basename(SRC)}: {len(all_cells(rem))} cells, "
+          f"{len(rem)} removal rows, {len(ran)} random rows")
 
     pdf_path = os.path.join(OUT, "cheaper_corner_than_d5q4.pdf")
     with PdfPages(pdf_path) as raw:

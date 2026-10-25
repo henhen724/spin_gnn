@@ -113,6 +113,23 @@ def random_is_affordable(N, d, q, max_fill=0.4):
     return d <= max_fill * (q - 1) * N / q
 
 
+def random_is_constructible(N, d, q):
+    """Whether `planted_regular_graph` accepts this (N, d, q) at all.
+
+    It balances colour classes exactly and distributes each node's d edges
+    evenly over the q-1 other classes, so it requires q | N and q(q-1) | d*N
+    (sudoku_dd.py:65). Run 49437796 died on exactly this at (N=24, d=4, q=5) --
+    none of the random sizes 24/96/384 is divisible by 5 -- taking the whole
+    job down under `set -e` nine cells short of the full grid.
+
+    This is a hard constraint of the constructor, not a cost heuristic like
+    `random_is_affordable`, so it is checked separately and reported
+    separately: the affected cells are not expensive, they are impossible at
+    these sizes, and the removal branch they share a cell with is unaffected.
+    """
+    return N % q == 0 and (d * N) % (q * (q - 1)) == 0
+
+
 def write_csv(path, rows):
     if not rows:
         return
@@ -202,7 +219,16 @@ def main():
                   f"rho_min={rho_min:.4f} max_T={max(Ts) if Ts else float('nan'):.2f} "
                   f"[{time.time() - t0:.0f}s]", flush=True)
 
+        # Write before entering the random branch as well as after the cell:
+        # 49437796 lost this cell's six completed removal rows because they
+        # were still only in memory when the random branch raised.
+        write_all(args.out_dir, removal_rows, random_rows, summary)
+
         for N in args.sizes_random:
+            if not random_is_constructible(N, d, q):
+                print(f"  random  d={d} q={q} N={N}: SKIPPED, planted_regular_graph "
+                      f"needs q|N and q(q-1)|d*N", flush=True)
+                continue
             if not random_is_affordable(N, d, q, args.max_fill):
                 print(f"  random  d={d} q={q} N={N}: SKIPPED, planted fill "
                       f"{d / ((q - 1) * N / q):.2f} > {args.max_fill}", flush=True)
