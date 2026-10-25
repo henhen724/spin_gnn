@@ -28,7 +28,10 @@ from matplotlib.backends.backend_pdf import PdfPages
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style
 
 S = os.environ.get("SCRATCH", "/scratch/users/hshunt") + "/spin_gnn"
-OUT = os.path.join(S, "notebooks", "sudoku_control_param_2026-10-24")
+# Dated for the COMPLETE sweep (49509101, all 21 cells) rather than for the
+# partial one it supersedes, whose 12-cell deck stays where it is under
+# ...-10-24 so the two are not confused.
+OUT = os.path.join(S, "notebooks", "sudoku_control_param_2026-10-25")
 
 
 def richest_source():
@@ -55,8 +58,9 @@ SRC = richest_source() or os.path.join(S, "sudoku_dd_control_param_2026-10-24")
 BASE = (5, 4)  # the setting every transformer run so far has used
 # Cells highlighted in the N-scaling and cheap-corner pages. Chosen to span
 # the ratio axis, with the baseline always included for comparison.
-SHOW = [(3, 4), (5, 4), (4, 3), (6, 4), (8, 4)]
-COLOURS = dict(zip(SHOW, ["tab:gray", "tab:red", "tab:blue", "tab:green", "tab:purple"]))
+SHOW = [(3, 4), (5, 4), (4, 3), (6, 4), (8, 4), (10, 6)]
+COLOURS = dict(zip(SHOW, ["tab:gray", "tab:red", "tab:blue", "tab:green", "tab:purple",
+                          "tab:orange"]))
 
 
 def load(name):
@@ -116,12 +120,27 @@ def match_n(rows, d, q, target_T, col="mean_T_near_floor"):
     return float("nan")
 
 
+def sizes_of(rem):
+    """Sorted measured sizes. Three pages used to name 24, 96 and 996 inline;
+    when the rerun moved to multiples of 60 to make every (d, q) constructible,
+    two of those pages silently plotted nothing and one crashed. Anything that
+    needs "the largest" or "the most nearly trainable" size asks here."""
+    return sorted({int(r["n_nodes"]) for r in rem})
+
+
+def at_size(rem, d, q, N):
+    """The one summary row for cell (d, q) at size N, or None."""
+    s = [r for r in cell_series(rem, d, q) if int(r["n_nodes"]) == N]
+    return s[0] if s else None
+
+
 def page_title(pdf, rem, ran):
     fig = plt.figure(figsize=(13.33, 7.5))
     fig.text(0.5, 0.84, "Is there a cheaper corner than (degree 5, 4 colors)?",
              ha="center", size=BIG + 1, weight="bold")
     cells = all_cells(rem)
-    fig.text(0.5, 0.75, f"{len(cells)} of 21 (degree, n_colors) cells x 6 sizes, "
+    fig.text(0.5, 0.75, f"{len(cells)} of 21 (degree, n_colors) cells x "
+                        f"{len(sizes_of(rem))} sizes ({sizes_of(rem)[0]}-{sizes_of(rem)[-1]}), "
                         f"{len(rem)} removal rows and {len(ran)} random rows",
              ha="center", size=MED - 3, color="0.35")
     fig.text(0.5, 0.70, os.path.basename(SRC), ha="center", size=SMALL - 1,
@@ -131,19 +150,31 @@ def page_title(pdf, rem, ran):
     # "the deepest cell at an N we can train on", and only the second is
     # actionable. Taking the max over sizes also leaves the baseline unable to
     # bracket the target, which is what made this read "N ~ nan".
-    at96 = {c: num(s[0], "mean_T_near_floor")
-            for c in cells
-            for s in [[r for r in cell_series(rem, *c) if int(r["n_nodes"]) == 96]]
-            if s and num(s[0], "mean_T_near_floor") == num(s[0], "mean_T_near_floor")}
-    best = max(at96, key=at96.get)
-    need = match_n(rem, *BASE, at96[best])
-    base96 = at96.get(BASE, float("nan"))
+    #
+    # The size is taken from the data rather than named. The first run of this
+    # sweep measured 24/96/384 and this page was pinned to 96; the rerun had to
+    # move to multiples of 60 to make every (d, q) constructible, which left no
+    # N=96 at all and crashed the page. Using the smallest measured size keeps
+    # it on the most nearly trainable point of whatever list was swept -- 60
+    # here, which sits between the N=48 run that exists and the N=96 arm that
+    # is written but gated.
+    sizes = sorted({int(r["n_nodes"]) for r in rem})
+    cmp_n = sizes[0]
+    atN = {c: num(s[0], "mean_T_near_floor")
+           for c in cells
+           for s in [[r for r in cell_series(rem, *c) if int(r["n_nodes"]) == cmp_n]]
+           if s and num(s[0], "mean_T_near_floor") == num(s[0], "mean_T_near_floor")}
+    if not atN:
+        raise SystemExit(f"no cell has mean_T_near_floor at N={cmp_n}")
+    best = max(atN, key=atN.get)
+    need = match_n(rem, *BASE, atN[best])
+    baseN = atN.get(BASE, float("nan"))
     lines = [
-        f"YES, and at N = 96 it is worth about a factor of {need / 96:.0f} in N.",
+        f"YES, and at N = {cmp_n} it is worth about a factor of {need / cmp_n:.0f} in N.",
         "",
-        f"(d={best[0]}, q={best[1]}) reaches mean deduction depth {at96[best]:.1f} near its density",
-        f"floor at N = 96, against {base96:.1f} for (d=5, q=4) at the same size.",
-        f"The baseline does not reach {at96[best]:.1f} until N ~ {need:.0f}.",
+        f"(d={best[0]}, q={best[1]}) reaches mean deduction depth {atN[best]:.1f} near its density",
+        f"floor at N = {cmp_n}, against {baseN:.1f} for (d=5, q=4) at the same size.",
+        f"The baseline does not reach {atN[best]:.1f} until N ~ {need:.0f}.",
         "",
         "But NOT for the reason predicted, and rho_min is still not a critical",
         "point: T grows as a power of N at every density DD can act on.",
@@ -159,38 +190,48 @@ def page_title(pdf, rem, ran):
 
 def page_rho_min(pdf, rem):
     fig, ax = plt.subplots(figsize=(13.33, 7.5))
+    big = sizes_of(rem)[-1]
+    span = []
     for q, marker in zip((3, 4, 5, 6), ("o", "s", "^", "D")):
         pts = []
         for d, qq in all_cells(rem):
             if qq != q:
                 continue
-            s = [r for r in cell_series(rem, d, q) if int(r["n_nodes"]) == 996]
+            s = at_size(rem, d, q, big)
             if s:
-                pts.append((d / (q - 1), num(s[0], "rho_min")))
+                pts.append((d / (q - 1), num(s, "rho_min")))
         if pts:
             pts.sort()
+            span += pts
             ax.plot(*zip(*pts), marker + "-", lw=2, ms=10, label=f"{q} colors")
-    ax.axhline(0.4777, color="tab:red", ls="--", lw=1.5)
-    ax.text(0.98, 0.4777 + 0.02, "0.478, the (5,4) floor all training has used",
+    base = at_size(rem, *BASE, big)
+    base_floor = num(base, "rho_min") if base else float("nan")
+    ax.axhline(base_floor, color="tab:red", ls="--", lw=1.5)
+    ax.text(0.98, base_floor + 0.02,
+            f"{base_floor:.3f}, the {BASE} floor all training has used",
             transform=ax.get_yaxis_transform(), ha="right", size=SMALL, color="tab:red")
     ax.set_yscale("log")
     ax.set_xlabel("propagation ratio  d / (q - 1)")
-    ax.set_ylabel("rho_min, minimum reachable hint density  (N = 996)")
+    ax.set_ylabel(f"rho_min, minimum reachable hint density  (N = {big})")
     ax.set_title("(a) HOLDS: the density floor falls monotonically with propagation",
                  size=MED + 3, weight="bold")
     ax.grid(alpha=0.3, which="both")
     ax.legend()
     fig.tight_layout(rect=(0, 0.12, 1, 1))
-    footer(fig, "Measured at the largest size, where rho_min is already asymptotic. It spans nearly "
-                "two decades, 0.84 at ratio 1.00 down to 0.011 at ratio 5.00, and falls monotonically "
-                "throughout -- so prediction (c)'s falsifier, that rho_min is flat in (d,q) and there "
-                "is no cheap corner, is itself refuted. Ratio 1.00 is the degenerate case d = q-1, "
-                "where DD can force almost nothing and greedy removal stalls at 84% hinted.")
+    span.sort()
+    hi, lo = span[0][1], span[-1][1]
+    footer(fig, f"Measured at the largest size swept, N = {big}, where rho_min is already asymptotic. "
+                f"It spans {hi:.2f} at ratio {span[0][0]:.2f} down to {lo:.3f} at ratio "
+                f"{span[-1][0]:.2f}, a factor of {hi / lo:.0f}, and falls monotonically throughout -- "
+                "so prediction (c)'s falsifier, that rho_min is flat in (d,q) and there is no cheap "
+                f"corner, is itself refuted. The shallow end is the degenerate case d = q-1, where DD "
+                f"can force almost nothing and greedy removal stalls at {hi * 100:.0f}% hinted.")
     pdf.savefig(fig)
 
 
 def page_depth_vs_ratio(pdf, rem):
     fig, axes = plt.subplots(1, 2, figsize=(13.33, 7.5))
+    cmp_n = sizes_of(rem)[0]
     for ax, (col, lab) in zip(axes, [("mean_T_near_floor", "mean T within 0.06 of the floor"),
                                      ("T_at_rho55", "mean T at fixed rho = 0.55")]):
         for q, marker in zip((3, 4, 5, 6), ("o", "s", "^", "D")):
@@ -198,9 +239,9 @@ def page_depth_vs_ratio(pdf, rem):
             for d, qq in all_cells(rem):
                 if qq != q:
                     continue
-                s = [r for r in cell_series(rem, d, q) if int(r["n_nodes"]) == 96]
-                if s and num(s[0], col) == num(s[0], col):
-                    pts.append((d / (q - 1), num(s[0], col)))
+                s = at_size(rem, d, q, cmp_n)
+                if s and num(s, col) == num(s, col):
+                    pts.append((d / (q - 1), num(s, col)))
             if pts:
                 pts.sort()
                 ax.plot(*zip(*pts), marker + "-", lw=2, ms=9, label=f"{q} colors")
@@ -212,15 +253,25 @@ def page_depth_vs_ratio(pdf, rem):
     axes[1].set_title("at matched density", size=MED)
     fig.suptitle("(b) FAILS, backwards: depth peaks at HIGH propagation, not low",
                  size=MED + 3, weight="bold", y=0.97)
-    fig.tight_layout(rect=(0, 0.28, 1, 0.94))
-    footer(fig, "(b) expected a ratio <= 1.2 cell to reach mean T >= 22 at N=96. Those cells are "
-                "d = q-1, the SHALLOWEST on the grid: DD forces nothing there, removal stalls at "
-                "once, T ~ 1. Depth has an interior optimum instead -- low ratio stalls removal "
-                "early, high ratio forces so many nodes per round that few rounds are needed, and "
-                "the longest chains sit between. The panels disagree on where, and that is the "
-                "caveat on the whole sweep: at each cell's OWN floor the high-ratio cells win, but "
-                "at MATCHED density the baseline (5,4) is the deepest thing on the grid. The cheap "
-                "corner buys depth by moving the floor down, not by making deduction harder.")
+    fig.tight_layout(rect=(0, 0.34, 1, 0.94))
+    footer(fig, f"(b) expected a ratio <= 1.2 cell to reach mean T >= 22 at N=96; the rerun moved to "
+                f"multiples of 60 for constructibility, so it is scored at N={cmp_n}. The verdict is "
+                "the same at every size: the low-ratio end is d = q-1, the SHALLOWEST cells on the "
+                "grid, where DD forces nothing and removal stalls at once (T ~ 1).\n"
+                "The two panels then invert the role of the COLOR COUNT, and the inversion is the "
+                "real content of this page. At each cell's own floor (left) depth has an interior "
+                "optimum in the ratio, peaking at 2.0-2.7 in every q, and MORE colors is SHALLOWER: "
+                "q=6 tops out at 9.3 against q=3's 14.5. At matched rho=0.55 (right) depth instead "
+                "falls monotonically with the ratio inside each q, and more colors is DEEPER: 5.0, "
+                "6.1, 6.8, 8.4 for q = 3,4,5,6. Both orderings hold unchanged at N=960.\n"
+                "The mechanism is the floor. A high-q cell has a high rho_min (0.507 at d=10 q=6 vs "
+                "0.204 at d=4 q=3), so a fixed rho=0.55 sits just above its floor while leaving the "
+                "low-q cell heavily over-hinted. This also corrects the caveat carried from the "
+                "12-cell partial grid, that (5,4) was the deepest cell at matched density and the "
+                "corner bought depth only by moving the floor down: (5,4) ranks 3rd of the 13 cells "
+                "scorable at rho=0.55, and d=10 q=6 beats it 8.4 to 6.1 at N=60, widening to 28.0 vs "
+                "14.8 at N=960, from a floor of 0.507 against the baseline's 0.468. At equal hint "
+                "density that cell is not a cheaper corner but a deeper one at the same price.")
     pdf.savefig(fig)
 
 
@@ -270,6 +321,7 @@ def page_scaling(pdf, rem):
 
 def page_cheap_corner(pdf, rem):
     fig, ax = plt.subplots(figsize=(13.33, 7.5))
+    cmp_n = sizes_of(rem)[0]
     notes = []
     for c in SHOW:
         s = cell_series(rem, *c)
@@ -279,17 +331,17 @@ def page_cheap_corner(pdf, rem):
         Ts = [num(r, "mean_T_near_floor") for r in s]
         ax.plot(Ns, Ts, "o-", color=COLOURS[c], lw=2.5, ms=9,
                 label=f"d={c[0]} q={c[1]}" + ("  (baseline)" if c == BASE else ""))
-        at96 = [t for n, t in zip(Ns, Ts) if n == 96]
-        if at96 and c != BASE:
-            need = match_n(rem, *BASE, at96[0])
+        atc = [t for n, t in zip(Ns, Ts) if n == cmp_n]
+        if atc and c != BASE:
+            need = match_n(rem, *BASE, atc[0])
             # Cells shallower than the baseline's smallest size cannot be
             # bracketed and are not cheap corners anyway; a bare "N ~ nan" in
             # the box reads as a bug rather than as "this cell is no use".
-            notes.append(f"d={c[0]} q={c[1]} at N=96 gives T={at96[0]:5.1f}; " +
+            notes.append(f"d={c[0]} q={c[1]} at N={cmp_n} gives T={atc[0]:5.1f}; " +
                          (f"(5,4) needs N ~ {need:.0f} for that" if need == need
                           else "below (5,4) at every size -- no gain"))
-    ax.axvline(96, color="0.6", ls=":", lw=1.5)
-    ax.text(96 * 1.05, 0.03, "N = 96, affordable", rotation=90, size=SMALL,
+    ax.axvline(cmp_n, color="0.6", ls=":", lw=1.5)
+    ax.text(cmp_n * 1.05, 0.03, f"N = {cmp_n}, trainable", rotation=90, size=SMALL,
             color="0.4", transform=ax.get_xaxis_transform())
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -302,13 +354,20 @@ def page_cheap_corner(pdf, rem):
         ax.text(0.98, 0.04, "\n".join(notes), transform=ax.transAxes, ha="right",
                 size=SMALL - 1, family="monospace",
                 bbox=dict(boxstyle="round", fc="0.95", ec="0.7"))
-    fig.tight_layout(rect=(0, 0.14, 1, 1))
-    footer(fig, "Read with the caveat from the depth-vs-ratio page: these cells reach their depth at "
-                "their OWN floor, which for (8,4) is rho ~ 0.17 against 0.48 for the baseline, so "
-                "the instances are far sparser. Whether that is a fair substitute for large N is a "
-                "question about what the transformer is being asked to learn, not one this sweep "
-                "answers. Token cost favours it twice over: q=3 needs a smaller vocabulary and "
-                "d=4 a shorter graph section than the baseline's d=5.")
+    fig.tight_layout(rect=(0, 0.22, 1, 1))
+    footer(fig, "Read with the caveat from the depth-vs-ratio page: most of these cells reach their "
+                "depth at their OWN floor, which for (8,4) is rho ~ 0.17 against 0.48 for the "
+                "baseline, so the instances are far sparser. Whether that is a fair substitute for "
+                "large N is a question about what the transformer is being asked to learn, not one "
+                "this sweep answers. Token cost favours those cells twice over: q=3 needs a smaller "
+                "vocabulary and d=4 a shorter graph section than the baseline's d=5.\n"
+                "d=10 q=6 is the exception on both counts, and the reason it was added to this page. "
+                "Its floor is 0.507 against the baseline's 0.468, so its gain is measured at "
+                "essentially the SAME density -- the caveat above does not apply to it, and the "
+                "matched-density panel of the previous page scores it the deepest cell on the grid. "
+                "The gain is the smallest shown here (N ~ 86 against the baseline's 60, a factor of "
+                "1.4) and its token cost runs the wrong way: 6 colors is a larger vocabulary and "
+                "d=10 twice the baseline's graph section. It buys caveat-free depth, not cheap depth.")
     pdf.savefig(fig)
 
 
