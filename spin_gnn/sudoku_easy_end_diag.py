@@ -49,11 +49,20 @@ def classify_failure(decoded, n_rounds_true, solved):
 
     `extra_rounds` is the OOD signature being tested for: the model keeps
     deducing on an instance that has nothing left to deduce.
+
+    `empty_round` is the same signature seen through the parser. On a
+    fully-hinted instance there is nothing left to deduce, so a round the
+    model opens must come out empty, and `decode` raises ParseError before
+    the round is ever appended -- which the first version of this classifier
+    charged to `malformed`, hiding the mechanism. It is split out here
+    because "opened a round it could not fill" and "emitted token soup" are
+    different failures with different fixes.
     """
     if solved:
         return "solved"
     if not decoded["well_formed"]:
-        return "malformed"
+        return "empty_round" if (decoded["error"] or "").startswith("empty BEGIN_ROUND") \
+            else "malformed"
     if decoded["outcome"] != "SOLVED":
         return "wrong_outcome"
     if len(decoded["rounds"]) > n_rounds_true:
@@ -63,7 +72,8 @@ def classify_failure(decoded, n_rounds_true, solved):
     return "wrong_colors"
 
 
-LABELS = ("malformed", "wrong_outcome", "extra_rounds", "missing_rounds", "wrong_colors")
+LABELS = ("empty_round", "malformed", "wrong_outcome", "extra_rounds",
+          "missing_rounds", "wrong_colors")
 
 
 def diagnose_bin(model, vocab, device, cfg, n_hints, n_instances, seed_start, max_new_tokens):
@@ -157,9 +167,9 @@ def main():
                   f"solve_rate={row['solve_rate']:.3f}  T_true={row['mean_rounds_true']:.2f} "
                   f"T_emitted={row['mean_rounds_emitted']:.2f}  "
                   f"failures={row['n_failed']}"
-                  + (f" ({row['frac_fail_extra_rounds']:.0%} extra_rounds, "
-                     f"{row['frac_fail_wrong_colors']:.0%} wrong_colors, "
-                     f"{row['frac_fail_wrong_outcome']:.0%} wrong_outcome)"
+                  + (f" ({row['frac_fail_empty_round']:.0%} empty_round, "
+                     f"{row['frac_fail_extra_rounds']:.0%} extra_rounds, "
+                     f"{row['frac_fail_wrong_colors']:.0%} wrong_colors)"
                      if row["n_failed"] else ""), flush=True)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out_csv)), exist_ok=True)
