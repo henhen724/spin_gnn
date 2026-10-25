@@ -31,6 +31,7 @@ At n=6000 the d0128/d0384 tie at 20000 holds (0.9750 vs 0.9740, Δ=0.001) but **
 ## Open problems
 
 - Whether network depth must grow with reasoning depth is **open and being measured** (49433454). Finding 2 predicts L*(T) flat; the serial hypothesis predicts it rising.
+- **Every checkpoint is the final epoch — there is no best-val selection and no early stopping** (`save_checkpoint` stores `result["model"]`). All four N=24 runs overfit in `val_nll` past epoch ~40–60 (d0256×20000 +0.31, **d0384×5000 +1.42**) and still score 0.97–0.98, which is finding 4 again, so this may cost nothing. Untested, and the cheapest way to test it is to checkpoint every 25 epochs in one run and score the trajectory on the shared pool. d0384 is where the payoff would be largest.
 - SAE: all 2048 features "alive" at L4–12 → criterion too weak; layer-0 `next_node` = sorted-order confound.
 - **27 `model.pt` files (267MB) are committed** (no `*.pt` in `.gitignore` until `3273932`); untracking won't shrink history, so a rewrite is your call.
 - Whether `d0128 x 20000` deserves an `$OAK` archive (4.0M params, now resolvably *below* d0256 — arguably no longer worth it).
@@ -44,7 +45,7 @@ At n=6000 the d0128/d0384 tie at 20000 holds (0.9750 vs 0.9740, Δ=0.001) but **
 
 ## Running
 
-- **49433453** `sud2n48base` — first N=48 training run (d0256/L12, n_train=20000, 300 ep) + depth eval. 16 h limit. **Watch:** at epoch 79, `val_nll` 1.2409 is already above `train_nll` 1.1256, so 20000 instances may be too few at N=48; if the pre-registered [0.85, 0.98] misses low, suspect data budget before architecture. The N=48 layer scan (`scripts/slurm/sudoku2_n48_layer_scan.sbatch`, written, **not submitted**) is gated on this.
-- **49433454** `sud2n24Lscan` — `num_layers` in {1,2,3,4,6,8,12} at N=24, ff pinned at 1024 so only depth varies, + `sudoku_depth_eval`. 10 h limit. L=1 done: agg 0.4667, `mean_o1` 0.7020, 1.65M params — prediction (c), that one layer fails, is holding.
+- **49433453** `sud2n48base` — first N=48 training run (d0256/L12, n_train=20000, 300 ep) + depth eval. 16 h limit, at epoch 148. Curve is **healthy**: `val_nll` rises above its own minimum by only +0.068 at epoch 139 against +0.149 for the N=24 run on the identical recipe that went on to score 0.9837 — i.e. it is overfitting *half* as much, so the rising `val_nll` is normal here, not a data-budget warning (and see finding 4). The N=48 layer scan (`scripts/slurm/sudoku2_n48_layer_scan.sbatch`, written, **not submitted**) is gated on its solve_rate.
+- **49433454** `sud2n24Lscan` — `num_layers` in {1,2,3,4,6,8,12} at N=24, ff pinned at 1024 so only depth varies, + `sudoku_depth_eval`. 10 h limit, L=6 training. **Sharp knee at L=3:** agg solve_rate 0.067 (L=1) → 0.467 (L=2) → **0.957 (L=3)** → 0.977 (L=4). Prediction (c), that one layer fails outright, holds hard.
 - **49437796** `ddctrlsweep` — CPU-only (degree, n_colors) sweep, predictions (a)–(e) in the sbatch header. 4 h limit. Replaces **49431733**, cancelled at 46 min: it wrote its CSVs only after the last cell (now after every cell) and stalled >15 min inside `planted_regular_graph` at d=10 q=3 N=24, where the degree nearly exhausts the differently-coloured nodes available. `--max-fill 0.4` skips those 7 of 63 random points, all of which returned a `nan` crossing anyway.
 - `49430217` (easy end + n=6000 pool, 00:25:57) and `49434190` (relabelled re-run, 00:03:31) COMPLETED, ExitCode 0:0.
