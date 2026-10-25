@@ -44,7 +44,7 @@ At n=6000 the d0128/d0384 tie at 20000 holds (0.9750 vs 0.9740, Δ=0.001) but **
 
 ## Running
 
-- **49433453** `sud2n48base` — first N=48 training run (d0256/L12, n_train=20000, 300 ep) + depth eval. 16 h limit.
-- **49433454** `sud2n24Lscan` — `num_layers` in {1,2,3,4,6,8,12} at N=24, ff pinned at 1024 so only depth varies, + `sudoku_depth_eval`. 10 h limit.
-- **49431733** `ddctrlsweep` — CPU-only (degree, n_colors) sweep, predictions (a)–(e) in the sbatch header. 3 h limit.
-- `49430217` (easy end + n=6000 pool) COMPLETED 00:25:57, ExitCode 0:0.
+- **49433453** `sud2n48base` — first N=48 training run (d0256/L12, n_train=20000, 300 ep) + depth eval. 16 h limit. **Watch:** at epoch 79, `val_nll` 1.2409 is already above `train_nll` 1.1256, so 20000 instances may be too few at N=48; if the pre-registered [0.85, 0.98] misses low, suspect data budget before architecture. The N=48 layer scan (`scripts/slurm/sudoku2_n48_layer_scan.sbatch`, written, **not submitted**) is gated on this.
+- **49433454** `sud2n24Lscan` — `num_layers` in {1,2,3,4,6,8,12} at N=24, ff pinned at 1024 so only depth varies, + `sudoku_depth_eval`. 10 h limit. L=1 done: agg 0.4667, `mean_o1` 0.7020, 1.65M params — prediction (c), that one layer fails, is holding.
+- **49437796** `ddctrlsweep` — CPU-only (degree, n_colors) sweep, predictions (a)–(e) in the sbatch header. 4 h limit. Replaces **49431733**, cancelled at 46 min: it wrote its CSVs only after the last cell (now after every cell) and stalled >15 min inside `planted_regular_graph` at d=10 q=3 N=24, where the degree nearly exhausts the differently-coloured nodes available. `--max-fill 0.4` skips those 7 of 63 random points, all of which returned a `nan` crossing anyway.
+- `49430217` (easy end + n=6000 pool, 00:25:57) and `49434190` (relabelled re-run, 00:03:31) COMPLETED, ExitCode 0:0.
