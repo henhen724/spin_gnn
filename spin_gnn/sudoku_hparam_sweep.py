@@ -40,6 +40,7 @@ def run_one(args):
     train_cfg = SudokuReasoningTrainConfig(
         n_train_instances=args.n_train_instances, n_val_instances=args.n_val_instances,
         batch_size=args.batch_size, lr=args.lr, epochs=args.epochs,
+        lr_schedule=args.lr_schedule, lr_min_factor=args.lr_min_factor,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
 
@@ -60,11 +61,15 @@ def run_one(args):
         f"_ff{resolved_ff:05d}_lr{args.lr:.0e}_{norm_tag}"
         + ("_sp" if args.scratchpad else "")
         + ("_rand" if args.hint_mode == "random" else "")
+        # Only suffixed when non-default, so every tag written before 2026-10-25
+        # stays byte-identical -- the decks and the agg_eval checkpoint paths
+        # address cells by this string.
+        + ("_cos" if args.lr_schedule != "constant" else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
     save_checkpoint(
         out_dir, sudoku_cfg, model_cfg, result["model"], result["vocab"], result["model_max_len"],
-        result["baseline_accuracy"], result["solve_metrics"], result["history"],
+        result["baseline_accuracy"], result["solve_metrics"], result["history"], train_cfg=train_cfg,
     )
 
     row = {
@@ -84,13 +89,28 @@ def run_one(args):
         "max_len": result["model_max_len"],
         "evidence_row_accuracy": result["solve_metrics"].get("evidence_row_accuracy"),
         "evidence_slot_accuracy": result["solve_metrics"].get("evidence_slot_accuracy"),
+        "lr_schedule": args.lr_schedule,
         "checkpoint_dir": out_dir,
     }
 
+    # sweep.csv is append-only so a scan can be extended a cell at a time. That
+    # means the header on disk, not `row`, defines the column order: writing
+    # list(row.keys()) after adding a field would silently emit ragged rows into
+    # every sweep.csv written before that field existed. Reuse the existing
+    # header and say out loud which fields it cannot hold.
     csv_path = os.path.join(args.out_dir, "sweep.csv")
-    write_header = not os.path.exists(csv_path)
+    fieldnames, write_header = list(row.keys()), True
+    if os.path.exists(csv_path):
+        with open(csv_path, newline="") as f:
+            existing = next(csv.reader(f), None)
+        if existing:
+            fieldnames, write_header = existing, False
+            dropped = [k for k in row if k not in existing]
+            if dropped:
+                print(f"note: {csv_path} predates {', '.join(dropped)}; "
+                      f"not recorded there (the checkpoint dir and config.json have it)")
     with open(csv_path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         if write_header:
             writer.writeheader()
         writer.writerow(row)
@@ -117,6 +137,10 @@ if __name__ == "__main__":
     ap.add_argument("--dim-feedforward", type=int, default=0)
     ap.add_argument("--no-norm-first", action="store_true")
     ap.add_argument("--lr", type=float, default=1e-3)
+    # "constant" is what every run before 2026-10-25 used; keep it the default so
+    # re-running an old cell reproduces it.
+    ap.add_argument("--lr-schedule", choices=("constant", "cosine"), default="constant")
+    ap.add_argument("--lr-min-factor", type=float, default=0.01)
     ap.add_argument("--n-train-instances", type=int, default=5000)
     ap.add_argument("--n-val-instances", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=32)

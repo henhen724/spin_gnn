@@ -195,3 +195,9 @@ class SudokuReasoningTrainConfig:
     epochs: int = 50
     device: str = "cuda"
     max_len: int = 0  # 0 = no cap
+    # "constant" reproduces every run before 2026-10-25, which held lr fixed for
+    # the whole budget. "cosine" decays lr -> lr*lr_min_factor across epochs,
+    # stepped once per epoch. Default stays "constant" so no earlier comparison
+    # is silently redefined.
+    lr_schedule: str = "constant"
+    lr_min_factor: float = 0.01

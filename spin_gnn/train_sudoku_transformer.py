@@ -316,6 +316,24 @@ def eval_solve_by_rho(
     return records
 
 
+def _build_lr_schedule(opt, train_cfg: SudokuReasoningTrainConfig):
+    """None for the historical constant lr, else a per-epoch scheduler.
+
+    Every run before 2026-10-25 trained at a fixed lr with no scheduler at all,
+    which is the leading suspect for the val_nll plateau at N=96 (49524030:
+    train_nll 1.4332 against val_nll 1.4621, so the model is not overfitting --
+    it cannot descend further at lr=1e-3).
+    """
+    kind = getattr(train_cfg, "lr_schedule", "constant")
+    if kind == "constant":
+        return None
+    if kind == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=train_cfg.epochs, eta_min=train_cfg.lr * train_cfg.lr_min_factor,
+        )
+    raise ValueError(f"unknown lr_schedule {kind!r} (expected 'constant' or 'cosine')")
+
+
 def train_sudoku_model(
     sudoku_cfg: SudokuReasoningConfig, model_cfg: SudokuReasoningModelConfig, train_cfg: SudokuReasoningTrainConfig,
     checkpoint_epochs=(),
@@ -346,6 +364,7 @@ def train_sudoku_model(
         dim_feedforward=model_cfg.dim_feedforward or None, norm_first=model_cfg.norm_first,
     ).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=train_cfg.lr)
+    sched = _build_lr_schedule(opt, train_cfg)
     rng = np.random.default_rng(sudoku_cfg.seed)
 
     train_indices = list(range(len(train_dataset)))
@@ -374,11 +393,15 @@ def train_sudoku_model(
             epoch_loss += loss.item() * n_valid
             epoch_n += n_valid
 
+        lr_now = opt.param_groups[0]["lr"]
+        if sched is not None:
+            sched.step()
+
         val_metrics = evaluate(model, val_dataset, val_indices, device, batch_size=train_cfg.batch_size)
-        record = {"epoch": epoch, "train_nll": epoch_loss / epoch_n, **val_metrics}
+        record = {"epoch": epoch, "train_nll": epoch_loss / epoch_n, "lr": lr_now, **val_metrics}
         history.append(record)
         print(f"epoch {epoch}: train_nll={record['train_nll']:.4f} val_nll={val_metrics['nll']:.4f} "
-              f"val_accuracy={val_metrics['accuracy']:.4f}")
+              f"val_accuracy={val_metrics['accuracy']:.4f} lr={lr_now:.2e}")
         if (epoch + 1) in checkpoint_epochs:
             checkpoints[epoch + 1] = snapshot()
 
@@ -393,7 +416,8 @@ def train_sudoku_model(
     }
 
 
-def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len, baseline_acc, solve_metrics, history):
+def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len, baseline_acc, solve_metrics, history,
+                    train_cfg=None):
     os.makedirs(out_dir, exist_ok=True)
     torch.save(model.state_dict(), os.path.join(out_dir, "model.pt"))
     config = {
@@ -404,7 +428,21 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,
+        # Provenance: before 2026-10-25 none of the training settings were saved
+        # with the checkpoint, so a results notebook had to recover seed, epochs
+        # and n_train from the sbatch that produced it. Additive, so every
+        # existing reader (load_checkpoint, agg_eval's INSTANCE_KEYS) is
+        # unaffected; absent on older checkpoints.
+        "seed": getattr(sudoku_cfg, "seed", None),
     }
+    if train_cfg is not None:
+        config.update({
+            "n_train_instances": train_cfg.n_train_instances,
+            "n_val_instances": train_cfg.n_val_instances,
+            "batch_size": train_cfg.batch_size, "lr": train_cfg.lr, "epochs": train_cfg.epochs,
+            "lr_schedule": getattr(train_cfg, "lr_schedule", "constant"),
+            "lr_min_factor": getattr(train_cfg, "lr_min_factor", None),
+        })
     with open(os.path.join(out_dir, "config.json"), "w") as f:
         json.dump(config, f, indent=2)
     with open(os.path.join(out_dir, "history.json"), "w") as f:
