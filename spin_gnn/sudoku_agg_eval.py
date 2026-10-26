@@ -54,8 +54,9 @@ from .train_sudoku_transformer import build_instances, load_checkpoint, solve_ra
 # no such key -- that means it used the default, not that it used something
 # different, and reading it as a mismatch would wrongly block every comparison
 # against the original sweep.
-INSTANCE_KEYS = ("n_nodes", "degree", "n_colors", "rho", "rho_max", "hint_mode", "scratchpad")
-INSTANCE_KEY_DEFAULTS = {"hint_mode": "removal", "scratchpad": False}
+INSTANCE_KEYS = ("n_nodes", "degree", "n_colors", "rho", "rho_max", "hint_mode", "scratchpad",
+                 "shuffle_adj")
+INSTANCE_KEY_DEFAULTS = {"hint_mode": "removal", "scratchpad": False, "shuffle_adj": False}
 
 
 def mcnemar_exact_p(b, c):
@@ -140,6 +141,7 @@ def main():
         n_nodes=sig["n_nodes"], degree=sig["degree"], n_colors=sig["n_colors"],
         rho=sig["rho"], rho_max=sig["rho_max"],
         hint_mode=sig["hint_mode"] or "removal", scratchpad=bool(sig["scratchpad"]),
+        shuffle_adj=bool(sig["shuffle_adj"]),
     )
     print(f"shared pool: {args.n_instances} instances, rho in "
           f"[{cfg.rho}, {cfg.rho_max}], seed_start {args.seed_start}")

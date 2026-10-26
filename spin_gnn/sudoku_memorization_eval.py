@@ -59,7 +59,7 @@ from .sudoku_agg_eval import mcnemar_exact_p, wilson_interval
 from .sudoku_trace import solve_with_dd_trace
 from .train_sudoku_transformer import build_instances, load_checkpoint, solve_rate
 
-ORDERINGS = ("identity", "within_block", "shuffle", "byid")
+ORDERINGS = ("identity", "within_block", "shuffle", "byid", "bycolor")
 
 
 def reorder(instances, mode, rng, n_colors, verify=True):
@@ -80,6 +80,15 @@ def reorder(instances, mode, rng, n_colors, verify=True):
                 a[v] = rng.permutation(a[v])
         elif mode == "byid":
             a = np.sort(a, axis=1)
+        elif mode == "bycolor":
+            # RE-INSTATES the generator's leak: adj[v] sorted by the neighbour's
+            # true colour, which is what every pre-2026-10-26 run trained on. On
+            # a shuffle_adj=True model this is the decisive control -- if it
+            # scores above identity, the model reaches for the positional
+            # shortcut whenever it is offered, and training without it is not
+            # enough to stop that.
+            for v in range(a.shape[0]):
+                a[v] = a[v][np.argsort(colors[a[v]], kind="stable")]
         elif mode == "within_block":
             for v in range(a.shape[0]):
                 cs = colors[a[v]]
@@ -116,6 +125,7 @@ def cfg_from(config):
         rho=config["rho"], rho_max=config["rho_max"],
         hint_mode=config.get("hint_mode") or "removal",
         scratchpad=bool(config.get("scratchpad", False)),
+        shuffle_adj=bool(config.get("shuffle_adj", False)),
     )
 
 

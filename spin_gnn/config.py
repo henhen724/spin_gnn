@@ -171,6 +171,17 @@ class SudokuReasoningConfig:
     # see sudoku_tokens.py's module docstring. Off by default so existing
     # checkpoints and their token ids are unaffected.
     scratchpad: bool = False
+    # Permute each node's neighbor list before encoding. MEASURED 2026-10-26:
+    # planted_regular_graph appends edges in class-pair block order, so adj[v]
+    # arrives sorted by the neighbor's TRUE COLOR for 100.0% of nodes at
+    # N=24/48/96, and encode_instance emits that order verbatim -- the planted
+    # coloring is partly readable off token position. Job 49655447 showed every
+    # checkpoint in the project collapses (0.94-1.00 -> 0.00-0.15) when adj[v]
+    # is permuted at eval time, so the models are decoding that order rather
+    # than deducing. False reproduces the generator stream of every run before
+    # 2026-10-26 bit-for-bit (the permutation draws from its own rng stream);
+    # True is what any run measuring *deduction* should use.
+    shuffle_adj: bool = False
 
 
 @dataclass

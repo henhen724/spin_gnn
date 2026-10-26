@@ -32,6 +32,7 @@ def run_one(args):
     sudoku_cfg = SudokuReasoningConfig(
         n_nodes=args.n_nodes, degree=args.degree, n_colors=args.n_colors, rho=args.rho, rho_max=args.rho_max,
         seed=args.seed, scratchpad=args.scratchpad, hint_mode=args.hint_mode,
+        shuffle_adj=args.shuffle_adj,
     )
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
@@ -61,6 +62,10 @@ def run_one(args):
         f"_ff{resolved_ff:05d}_lr{args.lr:.0e}_{norm_tag}"
         + ("_sp" if args.scratchpad else "")
         + ("_rand" if args.hint_mode == "random" else "")
+        # The leak fix is a different instance distribution, not a different
+        # hyperparameter, so it gets its own tag segment -- a _shuf cell must
+        # never be mistaken for a comparable rerun of a sorted-order cell.
+        + ("_shuf" if args.shuffle_adj else "")
         # Only suffixed when non-default, so every tag written before 2026-10-25
         # stays byte-identical -- the decks and the agg_eval checkpoint paths
         # address cells by this string.
@@ -86,6 +91,7 @@ def run_one(args):
         **{f"solve_rate_k{k}": rec["solve_rate"] for k, rec in zip(o1_ks, o1_records)},
         "scratchpad": args.scratchpad,
         "hint_mode": args.hint_mode,
+        "shuffle_adj": args.shuffle_adj,
         "max_len": result["model_max_len"],
         "evidence_row_accuracy": result["solve_metrics"].get("evidence_row_accuracy"),
         "evidence_slot_accuracy": result["solve_metrics"].get("evidence_slot_accuracy"),
@@ -128,6 +134,10 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--scratchpad", action="store_true",
                     help="restate each deduction's evidence before it (sudoku_tokens scratchpad grammar)")
+    ap.add_argument("--shuffle-adj", action="store_true",
+                    help="permute each node's neighbor list, removing the generator's "
+                         "color-sorted adjacency order (see SudokuReasoningConfig.shuffle_adj); "
+                         "required for any run that is measuring deduction rather than decoding")
     ap.add_argument("--hint-mode", type=str, default="removal", choices=["removal", "random"],
                     help="'random' samples hints independently so DD can fail, which is required for a "
                          "hint-density solvability transition to exist in the data at all")

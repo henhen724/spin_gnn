@@ -130,6 +130,7 @@ def main():
             rho=config["rho"], rho_max=config["rho_max"],
             hint_mode=config.get("hint_mode", "removal"),
             scratchpad=config.get("scratchpad", False),
+            shuffle_adj=config.get("shuffle_adj", False),
         )
         for rho in args.rho:
             records, diag = eval_solve_by_depth(

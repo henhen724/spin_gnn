@@ -99,6 +99,17 @@ def build_instances(sudoku_cfg: SudokuReasoningConfig, n_instances, seed_start):
         else:
             raise RuntimeError(f"could not build a planted graph for instance {i} after 20 attempts")
 
+        if getattr(sudoku_cfg, "shuffle_adj", False):
+            # Break the generator's color-sorted adjacency order (see
+            # SudokuReasoningConfig.shuffle_adj). Done here rather than inside
+            # planted_regular_graph because five other scripts call that
+            # function for the edge set alone and would have their rng streams
+            # perturbed for no benefit; the dedicated 40M offset follows the
+            # existing 10/20/30M convention and leaves the default path's
+            # stream bit-identical.
+            adj_rng = np.random.default_rng(seed_start + i + 40_000_000)
+            adj = np.stack([adj_rng.permutation(row) for row in adj])
+
         rho_rng = np.random.default_rng(seed_start + i + 10_000_000)
         target_rho = (
             rho_rng.uniform(sudoku_cfg.rho, sudoku_cfg.rho_max)
@@ -425,6 +436,9 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
         "rho": sudoku_cfg.rho, "rho_max": sudoku_cfg.rho_max, "vocab_size": vocab.size,
         "scratchpad": getattr(sudoku_cfg, "scratchpad", False),
         "hint_mode": getattr(sudoku_cfg, "hint_mode", "removal"),
+        # Absent on every checkpoint before 2026-10-26, where it reads False --
+        # which is correct for them, they all trained on the color-sorted order.
+        "shuffle_adj": getattr(sudoku_cfg, "shuffle_adj", False),
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,
