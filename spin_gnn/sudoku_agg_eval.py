@@ -54,6 +54,17 @@ from .train_sudoku_transformer import build_instances, load_checkpoint, solve_ra
 # no such key -- that means it used the default, not that it used something
 # different, and reading it as a mismatch would wrongly block every comparison
 # against the original sweep.
+#
+# `shuffle_events` is deliberately NOT here, unlike `shuffle_adj`. This module
+# prompts with `full_tokens[:reasoning_start]` -- hints and graph only -- and
+# scores free generation against the planted colouring, so the only thing the
+# flag changes (the order of the events inside a round of the TARGET trace)
+# lands entirely in the discarded suffix. Two cells differing only in it are
+# handed byte-identical prompts and judged by an order-insensitive
+# check_solution, so they ARE being asked the same question and the paired
+# McNemar test is valid -- which is the whole point of the control. A
+# shuffle_adj mismatch is the opposite case: it changes the prompt itself, so
+# one of the two models would be scored out of distribution.
 INSTANCE_KEYS = ("n_nodes", "degree", "n_colors", "rho", "rho_max", "hint_mode", "scratchpad",
                  "shuffle_adj")
 INSTANCE_KEY_DEFAULTS = {"hint_mode": "removal", "scratchpad": False, "shuffle_adj": False}
@@ -141,6 +152,8 @@ def main():
         n_nodes=sig["n_nodes"], degree=sig["degree"], n_colors=sig["n_colors"],
         rho=sig["rho"], rho_max=sig["rho_max"],
         hint_mode=sig["hint_mode"] or "removal", scratchpad=bool(sig["scratchpad"]),
+        # No shuffle_events: it is not an instance key here (see INSTANCE_KEYS),
+        # and the pool's trace order cannot reach the prompt anyway.
         shuffle_adj=bool(sig["shuffle_adj"]),
     )
     print(f"shared pool: {args.n_instances} instances, rho in "

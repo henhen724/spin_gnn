@@ -132,6 +132,7 @@ def main():
         # Analyzing a _shuf checkpoint without this feeds it the color-sorted
         # adjacency it was trained to ignore, i.e. the wrong distribution.
         shuffle_adj=bool(config.get("shuffle_adj", False)),
+        shuffle_events=bool(config.get("shuffle_events", False)),
     )
     rng = np.random.default_rng(args.seed)
     rows = []

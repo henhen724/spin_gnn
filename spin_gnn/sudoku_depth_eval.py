@@ -131,6 +131,7 @@ def main():
             hint_mode=config.get("hint_mode", "removal"),
             scratchpad=config.get("scratchpad", False),
             shuffle_adj=config.get("shuffle_adj", False),
+            shuffle_events=config.get("shuffle_events", False),
         )
         for rho in args.rho:
             records, diag = eval_solve_by_depth(

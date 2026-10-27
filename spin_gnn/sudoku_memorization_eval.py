@@ -126,6 +126,7 @@ def cfg_from(config):
         hint_mode=config.get("hint_mode") or "removal",
         scratchpad=bool(config.get("scratchpad", False)),
         shuffle_adj=bool(config.get("shuffle_adj", False)),
+        shuffle_events=bool(config.get("shuffle_events", False)),
     )
 
 

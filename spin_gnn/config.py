@@ -182,6 +182,47 @@ class SudokuReasoningConfig:
     # 2026-10-26 bit-for-bit (the permutation draws from its own rng stream);
     # True is what any run measuring *deduction* should use.
     shuffle_adj: bool = False
+    # Permute the events WITHIN each DD round before encoding. The second
+    # order-based shortcut, and the last uncontrolled one. solve_with_dd_trace
+    # emits `sorted(...)` per round (sudoku_trace.py:83), so round events arrive
+    # in ascending node index for 100.0% of rounds, and `shuffle_adj` does not
+    # touch that -- it permutes neighbour lists only. MEASURED 2026-10-27
+    # (scripts/order_baseline_next_node.py): the hand rule "smallest index above
+    # the previous one whose colour is still unknown" -- bookkeeping, no
+    # frontier, no deduction -- scores max-over-v F1 0.632 on `next_node` at
+    # pre_node positions, ABOVE the leak-free model's own best SAE feature
+    # (0.545), and taking the frontier into account makes the rule exact
+    # (1.000). So "it knows which node comes next" is free in both arms, and no
+    # eval-time permutation can say whether the model DEPENDS on the order:
+    # that needs a retrain, which is what this flag is for.
+    #
+    # Permuting within a round is semantics-preserving. A DD round deduces
+    # every node whose neighbours already cover q-1 colours SIMULTANEOUSLY, so
+    # the order inside the round is an arbitrary presentation choice: the round
+    # partition, its membership, the reasoning depth T and every DD predicate
+    # are unchanged, and the target colours travel with their nodes. That makes
+    # this a strictly weaker intervention than shuffle_adj, which changes which
+    # tokens appear where in the graph section.
+    #
+    # False reproduces the generator stream of every run before 2026-10-27
+    # bit-for-bit (the permutation draws from its own rng stream, offset 50M,
+    # following the 10/20/30/40M convention); True is what a run measuring
+    # order-independent deduction should use.
+    #
+    # UNLIKE shuffle_adj it is NOT an instance key for sudoku_agg_eval, and
+    # that is what makes the control cheap: solve_rate prompts with hints and
+    # graph only and scores free generation against the planted colouring, so
+    # a permuted-round cell and a sorted-round cell get byte-identical prompts
+    # and an order-insensitive verdict. They POOL, so the comparison is paired
+    # McNemar rather than two overlapping Wilson intervals. Every teacher-
+    # forced analysis (SAE, probes, circuits, depth slots, attention) is the
+    # other way round and must rebuild its sequences with the flag the
+    # checkpoint was trained with, or it reads the model off-distribution.
+    # Token-level metrics are NOT comparable across the flag: permuting the
+    # order injects log(k!) nats per k-event round that no model can predict,
+    # so a higher val_nll in the True arm is the task changing, not the model
+    # getting worse.
+    shuffle_events: bool = False
 
 
 @dataclass

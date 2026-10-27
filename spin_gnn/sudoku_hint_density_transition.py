@@ -69,6 +69,7 @@ def transition_curve(ckpt_dir, rho_grid, n_per_bin, seed_start, device):
         # Analyzing a _shuf checkpoint without this feeds it the color-sorted
         # adjacency it was trained to ignore.
         shuffle_adj=bool(config.get("shuffle_adj", False)),
+        shuffle_events=bool(config.get("shuffle_events", False)),
     )
     with torch.no_grad():
         records = eval_solve_by_rho(

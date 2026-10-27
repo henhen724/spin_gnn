@@ -132,6 +132,21 @@ def build_instances(sudoku_cfg: SudokuReasoningConfig, n_instances, seed_start):
             assert trace["resolved"], "removal_path-derived hint sets must always be fully resolvable"
         else:
             raise ValueError(f"unknown hint_mode={hint_mode!r} (expected 'removal' or 'random')")
+        if getattr(sudoku_cfg, "shuffle_events", False):
+            # Break the ascending-node-index order of the events inside each
+            # round (see SudokuReasoningConfig.shuffle_events). Applied to the
+            # finished trace rather than inside solve_with_dd_trace because four
+            # analysis scripts call that function to recompute a reference trace
+            # and compare it against a stored one -- they must keep seeing the
+            # canonical sorted form. The round partition is untouched, so T, the
+            # frontier and every DD predicate are identical; only the order in
+            # which a round's deductions are written out changes.
+            ev_rng = np.random.default_rng(seed_start + i + 50_000_000)
+            trace = dict(trace)
+            trace["rounds"] = [
+                [tuple(int(x) for x in rd[j]) for j in ev_rng.permutation(len(rd))]
+                for rd in trace["rounds"]
+            ]
         instances.append((adj, colors, hints, trace))
     return instances
 
@@ -439,6 +454,9 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
         # Absent on every checkpoint before 2026-10-26, where it reads False --
         # which is correct for them, they all trained on the color-sorted order.
         "shuffle_adj": getattr(sudoku_cfg, "shuffle_adj", False),
+        # Absent on every checkpoint before 2026-10-27, where it reads False --
+        # also correct for them, they all trained on rounds in sorted node order.
+        "shuffle_events": getattr(sudoku_cfg, "shuffle_events", False),
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,

@@ -32,7 +32,7 @@ def run_one(args):
     sudoku_cfg = SudokuReasoningConfig(
         n_nodes=args.n_nodes, degree=args.degree, n_colors=args.n_colors, rho=args.rho, rho_max=args.rho_max,
         seed=args.seed, scratchpad=args.scratchpad, hint_mode=args.hint_mode,
-        shuffle_adj=args.shuffle_adj,
+        shuffle_adj=args.shuffle_adj, shuffle_events=args.shuffle_events,
     )
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
@@ -66,6 +66,10 @@ def run_one(args):
         # hyperparameter, so it gets its own tag segment -- a _shuf cell must
         # never be mistaken for a comparable rerun of a sorted-order cell.
         + ("_shuf" if args.shuffle_adj else "")
+        # Same argument for the within-round event order (finding 23's control):
+        # a different instance distribution, so a cell that trained on permuted
+        # rounds must never share a tag with one that trained on sorted rounds.
+        + ("_ev" if args.shuffle_events else "")
         # Only suffixed when non-default, so every tag written before 2026-10-25
         # stays byte-identical -- the decks and the agg_eval checkpoint paths
         # address cells by this string.
@@ -92,6 +96,7 @@ def run_one(args):
         "scratchpad": args.scratchpad,
         "hint_mode": args.hint_mode,
         "shuffle_adj": args.shuffle_adj,
+        "shuffle_events": args.shuffle_events,
         "max_len": result["model_max_len"],
         "evidence_row_accuracy": result["solve_metrics"].get("evidence_row_accuracy"),
         "evidence_slot_accuracy": result["solve_metrics"].get("evidence_slot_accuracy"),
@@ -138,6 +143,11 @@ if __name__ == "__main__":
                     help="permute each node's neighbor list, removing the generator's "
                          "color-sorted adjacency order (see SudokuReasoningConfig.shuffle_adj); "
                          "required for any run that is measuring deduction rather than decoding")
+    ap.add_argument("--shuffle-events", action="store_true",
+                    help="permute the events within each DD round, removing the generator's "
+                         "ascending-node-index order inside a round (see "
+                         "SudokuReasoningConfig.shuffle_events); the round partition, T and "
+                         "every DD predicate are unchanged, only the presentation order is")
     ap.add_argument("--hint-mode", type=str, default="removal", choices=["removal", "random"],
                     help="'random' samples hints independently so DD can fail, which is required for a "
                          "hint-density solvability transition to exist in the data at all")

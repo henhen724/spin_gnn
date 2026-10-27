@@ -424,6 +424,7 @@ def main():
         # would be fed the color-sorted instances it was trained to ignore, and
         # every feature label would describe behaviour off its distribution.
         shuffle_adj=bool(config.get("shuffle_adj", False)),
+        shuffle_events=bool(config.get("shuffle_events", False)),
     )
     print(f"instances: N={sudoku_cfg.n_nodes} degree={sudoku_cfg.degree} "
           f"q={sudoku_cfg.n_colors} shuffle_adj={sudoku_cfg.shuffle_adj}")

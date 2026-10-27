@@ -71,8 +71,12 @@ def test_wilson_interval_brackets_the_point_estimate():
 
 
 def test_mismatched_instance_distributions_are_refused():
-    a = {"n_nodes": 24, "degree": 5, "n_colors": 4, "rho": 0.3, "rho_max": 0.95,
-         "hint_mode": "removal", "scratchpad": False}
+    # Built through instance_signature rather than by hand: check_comparable
+    # indexes INSTANCE_KEYS directly, so a literal dict here goes stale (with a
+    # KeyError, not a useful failure) the next time a key is added -- as it did
+    # when shuffle_adj arrived on 2026-10-26.
+    a = instance_signature({"n_nodes": 24, "degree": 5, "n_colors": 4, "rho": 0.3, "rho_max": 0.95,
+                            "hint_mode": "removal", "scratchpad": False})
     b = dict(a, rho=0.5)
     with pytest.raises(SystemExit, match="different instance distribution"):
         check_comparable([a, b], ["ref", "other"])
