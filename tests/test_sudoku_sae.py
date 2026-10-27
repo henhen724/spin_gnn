@@ -251,3 +251,60 @@ def test_target_l0_search_reports_failure_instead_of_hiding_it():
     )
     assert hist[-1]["hit_target_l0"] is False
     assert len(hist[-1]["l1_search_path"]) == 2
+
+
+def test_position_mask_separates_a_free_predicate_from_a_computed_one():
+    """The control for SAE pre-registration (a) of job 49729375.
+
+    At `pre_color` positions `pos = i`, so `tokens[pos]` IS the node about to be
+    coloured and `next_node[v]` is matched for free by any token-identity
+    feature; at `pre_node` positions `pos = i - 1` and it is not. A count of
+    layer-0 `next_node` features therefore cannot settle anything unless the two
+    kinds of position are scored separately.
+
+    Planted: one feature firing only at pre_color positions where next_node==3
+    (the freebie) and one firing whenever next_node==3 (the computed version).
+    Scored on all positions the two carry the SAME predicate label, which is the
+    bug this control exists for; under the masks the freebie must vanish at
+    pre_node while the computed one survives both."""
+    P, n_nodes, n_colors = 1200, 6, 4
+    labels = _fake_labels(P, n_nodes, n_colors, seed=11)
+    is_node = labels["kind_is_node"].astype(bool)
+    is_next = labels["next_node"] == 3
+    feats = torch.zeros(P, 2)
+    feats[:, 0] = torch.as_tensor((is_next & ~is_node).astype(np.float32))
+    feats[:, 1] = torch.as_tensor(is_next.astype(np.float32))
+
+    full = score_features(feats, labels, n_nodes, n_colors)
+    assert full[1]["best_predicate"] == "next_node[3]" and full[1]["best_f1"] == 1.0
+    assert full[0]["best_predicate"] == "next_node[3]", "the two are indistinguishable unmasked"
+    assert 0.5 < full[0]["best_f1"] < 1.0, full[0]["best_f1"]
+
+    color = score_features(feats, labels, n_nodes, n_colors, position_mask=~is_node)
+    node = score_features(feats, labels, n_nodes, n_colors, position_mask=is_node)
+    assert color[0]["best_predicate"] == "next_node[3]" and color[0]["best_f1"] == 1.0
+    assert color[1]["best_predicate"] == "next_node[3]" and color[1]["best_f1"] == 1.0
+    # The freebie does not fire at all once its kind of position is removed.
+    assert node[0]["n_fire"] == 0 and not node[0]["is_alive"]
+    assert node[0]["best_f1"] == 0.0
+    assert node[1]["best_predicate"] == "next_node[3]" and node[1]["best_f1"] == 1.0
+    # Counts are recomputed inside the mask, not carried over from all positions.
+    assert node[1]["n_fire"] == int((is_next & is_node).sum())
+    assert color[1]["n_fire"] == int((is_next & ~is_node).sum())
+    assert node[1]["n_fire"] + color[1]["n_fire"] == full[1]["n_fire"]
+
+
+def test_position_mask_rejects_a_mismatched_or_empty_mask():
+    """A mask of the wrong length would silently score a shifted subset, and an
+    empty one would report F1=0 for every feature as if that were a result."""
+    import pytest
+    P, n_nodes, n_colors = 200, 6, 4
+    labels = _fake_labels(P, n_nodes, n_colors, seed=12)
+    rng = np.random.default_rng(0)
+    feats = torch.as_tensor((rng.random((P, 2)) < 0.2).astype(np.float32))
+    with pytest.raises(ValueError, match="entries for"):
+        score_features(feats, labels, n_nodes, n_colors,
+                       position_mask=np.ones(P - 1, dtype=bool))
+    with pytest.raises(ValueError, match="keeps"):
+        score_features(feats, labels, n_nodes, n_colors,
+                       position_mask=np.zeros(P, dtype=bool))

@@ -294,7 +294,7 @@ def _best_f1(fired_f, mat_f):
 
 
 def score_features(feature_acts, labels, n_nodes, n_colors, min_f1=0.3,
-                   alive_rate=1e-3, n_null_shifts=19, seed=0):
+                   alive_rate=1e-3, n_null_shifts=19, seed=0, position_mask=None):
     """Best-matching DD predicate per feature, by F1 of (feature fires) vs
     (predicate holds). Features are binarized at >0, which is the natural
     threshold for a ReLU dictionary.
@@ -313,12 +313,34 @@ def score_features(feature_acts, labels, n_nodes, n_colors, min_f1=0.3,
     puts that at 0.05. It is a PER-FEATURE level, so about n_alive/20 features
     pass it by chance -- `expected_false_beats_null` in the summary is that
     number, and n_beats_null means nothing without it.
+
+    `position_mask` (P,) restricts scoring to a subset of positions WITHOUT
+    retraining, which is how a predicate that is true for free at some kinds of
+    position is told apart from one the model computes. The case that forced
+    this: at `pre_color` positions `pos = i`, so `tokens[pos]` IS the node about
+    to be coloured, and any layer-0 token-identity feature matches
+    `next_node[v]` with no work -- scoring the same dictionary on `pre_node`
+    positions only removes that freebie. Firing rates and the null are
+    recomputed inside the mask, so columns are comparable within a mask but not
+    across masks of very different size.
     """
     fired = (feature_acts > 0).numpy()
     preds = dd_predicates(labels, n_nodes, n_colors)
     names = [n for n, _ in preds]
     mat_f = np.stack([p for _, p in preds], axis=1).astype(np.float32)  # (P, n_pred)
     fired_f = fired.astype(np.float32)
+    if position_mask is not None:
+        m = np.asarray(position_mask, dtype=bool)
+        if m.shape[0] != fired_f.shape[0]:
+            raise ValueError(f"position_mask has {m.shape[0]} entries for "
+                             f"{fired_f.shape[0]} positions")
+        if int(m.sum()) < 2:
+            raise ValueError(f"position_mask keeps {int(m.sum())} positions")
+        fired, fired_f, mat_f = fired[m], fired_f[m], mat_f[m]
+        # mean_activation_when_firing below reads feature_acts, so it has to be
+        # masked too or it would average over positions the rest of the row
+        # excludes.
+        feature_acts = feature_acts[torch.from_numpy(m)]
 
     best, arg = _best_f1(fired_f, mat_f)
     P = fired_f.shape[0]
@@ -384,6 +406,11 @@ def main():
                          "them, a one-sided randomization test at level 1/(n+1), so 19 gives 0.05. "
                          "The max over them is the F1 the argmax over predicates buys for free")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--split-by-kind", action="store_true",
+                    help="also score each dictionary on pre_node and pre_color positions "
+                         "separately, into sae_summary_by_kind.csv. At pre_color positions "
+                         "tokens[pos] IS the node being coloured, so next_node[v] is matched "
+                         "for free by any token-identity feature; this is the control for that")
     ap.add_argument("--out-dir", type=str, required=True)
     args = ap.parse_args()
 
@@ -408,6 +435,7 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
     summary = []
+    by_kind = []
     for layer in args.layer:
         if layer >= acts.shape[0]:
             print(f"skipping layer {layer}: model has {acts.shape[0] - 1} blocks")
@@ -484,6 +512,55 @@ def main():
               f"justifies_next={s['best_justifier_f1']:.3f}  "
               f"nbr_of_next={s['best_nbr_of_next_f1']:.3f}  "
               f"distinct_colors={s['best_distinct_colors_f1']:.3f}; families={fam}")
+
+        if args.split_by_kind:
+            # Same dictionary, scored on one kind of position at a time. A
+            # predicate the model has to compute survives both; one that is
+            # true for free at a kind of position only survives there.
+            is_node = np.asarray(labels["kind_is_node"]).astype(bool)
+            for kind, mask in (("pre_node", is_node), ("pre_color", ~is_node)):
+                krows = score_features(
+                    feats, labels, sudoku_cfg.n_nodes, sudoku_cfg.n_colors,
+                    min_f1=args.min_f1, alive_rate=args.alive_rate,
+                    n_null_shifts=args.n_null_shifts, seed=args.seed,
+                    position_mask=mask)
+                kalive = [r for r in krows if r["is_alive"]]
+                kinterp = [r for r in kalive if r["is_interpretable"] and r["beats_null"]]
+                kfam = {}
+                for r in kinterp:
+                    kfam[r["best_predicate_family"]] = kfam.get(r["best_predicate_family"], 0) + 1
+
+                def kbest(prefix, _kalive=kalive):
+                    return max((r["best_f1"] for r in _kalive
+                               if r["best_predicate"].startswith(prefix)), default=0.0)
+
+                by_kind.append({
+                    "checkpoint": os.path.basename(args.checkpoint), "layer": layer,
+                    "position_kind": kind, "n_positions": int(mask.sum()),
+                    "n_alive": len(kalive), "n_interpretable": len(kinterp),
+                    "median_best_f1_null": float(np.median([r["best_f1_null"] for r in kalive]))
+                    if kalive else 0.0,
+                    "best_next_node_f1": kbest("next_node["),
+                    "best_frontier_f1": kbest("frontier"),
+                    "best_justifier_f1": kbest("justifies_next"),
+                    "best_nbr_of_next_f1": kbest("nbr_of_next"),
+                    "n_next_node_features": sum(
+                        r["best_predicate_family"] == "next_node" for r in kinterp),
+                    "family_counts": json.dumps(kfam, sort_keys=True),
+                })
+                k = by_kind[-1]
+                print(f"    [{kind}] {k['n_positions']} positions, {len(kinterp)} interpretable; "
+                      f"next_node={k['best_next_node_f1']:.3f} "
+                      f"({k['n_next_node_features']} features)  "
+                      f"justifies_next={k['best_justifier_f1']:.3f}  "
+                      f"frontier={k['best_frontier_f1']:.3f}")
+
+    if by_kind:
+        with open(os.path.join(args.out_dir, "sae_summary_by_kind.csv"), "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(by_kind[0].keys()))
+            w.writeheader()
+            w.writerows(by_kind)
+        print(f"wrote {args.out_dir}/sae_summary_by_kind.csv")
 
     with open(os.path.join(args.out_dir, "sae_summary.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
