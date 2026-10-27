@@ -294,6 +294,9 @@ def main():
         n_nodes=config["n_nodes"], degree=config["degree"], n_colors=config["n_colors"],
         rho=config["rho"], rho_max=config["rho_max"],
         scratchpad=config.get("scratchpad", False), hint_mode=config.get("hint_mode", "removal"),
+        # Analyzing a _shuf checkpoint without this feeds it the color-sorted
+        # adjacency it was trained to ignore, i.e. the wrong distribution.
+        shuffle_adj=bool(config.get("shuffle_adj", False)),
     )
     cases = collect_cases(sudoku_cfg, vocab, args.n_instances, args.seed_start)
     print(f"{len(cases)} flippable round-0 deductions from {args.n_instances} instances")

@@ -148,6 +148,9 @@ def main():
             rho=config["rho"], rho_max=config["rho_max"],
             hint_mode=config.get("hint_mode", "removal"),
             scratchpad=config.get("scratchpad", False),
+            # Analyzing a _shuf checkpoint without this feeds it the
+            # color-sorted adjacency it was trained to ignore.
+            shuffle_adj=bool(config.get("shuffle_adj", False)),
         )
         # removal_path snapshots at int(np.floor(rho * N)) hints, so the most
         # heavily hinted instance training ever saw is floor(rho_max * N) --

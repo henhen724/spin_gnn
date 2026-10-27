@@ -91,6 +91,18 @@ def dd_state_labels(adj, trace, vocab):
       known_mask       (P, N)    nodes with a color known at this position
       node_color       (P, N)    known color per node, n_colors = "unknown"
       n_known_nbrs     (P, N)    how many of each node's neighbors are known
+      n_known_colors   (P, N)    how many DISTINCT colors v's known neighbors
+                                 show. This, not n_known_nbrs, is the quantity
+                                 DD actually thresholds: v is deducible iff its
+                                 known neighbors cover n_colors-1 distinct
+                                 colors. Two known neighbors of the same color
+                                 advance n_known_nbrs and not the deduction.
+      nbr_of_next_mask (P, N)    u is a neighbor of the node about to be emitted
+      justifier_mask   (P, N)    u is a KNOWN neighbor of the node about to be
+                                 emitted, i.e. one of the edges that justifies
+                                 this deduction. The edge-level ground truth:
+                                 a feature tracking this is looking at the right
+                                 edges at the right time.
       round_index      (P,)      0-based round
       kind_is_node     (P,)      True for pre_node, False for pre_color
     """
@@ -115,6 +127,9 @@ def dd_state_labels(adj, trace, vocab):
         "known_mask": np.zeros((P, n_nodes), dtype=np.int8),
         "node_color": np.full((P, n_nodes), n_colors, dtype=np.int64),
         "n_known_nbrs": np.zeros((P, n_nodes), dtype=np.int64),
+        "n_known_colors": np.zeros((P, n_nodes), dtype=np.int64),
+        "nbr_of_next_mask": np.zeros((P, n_nodes), dtype=np.int8),
+        "justifier_mask": np.zeros((P, n_nodes), dtype=np.int8),
         "round_index": np.zeros(P, dtype=np.int64),
         "kind_is_node": np.zeros(P, dtype=bool),
     }
@@ -143,8 +158,20 @@ def dd_state_labels(adj, trace, vocab):
         for u, c in cur.items():
             lab["known_mask"][p, u] = 1
             lab["node_color"][p, u] = c
-        for v in range(n_nodes):
-            lab["n_known_nbrs"][p, v] = sum(1 for u in adj[v] if int(u) in cur)
+        # Neighbor colors as a (N, degree) table, n_colors standing for unknown.
+        # Vectorized because the per-node Python loop this replaces was O(P*N*d)
+        # and dominated collect_dataset at N=96.
+        nc = lab["node_color"][p]
+        nbr_col = nc[adj]
+        lab["n_known_nbrs"][p] = (nbr_col < n_colors).sum(1)
+        seen = np.zeros((n_nodes, n_colors + 1), dtype=bool)
+        seen[np.repeat(np.arange(n_nodes), adj.shape[1]), nbr_col.ravel()] = True
+        lab["n_known_colors"][p] = seen[:, :n_colors].sum(1)
+        # The edges in play at THIS position: the neighborhood of the node about
+        # to be emitted, and the known part of it that forces its color.
+        nbrs_of_next = adj[node]
+        lab["nbr_of_next_mask"][p, nbrs_of_next] = 1
+        lab["justifier_mask"][p, nbrs_of_next[nc[nbrs_of_next] < n_colors]] = 1
     return positions, lab
 
 

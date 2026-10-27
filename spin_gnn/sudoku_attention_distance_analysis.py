@@ -37,6 +37,13 @@ def main():
     cfg = SudokuReasoningConfig(
         n_nodes=config["n_nodes"], degree=config["degree"], n_colors=config["n_colors"],
         rho=config["rho"], rho_max=config["rho_max"],
+        # All three were being left at their defaults, so a checkpoint trained
+        # with any of them set was analyzed on instances it never saw. shuffle_adj
+        # is the one that matters now: without it a _shuf checkpoint is fed the
+        # color-sorted adjacency it was trained to ignore.
+        hint_mode=config.get("hint_mode") or "removal",
+        scratchpad=bool(config.get("scratchpad", False)),
+        shuffle_adj=bool(config.get("shuffle_adj", False)),
     )
     instances = build_instances(cfg, n_instances=args.n_instances, seed_start=args.seed_start)
 

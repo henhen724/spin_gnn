@@ -18,6 +18,9 @@ def _fake_labels(P, n_nodes=6, n_colors=4, seed=0):
         "known_mask": rng.integers(0, 2, size=(P, n_nodes)).astype(np.int8),
         "node_color": rng.integers(0, n_colors + 1, size=(P, n_nodes)).astype(np.int64),
         "n_known_nbrs": rng.integers(0, 4, size=(P, n_nodes)).astype(np.int64),
+        "n_known_colors": rng.integers(0, n_colors + 1, size=(P, n_nodes)).astype(np.int64),
+        "nbr_of_next_mask": rng.integers(0, 2, size=(P, n_nodes)).astype(np.int8),
+        "justifier_mask": rng.integers(0, 2, size=(P, n_nodes)).astype(np.int8),
         "next_node": rng.integers(0, n_nodes, size=P).astype(np.int64),
         "next_color": rng.integers(0, n_colors, size=P).astype(np.int64),
         "kind_is_node": rng.integers(0, 2, size=P).astype(bool),
@@ -97,12 +100,68 @@ def test_predicate_set_covers_the_named_families():
     labels = _fake_labels(50, n_nodes=6, n_colors=4)
     names = [n for n, _ in dd_predicates(labels, 6, 4)]
     for expected in ["frontier[0]", "remaining[0]", "known[5]", "next_node[3]", "color[2]=1",
-                     "next_color=0", "kind_is_node"]:
+                     "next_color=0", "kind_is_node",
+                     # the edge families: which neighbours are in play right now
+                     "justifies_next[0]", "nbr_of_next[5]"]:
         assert expected in names, expected
     assert any(n.startswith("next_node_nbr_count=") for n in names)
+    assert any(n.startswith("next_node_distinct_colors=") for n in names)
     # Every predicate must be a (P,)-shaped boolean mask.
     for _name, mask in dd_predicates(labels, 6, 4):
         assert mask.shape == (50,) and mask.dtype == bool
+
+
+def test_score_features_identifies_a_planted_edge_feature():
+    """A feature firing exactly when node 3 is a justifying neighbour of the
+    node being emitted must be labelled justifies_next[3] -- the edge-level
+    half of "relevant nodes and edges at the relevant times"."""
+    P, n_nodes, n_colors = 400, 6, 4
+    labels = _fake_labels(P, n_nodes, n_colors)
+    feats = torch.zeros(P, 2)
+    feats[:, 0] = torch.as_tensor(labels["justifier_mask"][:, 3].astype(np.float32))
+    feats[:, 1] = torch.as_tensor(labels["nbr_of_next_mask"][:, 1].astype(np.float32))
+    rows = score_features(feats, labels, n_nodes, n_colors)
+    assert rows[0]["best_predicate"] == "justifies_next[3]"
+    assert rows[0]["best_f1"] == 1.0 and rows[0]["beats_null"]
+    assert rows[1]["best_predicate"] == "nbr_of_next[1]"
+    assert rows[1]["best_f1"] == 1.0
+
+
+def test_noise_features_do_not_beat_their_own_null():
+    """The argmax over a few hundred predicates buys a substantial F1 for free,
+    so best_f1 alone cannot separate a real match from the search.
+
+    Noise features firing at 30% reach best_f1 ~0.40 here -- a number that
+    would look like a finding in a table -- and their rolled null reaches the
+    same value, which is the whole point: all of it is the argmax. `beats_null`
+    is a per-feature randomization test at level 1/(shifts+1), so a few of the
+    12 clearing it is the expected false-positive rate and not a bug; what must
+    hold is that no noise feature clears it by a MARGIN."""
+    P, n_nodes, n_colors = 3000, 6, 4
+    labels = _fake_labels(P, n_nodes, n_colors, seed=5)
+    rng = np.random.default_rng(6)
+    feats = torch.as_tensor((rng.random((P, 12)) < 0.3).astype(np.float32))
+    rows = score_features(feats, labels, n_nodes, n_colors, n_null_shifts=19, seed=1)
+    assert all(r["best_f1"] > 0.1 for r in rows), "null control is untested if raw F1 is ~0"
+    margins = [r["best_f1"] - r["best_f1_null"] for r in rows]
+    assert max(margins) < 0.02, sorted(margins)[-3:]
+    # And the threshold alone, without the null, would have credited all 12.
+    assert all(r["best_f1"] >= 0.3 for r in rows)
+
+
+def test_aliveness_floor_excludes_single_position_features():
+    """firing_rate>0 called all 2048 features alive in the 2026-10-19 run. A
+    feature firing once in P positions is not a feature."""
+    P, n_nodes, n_colors = 2000, 6, 4
+    labels = _fake_labels(P, n_nodes, n_colors, seed=7)
+    feats = torch.zeros(P, 3)
+    feats[0, 0] = 1.0                                     # fires once: 5e-4
+    feats[:, 1] = torch.as_tensor(labels["known_mask"][:, 0].astype(np.float32))
+    rows = score_features(feats, labels, n_nodes, n_colors, alive_rate=1e-3)
+    assert rows[0]["firing_rate"] > 0 and not rows[0]["is_alive"]
+    assert rows[0]["n_fire"] == 1
+    assert rows[1]["is_alive"]
+    assert not rows[2]["is_alive"]
 
 
 def test_target_l0_search_rescues_a_dense_dictionary():

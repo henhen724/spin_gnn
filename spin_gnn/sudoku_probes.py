@@ -174,6 +174,9 @@ def probe_checkpoint(ckpt_dir, n_train_instances, n_test_instances, max_pos, dev
         n_nodes=config["n_nodes"], degree=config["degree"], n_colors=config["n_colors"],
         rho=config["rho"], rho_max=config["rho_max"],
         hint_mode=config.get("hint_mode", "removal"), scratchpad=config.get("scratchpad", False),
+        # Analyzing a _shuf checkpoint without this feeds it the color-sorted
+        # adjacency it was trained to ignore, i.e. the wrong distribution.
+        shuffle_adj=bool(config.get("shuffle_adj", False)),
     )
     # Disjoint instance pools: a probe must generalize across instances, not
     # just across positions within instances it has already seen.

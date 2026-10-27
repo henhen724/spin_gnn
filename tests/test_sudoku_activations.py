@@ -120,6 +120,44 @@ def test_n_known_nbrs_matches_the_adjacency_table():
                 assert lab["n_known_nbrs"][p, v] == expected
 
 
+def test_n_known_colors_is_the_quantity_dd_thresholds():
+    """DD deduces v exactly when v's known neighbors show n_colors-1 DISTINCT
+    colors. n_known_nbrs can reach that count without the deduction being
+    available (two known neighbors sharing a color), so this is the stronger
+    label: at every position, the node about to be emitted must have exactly
+    n_colors-1 distinct colors on its known incident edges."""
+    cfg, vocab, instances = _instances(n=3)
+    for adj, _c, _h, trace in instances:
+        positions, lab = dd_state_labels(adj, trace, vocab)
+        for p in range(len(positions)):
+            for v in range(cfg.n_nodes):
+                seen = {int(lab["node_color"][p, int(u)]) for u in adj[v]
+                        if lab["known_mask"][p, int(u)]}
+                assert lab["n_known_colors"][p, v] == len(seen)
+                assert lab["n_known_colors"][p, v] <= lab["n_known_nbrs"][p, v]
+            nxt = int(lab["next_node"][p])
+            assert lab["n_known_colors"][p, nxt] == cfg.n_colors - 1
+
+
+def test_justifier_mask_is_the_known_neighborhood_of_the_next_node():
+    """The edge-level label: exactly the known neighbors of the node about to
+    be emitted, i.e. the edges forcing its color. Their colors must be the
+    n_colors-1 colors other than the one DD is about to write."""
+    cfg, vocab, instances = _instances(n=3)
+    for adj, _c, _h, trace in instances:
+        positions, lab = dd_state_labels(adj, trace, vocab)
+        for p in range(len(positions)):
+            nxt = int(lab["next_node"][p])
+            nbrs = {int(u) for u in adj[nxt]}
+            assert set(np.flatnonzero(lab["nbr_of_next_mask"][p])) == nbrs
+            just = set(np.flatnonzero(lab["justifier_mask"][p]))
+            assert just == {u for u in nbrs if lab["known_mask"][p, u]}
+            assert just <= nbrs
+            # The justifying colors are every color except the forced one.
+            assert ({int(lab["node_color"][p, u]) for u in just}
+                    == set(range(cfg.n_colors)) - {int(lab["next_color"][p])})
+
+
 def test_residual_capture_layer0_is_the_embedding():
     cfg, vocab, instances = _instances(n=1)
     model = SATReasoningTransformer(vocab.size, d_model=32, num_layers=3, nhead=2, max_len=512, norm_first=True)

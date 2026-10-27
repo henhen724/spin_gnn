@@ -14,12 +14,27 @@ hypothesis:
   nbr_count[v]=j  -- exactly j of v's neighbors are known (DD's own
                      intermediate quantity, which it thresholds at
                      n_colors-1)
+  justifies_next[u] -- u is a KNOWN neighbor of the node about to be emitted,
+                     i.e. one of the EDGES that justifies this deduction
+  nbr_of_next[u]  -- u is any neighbor of that node, known or not
 
 Each feature gets the best-matching predicate by F1 over positions. A
 dictionary in which high-F1 frontier[v] features exist is direct evidence
 the model represents the DD frontier in superposition; one where only
 known[v] and color[v]=c features appear says it is doing bookkeeping and
 getting the deductions some other way.
+
+Two things this file does that an F1 table alone does not:
+
+  * A NULL CONTROL. Every feature takes an argmax over a few hundred
+    predicates, so the best F1 of a feature with no semantics at all is
+    well above zero. `best_f1_null` repeats the argmax against
+    position-rolled firing patterns, which preserves each feature's firing
+    rate and destroys its alignment in time. A feature only counts as
+    matching a predicate if it also beats its own null.
+  * AN ALIVENESS FLOOR. `firing_rate > 0` called all 2048 features alive in
+    the 2026-10-19 run, including ones firing on a single position out of
+    26448; `--alive-rate` sets a real floor and both counts are reported.
 
 Usage:
     python -m spin_gnn.sudoku_sae --checkpoint <dir> --layer 8 --out-dir <dir>
@@ -176,7 +191,14 @@ def train_sae_to_target_l0(acts, d_sae, target_l0=32.0, l1_start=0.1, max_tries=
 
 
 def dd_predicates(labels, n_nodes, n_colors, max_nbr_count=None):
-    """Named boolean predicates over positions, as (name, (P,) bool array)."""
+    """Named boolean predicates over positions, as (name, (P,) bool array).
+
+    Node-indexed families ask "does this feature track node v", edge-indexed
+    ones ask "does it track the edges in play right now". Both are scored at
+    the position level, so a match means the feature fires on the right node
+    or edge AT the positions where that node or edge matters -- the temporal
+    half of the question is already inside the F1.
+    """
     preds = []
     for v in range(n_nodes):
         preds.append((f"frontier[{v}]", labels["frontier_mask"][:, v].astype(bool)))
@@ -185,49 +207,106 @@ def dd_predicates(labels, n_nodes, n_colors, max_nbr_count=None):
         preds.append((f"next_node[{v}]", labels["next_node"] == v))
         for c in range(n_colors):
             preds.append((f"color[{v}]={c}", labels["node_color"][:, v] == c))
+    # EDGES. DD deduces v from the colors on v's known incident edges, so the
+    # edge-level question is whether anything in the dictionary tracks exactly
+    # the neighbors that are doing the forcing at this position. justifies_next
+    # is the strong form (known neighbors of the node being emitted, the actual
+    # justification); nbr_of_next is the weak form (the neighborhood, whether or
+    # not it is informative) and separates "attends to the graph table" from
+    # "attends to the part of it that constrains the answer".
+    if "justifier_mask" in labels:
+        for u in range(n_nodes):
+            preds.append((f"justifies_next[{u}]", labels["justifier_mask"][:, u].astype(bool)))
+            preds.append((f"nbr_of_next[{u}]", labels["nbr_of_next_mask"][:, u].astype(bool)))
     for c in range(n_colors):
         preds.append((f"next_color={c}", labels["next_color"] == c))
+    nxt = labels["next_node"]
     hi = max_nbr_count if max_nbr_count is not None else int(labels["n_known_nbrs"].max())
     for j in range(hi + 1):
         # Aggregated over nodes: "some node has exactly j known neighbors" is
         # not useful, so this is the count for the node about to be emitted,
         # which is the one DD is thresholding.
-        nxt = labels["next_node"]
         cnt = labels["n_known_nbrs"][np.arange(len(nxt)), nxt]
         preds.append((f"next_node_nbr_count={j}", cnt == j))
+    if "n_known_colors" in labels:
+        # The count DD actually thresholds. n_known_nbrs can be 4 with only 2
+        # distinct colors, in which case the node is NOT deducible, so a feature
+        # matching this family and not the one above is tracking the rule rather
+        # than the degree.
+        ncol = labels["n_known_colors"][np.arange(len(nxt)), nxt]
+        for j in range(n_colors + 1):
+            preds.append((f"next_node_distinct_colors={j}", ncol == j))
     preds.append(("kind_is_node", labels["kind_is_node"].astype(bool)))
     return preds
 
 
-def score_features(feature_acts, labels, n_nodes, n_colors, min_f1=0.3):
-    """Best-matching DD predicate per feature, by F1 of (feature fires) vs
-    (predicate holds). Features are binarized at >0, which is the natural
-    threshold for a ReLU dictionary."""
-    fired = (feature_acts > 0).numpy()
-    preds = dd_predicates(labels, n_nodes, n_colors)
-    names = [n for n, _ in preds]
-    mat = np.stack([p for _, p in preds], axis=1)  # (P, n_pred)
-
-    fired_f = fired.astype(np.float32)
-    mat_f = mat.astype(np.float32)
+def _best_f1(fired_f, mat_f):
+    """Per-feature max F1 over predicates, and the argmax. fired_f (P, n_feat),
+    mat_f (P, n_pred), both float32."""
     tp = fired_f.T @ mat_f                       # (n_feat, n_pred)
     n_fire = fired_f.sum(0)[:, None]
     n_pred = mat_f.sum(0)[None, :]
     f1 = 2 * tp / np.maximum(1e-9, n_fire + n_pred)
+    return f1.max(1), f1.argmax(1)
+
+
+def score_features(feature_acts, labels, n_nodes, n_colors, min_f1=0.3,
+                   alive_rate=1e-3, n_null_shifts=19, seed=0):
+    """Best-matching DD predicate per feature, by F1 of (feature fires) vs
+    (predicate holds). Features are binarized at >0, which is the natural
+    threshold for a ReLU dictionary.
+
+    Each feature is also scored against a NULL: the same firing pattern rolled
+    along the position axis, which keeps its firing rate and its within-roll
+    autocorrelation but destroys any alignment to the DD state. Taking an
+    argmax over several hundred predicates is itself worth a substantial F1 --
+    measured on noise features firing at 30%, best_f1 lands at 0.38-0.41 and
+    the rolled null at 0.39-0.41, i.e. ALL of it is the argmax -- so `best_f1`
+    on its own cannot distinguish a real match from the search, and
+    `beats_null` is the column to read.
+
+    `beats_null` is "greater than every one of n_null_shifts rolls", a
+    one-sided randomization test at level 1/(n_null_shifts+1); the default 19
+    puts that at 0.05. It is a PER-FEATURE level, so about n_alive/20 features
+    pass it by chance -- `expected_false_beats_null` in the summary is that
+    number, and n_beats_null means nothing without it.
+    """
+    fired = (feature_acts > 0).numpy()
+    preds = dd_predicates(labels, n_nodes, n_colors)
+    names = [n for n, _ in preds]
+    mat_f = np.stack([p for _, p in preds], axis=1).astype(np.float32)  # (P, n_pred)
+    fired_f = fired.astype(np.float32)
+
+    best, arg = _best_f1(fired_f, mat_f)
+    P = fired_f.shape[0]
+    rng = np.random.default_rng(seed)
+    null = np.zeros_like(best)
+    for _ in range(max(0, n_null_shifts)):
+        # One shared offset per draw: features are scored independently, so a
+        # global roll is a valid null for each of them and costs one matmul
+        # instead of n_feat gathers.
+        shift = int(rng.integers(P // 8, P - P // 8))
+        null = np.maximum(null, _best_f1(np.roll(fired_f, shift, axis=0), mat_f)[0])
 
     rows = []
-    for i in range(f1.shape[0]):
-        j = int(np.argmax(f1[i]))
+    for i in range(len(best)):
+        j = int(arg[i])
+        rate = float(fired_f[:, i].mean())
         rows.append({
             "feature": i,
-            "firing_rate": float(fired_f[:, i].mean()),
+            "firing_rate": rate,
+            "n_fire": int(fired[:, i].sum()),
             "mean_activation_when_firing": float(
                 feature_acts[:, i][feature_acts[:, i] > 0].mean()
             ) if fired[:, i].any() else 0.0,
             "best_predicate": names[j],
-            "best_f1": float(f1[i, j]),
+            "best_f1": float(best[i]),
+            "best_f1_null": float(null[i]),
             "best_predicate_family": names[j].split("[")[0].split("=")[0],
-            "is_interpretable": bool(f1[i, j] >= min_f1),
+            # A feature firing on one position in 26448 is not a feature.
+            "is_alive": bool(rate >= alive_rate),
+            "is_interpretable": bool(best[i] >= min_f1),
+            "beats_null": bool(best[i] > null[i]),
         })
     return rows
 
@@ -247,6 +326,15 @@ def main():
     ap.add_argument("--sae-epochs", type=int, default=1500)
     ap.add_argument("--n-instances", type=int, default=1500)
     ap.add_argument("--max-positions-per-instance", type=int, default=40)
+    ap.add_argument("--min-f1", type=float, default=0.3)
+    ap.add_argument("--alive-rate", type=float, default=1e-3,
+                    help="a feature counts as alive only if it fires on at least this fraction of "
+                         "positions; firing_rate>0 called all 2048 features alive in the "
+                         "2026-10-19 run and that is why no sparsity problem was visible there")
+    ap.add_argument("--n-null-shifts", type=int, default=19,
+                    help="position-rolled null draws per feature; beats_null means above all of "
+                         "them, a one-sided randomization test at level 1/(n+1), so 19 gives 0.05. "
+                         "The max over them is the F1 the argmax over predicates buys for free")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out-dir", type=str, required=True)
     args = ap.parse_args()
@@ -257,7 +345,13 @@ def main():
         n_nodes=config["n_nodes"], degree=config["degree"], n_colors=config["n_colors"],
         rho=config["rho"], rho_max=config["rho_max"],
         hint_mode=config.get("hint_mode", "removal"), scratchpad=config.get("scratchpad", False),
+        # MUST be threaded: a _shuf checkpoint analyzed with the default False
+        # would be fed the color-sorted instances it was trained to ignore, and
+        # every feature label would describe behaviour off its distribution.
+        shuffle_adj=bool(config.get("shuffle_adj", False)),
     )
+    print(f"instances: N={sudoku_cfg.n_nodes} degree={sudoku_cfg.degree} "
+          f"q={sudoku_cfg.n_colors} shuffle_adj={sudoku_cfg.shuffle_adj}")
     instances = build_instances(sudoku_cfg, args.n_instances, seed_start=600_000_000 + args.seed)
     acts, labels = collect_dataset(
         model, instances, vocab, device, args.max_positions_per_instance, np.random.default_rng(args.seed),
@@ -281,7 +375,9 @@ def main():
                 acts[layer], args.expansion * acts.shape[2], l1_coeff=args.l1_coeff,
                 epochs=args.sae_epochs, device=device, seed=args.seed,
             )
-        rows = score_features(feats, labels, sudoku_cfg.n_nodes, sudoku_cfg.n_colors)
+        rows = score_features(feats, labels, sudoku_cfg.n_nodes, sudoku_cfg.n_colors,
+                              min_f1=args.min_f1, alive_rate=args.alive_rate,
+                              n_null_shifts=args.n_null_shifts, seed=args.seed)
 
         torch.save(sae.state_dict(), os.path.join(args.out_dir, f"sae_layer{layer:02d}.pt"))
         with open(os.path.join(args.out_dir, f"features_layer{layer:02d}.csv"), "w", newline="") as f:
@@ -291,29 +387,54 @@ def main():
         with open(os.path.join(args.out_dir, f"history_layer{layer:02d}.json"), "w") as f:
             json.dump(history, f, indent=2)
 
-        alive = [r for r in rows if r["firing_rate"] > 0]
-        interp = [r for r in alive if r["is_interpretable"]]
+        nonzero = [r for r in rows if r["firing_rate"] > 0]
+        alive = [r for r in rows if r["is_alive"]]
+        # Both gates: above the F1 floor AND above its own position-rolled null.
+        interp = [r for r in alive if r["is_interpretable"] and r["beats_null"]]
         fam = {}
         for r in interp:
             fam[r["best_predicate_family"]] = fam.get(r["best_predicate_family"], 0) + 1
-        best_frontier = max((r["best_f1"] for r in rows if r["best_predicate"].startswith("frontier")),
-                            default=0.0)
+
+        def best_in(prefix):
+            return max((r["best_f1"] for r in alive if r["best_predicate"].startswith(prefix)),
+                       default=0.0)
+
         summary.append({
             "checkpoint": os.path.basename(args.checkpoint), "layer": layer,
             "d_sae": args.expansion * acts.shape[2], "l1_coeff": args.l1_coeff,
             "n_positions": int(acts.shape[1]),
+            "shuffle_adj": sudoku_cfg.shuffle_adj,
             "frac_variance_explained": history[-1]["frac_variance_explained"],
             "l0": history[-1]["l0"], "n_dead_features": history[-1]["n_dead_features"],
             # False means the dictionary stayed dense and the feature labels in
             # features_layer*.csv must not be read as semantics.
             "hit_target_l0": history[-1].get("hit_target_l0", None),
             "l1_final": history[-1].get("l1_coeff", args.l1_coeff),
-            "n_alive": len(alive), "n_interpretable": len(interp),
-            "best_frontier_f1": best_frontier,
+            "n_nonzero": len(nonzero), "n_alive": len(alive),
+            "alive_rate_threshold": args.alive_rate,
+            "n_interpretable": len(interp),
+            "n_beats_null": sum(r["beats_null"] for r in alive),
+            # beats_null is a per-feature test at level 1/(shifts+1), so this
+            # many alive features clear it by chance. n_beats_null at or below
+            # it is no evidence of anything.
+            "expected_false_beats_null": len(alive) / (args.n_null_shifts + 1.0),
+            "median_best_f1_null": float(np.median([r["best_f1_null"] for r in alive])) if alive else 0.0,
+            "best_frontier_f1": best_in("frontier"),
+            "best_justifier_f1": best_in("justifies_next"),
+            "best_nbr_of_next_f1": best_in("nbr_of_next"),
+            "best_distinct_colors_f1": best_in("next_node_distinct_colors"),
             "family_counts": json.dumps(fam, sort_keys=True),
         })
-        print(f"  layer {layer}: {len(interp)}/{len(alive)} alive features matched a DD predicate "
-              f"(F1>=0.3); best frontier F1={best_frontier:.3f}; families={fam}")
+        s = summary[-1]
+        print(f"  layer {layer}: {len(alive)}/{len(nonzero)} features alive "
+              f"(rate>={args.alive_rate:g}); {len(interp)} matched a DD predicate at "
+              f"F1>={args.min_f1} AND above null (median null F1 "
+              f"{s['median_best_f1_null']:.3f}); {s['n_beats_null']} beat null vs "
+              f"{s['expected_false_beats_null']:.0f} expected by chance")
+        print(f"    best F1  frontier={s['best_frontier_f1']:.3f}  "
+              f"justifies_next={s['best_justifier_f1']:.3f}  "
+              f"nbr_of_next={s['best_nbr_of_next_f1']:.3f}  "
+              f"distinct_colors={s['best_distinct_colors_f1']:.3f}; families={fam}")
 
     with open(os.path.join(args.out_dir, "sae_summary.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
