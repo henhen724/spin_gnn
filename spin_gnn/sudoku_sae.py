@@ -42,6 +42,7 @@ Usage:
 import argparse
 import csv
 import json
+import math
 import os
 
 import numpy as np
@@ -150,9 +151,9 @@ def train_sae(acts, d_sae, l1_coeff=0.1, epochs=1500, batch_size=2048, lr=3e-3, 
     return sae, f.cpu(), history, (mu.cpu(), sigma.cpu())
 
 
-def train_sae_to_target_l0(acts, d_sae, target_l0=32.0, l1_start=0.1, max_tries=7,
-                           tolerance=2.0, **kwargs):
-    """Search l1_coeff geometrically until L0 lands at or below `target_l0`.
+def train_sae_to_target_l0(acts, d_sae, target_l0=32.0, l1_start=0.1, max_tries=8,
+                           tolerance=None, **kwargs):
+    """Search l1_coeff for a dictionary whose mean L0 lands NEAR `target_l0`.
 
     A fixed l1_coeff does not transport across activation widths. The
     reconstruction term is a SUM over dimensions, so it grows with d_model
@@ -160,15 +161,39 @@ def train_sae_to_target_l0(acts, d_sae, target_l0=32.0, l1_start=0.1, max_tries=
     planted code, is therefore ~10x too weak at d_model=128 and yields
     L0 = 84..278 of 2048 features with ZERO dead features -- a dense
     dictionary whose feature labels mean nothing, while still reporting
-    FVE=0.992 and so looking healthy on reconstruction alone. That is the
-    exact failure this function exists to prevent.
+    FVE=0.992 and so looking healthy on reconstruction alone.
 
-    Returns the first fit meeting the target, or the sparsest one tried, with
-    the search path attached so a dictionary that never got sparse is visible
-    in the output rather than silently reported as a result.
+    THE TARGET IS TWO-SIDED, and that is the whole point. An earlier version
+    only ever RAISED l1_coeff and stopped as soon as L0 fell at or below the
+    target, which accepts the opposite failure in silence: run 49702811
+    started from l1_start=1.0, hit L0=2..16 against target_l0=64 on the very
+    first fit of all 18 sweeps, broke immediately, reported
+    hit_target_l0=True, and returned dictionaries with ~130 of 4096 features
+    alive. The ground truth it was being scored against has ~56
+    simultaneously-true predicates per position, so a dictionary that sparse
+    cannot carry the code at all, and its zero F1 on the edge families
+    (nbr_of_next, justifies_next) was a fact about the dictionary rather than
+    about the model. Too sparse is as wrong as too dense; an acceptance test
+    of the form `l0 <= target` cannot see it.
+
+    Steps geometrically until the target is bracketed, then bisects in log
+    space. Returns the fit CLOSEST to the target in log-L0 -- not the sparsest
+    tried -- with the search path and a two-sided hit_target_l0 attached, so a
+    dictionary that never reached the band is visible in the output instead of
+    being reported as a result.
     """
+    if tolerance is None:
+        # Relative, because L0 moves over orders of magnitude in l1: an
+        # absolute +/-2 is a 3% window at target 64 that bisection cannot be
+        # expected to hit within max_tries, and the search would then return a
+        # perfectly good dictionary flagged as a failure.
+        tolerance = max(2.0, 0.15 * target_l0)
     path = []
-    best = None
+    best = best_l1 = best_gap = None
+    # Brackets, in l1: `dense_l1` is the largest l1 known to leave L0 ABOVE the
+    # band, `sparse_l1` the smallest known to push it BELOW. L0 falls as l1
+    # rises, so the root is always between them once both exist.
+    dense_l1 = sparse_l1 = None
     l1 = l1_start
     for _ in range(max_tries):
         sae, feats, history, norm = train_sae(acts, d_sae, l1_coeff=l1, **kwargs)
@@ -176,17 +201,35 @@ def train_sae_to_target_l0(acts, d_sae, target_l0=32.0, l1_start=0.1, max_tries=
         path.append({"l1_coeff": l1, "l0": l0, "frac_variance_explained": fve,
                      "n_dead_features": history[-1]["n_dead_features"]})
         print(f"  l1={l1:.4g} -> L0={l0:.1f} FVE={fve:.3f}")
-        if best is None or l0 < best[2][-1]["l0"]:
-            best, best_l1 = (sae, feats, history, norm), l1
-        if l0 <= target_l0 + tolerance:
+        # Distance in log-L0: at target 64, L0=16 and L0=256 are equally wrong,
+        # which an absolute gap would not say.
+        gap = abs(math.log(max(l0, 1e-3)) - math.log(target_l0))
+        if best_gap is None or gap < best_gap:
+            best, best_l1, best_gap = (sae, feats, history, norm), l1, gap
+        if abs(l0 - target_l0) <= tolerance:
             break
-        # L0 responds roughly logarithmically to l1, so step geometrically and
-        # grow the step when still far off.
-        l1 *= 4.0 if l0 > 4 * target_l0 else 2.0
+        if l0 > target_l0:
+            dense_l1 = l1 if dense_l1 is None else max(dense_l1, l1)
+        else:
+            sparse_l1 = l1 if sparse_l1 is None else min(sparse_l1, l1)
+        if dense_l1 is not None and sparse_l1 is not None:
+            l1 = math.sqrt(dense_l1 * sparse_l1)
+        elif l0 > target_l0:
+            # Still too dense everywhere tried: climb, faster when far off.
+            l1 *= 4.0 if l0 > 4 * target_l0 else 2.0
+        else:
+            # Still too sparse everywhere tried: back off, symmetrically.
+            l1 /= 4.0 if l0 * 4 < target_l0 else 2.0
     sae, feats, history, norm = best
     history[-1]["l1_search_path"] = path
     history[-1]["l1_coeff"] = best_l1  # the l1 that produced THIS fit, not the last tried
-    history[-1]["hit_target_l0"] = history[-1]["l0"] <= target_l0 + tolerance
+    history[-1]["hit_target_l0"] = abs(history[-1]["l0"] - target_l0) <= tolerance
+    history[-1]["target_l0"] = target_l0
+    history[-1]["l0_tolerance"] = tolerance
+    if not history[-1]["hit_target_l0"]:
+        print(f"  WARNING: best L0={history[-1]['l0']:.1f} never reached "
+              f"{target_l0:.4g} +/- {tolerance:.4g} in {max_tries} tries -- the feature "
+              f"labels below describe THIS dictionary, not the model")
     return sae, feats, history, norm
 
 
@@ -320,9 +363,14 @@ def main():
     ap.add_argument("--l1-coeff", type=float, default=0.1,
                     help="with --target-l0, the starting point of the search")
     ap.add_argument("--target-l0", type=float, default=32.0,
-                    help="search l1_coeff until mean L0 reaches this; 0 disables the search and "
-                         "uses --l1-coeff as-is. A dense dictionary makes every feature label "
-                         "meaningless while still reporting a high FVE, so leave this on.")
+                    help="search l1_coeff until mean L0 reaches this, from EITHER side; 0 "
+                         "disables the search and uses --l1-coeff as-is. A dense dictionary "
+                         "makes every feature label meaningless while still reporting a high "
+                         "FVE, and a collapsed one cannot represent a ground truth with ~56 "
+                         "simultaneously-true predicates, so leave this on and set it near the "
+                         "measured predicate count.")
+    ap.add_argument("--l1-max-tries", type=int, default=8,
+                    help="fits allowed per layer to bracket and bisect onto --target-l0")
     ap.add_argument("--sae-epochs", type=int, default=1500)
     ap.add_argument("--n-instances", type=int, default=1500)
     ap.add_argument("--max-positions-per-instance", type=int, default=40)
@@ -368,7 +416,8 @@ def main():
         if args.target_l0 > 0:
             sae, feats, history, _ = train_sae_to_target_l0(
                 acts[layer], args.expansion * acts.shape[2], target_l0=args.target_l0,
-                l1_start=args.l1_coeff, epochs=args.sae_epochs, device=device, seed=args.seed,
+                l1_start=args.l1_coeff, max_tries=args.l1_max_tries,
+                epochs=args.sae_epochs, device=device, seed=args.seed,
             )
         else:
             sae, feats, history, _ = train_sae(

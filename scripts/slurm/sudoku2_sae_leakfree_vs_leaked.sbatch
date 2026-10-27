@@ -115,12 +115,30 @@
 #  15's mechanism was wrong, 49655447's pre-reg (a) and 49659502's (a)-(c)
 #  were right -- so these are predictions, not decoration.
 #
+# THIS IS A RERUN. Job 49702811 ran this script and finished in 00:24:56 with
+# ExitCode 0:0 against a ~4 h estimate, which is what gave it away: the l1
+# search never searched. train_sae_to_target_l0 only ever RAISED l1_coeff and
+# accepted on `l0 <= target + tolerance`, so starting from --l1-coeff 1.0 --
+# already far too strong -- the first fit of all 18 sweeps landed at L0=2..16
+# against target 64, satisfied the one-sided test, broke on iteration 1 and
+# reported hit_target_l0=True. Every dictionary it produced had ~130 of 4096
+# features alive. Against a ground truth with 55.8 simultaneously-true
+# predicates, those cannot carry the code, so its zero F1 on nbr_of_next and
+# justifies_next described the dictionary and not the model, and none of the
+# pre-registrations below were actually tested. The search is now two-sided
+# (brackets the target, then bisects in log space, returns the fit CLOSEST to
+# the target rather than the sparsest tried, and flags a miss on either side);
+# regression test test_target_l0_search_backs_off_when_the_start_is_already_
+# too_strong. --l1-coeff now starts at the calibrated 0.1, on the dense side,
+# so the search approaches the target from the direction the old code could
+# handle as well as the new one.
+#
 # COST. 7 layers x 2 checkpoints at target 64, plus 2 layers x 2 at target 32,
-# each an l1 search of up to 7 SAE fits at 1500 epochs. The 2026-10-19 run did
-# 4 layers at d_model=128/d_sae=2048/P=26448 in 1:47 total; this is ~2x
-# d_model, 2x d_sae and ~2x P, so ~8x per fit. Plus the null control, 19
-# matmuls of (4096 x P) @ (P x 256) per layer. Estimate ~4 h against a 12 h
-# limit.
+# each an l1 search of up to 8 SAE fits at 1500 epochs. 49702811 did 18 fits
+# plus all the scoring in 25 min, so a fit is ~1 min at this size; 18 layer
+# passes x up to 8 fits is ~2.5 h of fitting plus ~0.5 h of scoring and nulls.
+# Estimate ~3-4 h against a 12 h limit, and the limit holds even if every
+# layer uses all 8 tries.
 
 set -euo pipefail
 module purge
@@ -133,13 +151,13 @@ cd "${SLURM_SUBMIT_DIR}"
 
 LEAKFREE="${SCRATCH}/spin_gnn/sudoku_n24_leakfree_2026-10-26/d0256_h04_L12_ff01024_lr1e-03_pre_shuf"
 LEAKED="${OAK}/hshunt/checkpoints/spin_gnn/sudoku_dd_d0256_L12_ntrain80000_ep300_sharedpool0.9960_job48912548"
-BASE="${SCRATCH}/spin_gnn/sudoku_sae_2026-10-26_leakfree"
+BASE="${SCRATCH}/spin_gnn/sudoku_sae_2026-10-26_leakfree_l1fix"
 mkdir -p "$BASE"
 
 # ~17.3 reasoning positions per instance at N=24, so 3000 instances is ~52000
 # positions -- enough that a feature at the 1e-3 aliveness floor still fires
 # ~52 times and the rolled null has resolution.
-COMMON=(--expansion 16 --l1-coeff 1.0 --sae-epochs 1500
+COMMON=(--expansion 16 --l1-coeff 0.1 --l1-max-tries 8 --sae-epochs 1500
         --n-instances 3000 --max-positions-per-instance 40
         --alive-rate 1e-3 --n-null-shifts 19 --seed 0)
 

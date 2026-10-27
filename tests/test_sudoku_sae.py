@@ -190,13 +190,54 @@ def test_target_l0_search_rescues_a_dense_dictionary():
         x, d_sae=256, target_l0=target, l1_start=0.1, epochs=300, lr=3e-3, seed=0,
     )
     assert hist[-1]["l0"] < hist_loose[-1]["l0"], (hist[-1]["l0"], hist_loose[-1]["l0"])
-    assert hist[-1]["l0"] <= target + 2.0, hist[-1]["l0"]
+    # Two-sided: landing far BELOW the target is a failure too, see
+    # test_target_l0_search_backs_off_when_the_start_is_already_too_strong.
+    assert abs(hist[-1]["l0"] - target) <= 2.0, hist[-1]["l0"]
     assert hist[-1]["hit_target_l0"]
     # It had to raise l1 above the start to get there, and the path must be
     # recorded so a dictionary that never got sparse is visible in the output
     # instead of being reported as a clean result.
     assert hist[-1]["l1_coeff"] > 0.1, hist[-1]["l1_coeff"]
     assert len(hist[-1]["l1_search_path"]) > 1
+
+
+def test_target_l0_search_backs_off_when_the_start_is_already_too_strong():
+    """The regression test for job 49702811.
+
+    That run passed l1_start=1.0 against target_l0=64. The first fit of every
+    one of its 18 sweeps collapsed to L0=2..16, which satisfied the old
+    one-sided acceptance test `l0 <= target + tolerance`, so the search broke
+    on iteration 1, reported hit_target_l0=True, and handed back dictionaries
+    with ~130 of 4096 features alive. Scored against a ground truth of ~56
+    simultaneously-true predicates, those dictionaries reported zero F1 on the
+    edge families -- a fact about the dictionary, not about the model.
+
+    So: an l1_start that is already too STRONG must be walked back down."""
+    from spin_gnn.sudoku_sae import train_sae_to_target_l0
+    rng = np.random.default_rng(5)
+    d_model, n_atoms, P = 32, 12, 800
+    dictionary = rng.normal(size=(n_atoms, d_model))
+    dictionary /= np.linalg.norm(dictionary, axis=1, keepdims=True)
+    codes = (rng.random((P, n_atoms)) < 0.4) * rng.random((P, n_atoms)) * 3.0
+    x = torch.as_tensor(codes @ dictionary, dtype=torch.float32)
+
+    # l1_start=6 drives this problem to L0=0.7 on the first fit, i.e. the
+    # collapse regime; the search has to come back DOWN from there.
+    target, l1_start = 6.0, 6.0
+    _sae, _feats, hist, _ = train_sae_to_target_l0(
+        x, d_sae=128, target_l0=target, l1_start=l1_start, max_tries=6,
+        epochs=150, lr=3e-3, seed=0,
+    )
+    path = hist[-1]["l1_search_path"]
+    assert path[0]["l0"] < target - hist[-1]["l0_tolerance"], (
+        "l1_start must collapse the dictionary for this test to exercise the bug, "
+        f"got L0={path[0]['l0']}")
+    # The old code could not do either of these: it only multiplied l1 upward,
+    # and it returned the SPARSEST fit tried rather than the closest one.
+    assert len(path) > 1, "search broke on the first fit, as in 49702811"
+    assert hist[-1]["l1_coeff"] < l1_start, hist[-1]["l1_coeff"]
+    assert abs(hist[-1]["l0"] - target) <= hist[-1]["l0_tolerance"], hist[-1]["l0"]
+    assert hist[-1]["hit_target_l0"]
 
 
 def test_target_l0_search_reports_failure_instead_of_hiding_it():
