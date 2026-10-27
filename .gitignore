@@ -46,3 +46,4 @@ sudoku_attention_evolution/
 /sudoku_sae_*/
 /sudoku_circuits_*/
 notebooks/**/page*.png
+notebooks/_tokpages/
