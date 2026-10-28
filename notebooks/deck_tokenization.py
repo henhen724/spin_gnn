@@ -11,7 +11,11 @@ have revealed. Every deck from 2026-10-26 on carries these two pages.
 Both pages take a real instance from the same generator and config as the run
 being reported, never a schematic: `example_instance(shuffle_adj=...)` must be
 passed the SAME shuffle_adj as the checkpoint, or the deck will illustrate a
-distribution the model was not trained on.
+distribution the model was not trained on. The same goes for `shuffle_events`,
+which permutes the order of the deductions WITHIN a round: it leaves the token
+multiset of the reasoning section alone, so only the trace page shows it, but
+that page is exactly where a reader would otherwise read the generator's
+ascending-index convention as something the model produced.
 
 Usage, from a deck script:
 
@@ -64,7 +68,8 @@ class Example:
 
 
 def example_instance(n_nodes=24, degree=5, n_colors=4, rho=0.3, rho_max=0.95,
-                     shuffle_adj=True, seed=50_000_000_000, pick="median"):
+                     shuffle_adj=True, shuffle_events=False,
+                     seed=50_000_000_000, pick="median"):
     """One instance from the eval generator. `pick` selects among 40 draws:
     "median" takes the median number of DD rounds, so the deck shows a typical
     instance rather than a cherry-picked shallow one; "deep" takes the 90th
@@ -73,7 +78,8 @@ def example_instance(n_nodes=24, degree=5, n_colors=4, rho=0.3, rho_max=0.95,
     from are printed on the page, so the choice is visible."""
     cfg = SudokuReasoningConfig(n_nodes=n_nodes, degree=degree, n_colors=n_colors,
                                 rho=rho, rho_max=rho_max, hint_mode="removal",
-                                scratchpad=False, shuffle_adj=shuffle_adj)
+                                scratchpad=False, shuffle_adj=shuffle_adj,
+                                shuffle_events=shuffle_events)
     insts = build_instances(cfg, 40, seed_start=seed)
     depths = [len(t["rounds"]) for _, _, _, t in insts]
     order = np.argsort(depths)
@@ -150,10 +156,14 @@ def page_tokenization(out, ex):
     out.savefig(fig)
 
 
-def page_trace(out, ex, max_rounds=4):
-    """A real trace, with one deduction worked through so the task is legible."""
+def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=None):
+    """A real trace, with one deduction worked through so the task is legible.
+
+    `title` and `note` exist for decks that show this page TWICE, once per event
+    order, where the subject of the run is the difference between the two pages:
+    two identically titled traces would be unreadable as a comparison."""
     fig = plt.figure(figsize=(13.33, 7.5))
-    fig.text(0.06, 0.93, "One real reasoning trace", size=BIG, weight="bold")
+    fig.text(0.06, 0.93, title, size=BIG, weight="bold")
     hints = sorted(ex.trace["hints"].items())
     hint_str = " ".join(f"N{n}={c}" for n, c in hints[:8]) + (" ..." if len(hints) > 8 else "")
     fig.text(0.06, 0.875,
@@ -220,11 +230,14 @@ def page_trace(out, ex, max_rounds=4):
              "Reasoning depth T is the\nnumber of rounds: a deduction in round 3 depends on ones made "
              "in rounds 1 and 2, which is the serial computation\nthat network depth has to supply.",
              size=SMALL, va="top")
+    if note:
+        fig.text(0.06, 0.24, note, size=SMALL - 1, va="top", color="#d62728")
     pool = getattr(ex, "pool_depths", None)
     how = {"median": "the median", "deep": "the 90th percentile",
            "first": "the first"}.get(getattr(ex, "pick", ""), "one")
     prov = (f"T={ex.n_rounds} rounds, {how} of 40 draws from this config "
             f"(range {min(pool)}-{max(pool)}); " if pool else "")
-    footer(fig, f"{prov}seed {ex.seed}, shuffle_adj={ex.cfg.shuffle_adj}; "
-                f"evidence from sudoku_tokens.evidence_rounds (pre-round state, as DD saw it)")
+    footer(fig, f"{prov}seed {ex.seed}, shuffle_adj={ex.cfg.shuffle_adj}, "
+                f"shuffle_events={ex.cfg.shuffle_events}; evidence from "
+                f"sudoku_tokens.evidence_rounds (pre-round state, as DD saw it)")
     out.savefig(fig)
