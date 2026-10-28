@@ -42,6 +42,7 @@ def run_one(args):
         n_train_instances=args.n_train_instances, n_val_instances=args.n_val_instances,
         batch_size=args.batch_size, lr=args.lr, epochs=args.epochs,
         lr_schedule=args.lr_schedule, lr_min_factor=args.lr_min_factor,
+        warmup_epochs=args.warmup_epochs,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
 
@@ -74,6 +75,10 @@ def run_one(args):
         # stays byte-identical -- the decks and the agg_eval checkpoint paths
         # address cells by this string.
         + ("_cos" if args.lr_schedule != "constant" else "")
+        # Same rule as _cos: only present when non-default, so no tag written
+        # before 2026-10-28 changes, and a warmed-up cell can never collide
+        # with the cold cell it is meant to be compared against.
+        + (f"_w{args.warmup_epochs:02d}" if args.warmup_epochs else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
     save_checkpoint(
@@ -101,6 +106,7 @@ def run_one(args):
         "evidence_row_accuracy": result["solve_metrics"].get("evidence_row_accuracy"),
         "evidence_slot_accuracy": result["solve_metrics"].get("evidence_slot_accuracy"),
         "lr_schedule": args.lr_schedule,
+        "warmup_epochs": args.warmup_epochs,
         "checkpoint_dir": out_dir,
     }
 
@@ -161,6 +167,9 @@ if __name__ == "__main__":
     # re-running an old cell reproduces it.
     ap.add_argument("--lr-schedule", choices=("constant", "cosine"), default="constant")
     ap.add_argument("--lr-min-factor", type=float, default=0.01)
+    ap.add_argument("--warmup-epochs", type=int, default=0,
+                    help="linear lr ramp over the first N epochs before --lr-schedule takes over; "
+                         "0 (default) reproduces every run before 2026-10-28")
     ap.add_argument("--n-train-instances", type=int, default=5000)
     ap.add_argument("--n-val-instances", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=32)

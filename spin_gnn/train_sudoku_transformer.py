@@ -349,15 +349,42 @@ def _build_lr_schedule(opt, train_cfg: SudokuReasoningTrainConfig):
     which is the leading suspect for the val_nll plateau at N=96 (49524030:
     train_nll 1.4332 against val_nll 1.4621, so the model is not overfitting --
     it cannot descend further at lr=1e-3).
+
+    A `warmup_epochs` ramp can be prepended to either shape. The ramp is linear
+    in lr from lr/(warmup+1) to lr over the first `warmup` epochs and is
+    stepped per epoch like everything else here, so with warmup=5 the first
+    epoch trains at lr/6 and the sixth at lr. After the ramp the decay runs
+    over the REMAINING epochs (T_max = epochs - warmup), so the budget still
+    ends at lr*lr_min_factor and adding warmup does not silently truncate the
+    cosine.
     """
     kind = getattr(train_cfg, "lr_schedule", "constant")
-    if kind == "constant":
+    if kind not in ("constant", "cosine"):
+        raise ValueError(f"unknown lr_schedule {kind!r} (expected 'constant' or 'cosine')")
+    warmup = int(getattr(train_cfg, "warmup_epochs", 0) or 0)
+    if warmup < 0:
+        raise ValueError(f"warmup_epochs={warmup} must be >= 0")
+    if warmup >= train_cfg.epochs:
+        raise ValueError(f"warmup_epochs={warmup} must be < epochs={train_cfg.epochs}")
+    if kind == "constant" and warmup == 0:
         return None
-    if kind == "cosine":
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            opt, T_max=train_cfg.epochs, eta_min=train_cfg.lr * train_cfg.lr_min_factor,
-        )
-    raise ValueError(f"unknown lr_schedule {kind!r} (expected 'constant' or 'cosine')")
+
+    def _main():
+        if kind == "cosine":
+            return torch.optim.lr_scheduler.CosineAnnealingLR(
+                opt, T_max=train_cfg.epochs - warmup,
+                eta_min=train_cfg.lr * train_cfg.lr_min_factor,
+            )
+        # A no-op tail, so "warmup then hold" is expressible without a second
+        # code path.
+        return torch.optim.lr_scheduler.ConstantLR(opt, factor=1.0, total_iters=0)
+
+    if warmup == 0:
+        return _main()
+    warm = torch.optim.lr_scheduler.LinearLR(
+        opt, start_factor=1.0 / (warmup + 1), end_factor=1.0, total_iters=warmup,
+    )
+    return torch.optim.lr_scheduler.SequentialLR(opt, [warm, _main()], milestones=[warmup])
 
 
 def train_sudoku_model(
@@ -474,6 +501,7 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
             "batch_size": train_cfg.batch_size, "lr": train_cfg.lr, "epochs": train_cfg.epochs,
             "lr_schedule": getattr(train_cfg, "lr_schedule", "constant"),
             "lr_min_factor": getattr(train_cfg, "lr_min_factor", None),
+            "warmup_epochs": getattr(train_cfg, "warmup_epochs", 0),
         })
     with open(os.path.join(out_dir, "config.json"), "w") as f:
         json.dump(config, f, indent=2)

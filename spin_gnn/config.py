@@ -253,3 +253,12 @@ class SudokuReasoningTrainConfig:
     # is silently redefined.
     lr_schedule: str = "constant"
     lr_min_factor: float = 0.01
+    # Linear ramp from lr/(warmup_epochs+1) to lr over the first
+    # `warmup_epochs` epochs, then whatever lr_schedule says for the rest.
+    # 0 (the default) means no ramp, which is every run before 2026-10-28.
+    # Motivated by finding 25: at N=96 the deep-thin cell (L=12, ff=256) ends
+    # with a well_formed_rate of 0.853 while its CONDITIONAL solve rate sits at
+    # the wide knee's, i.e. it never learned the output grammar rather than
+    # never learning to deduce -- the signature of an early-training failure,
+    # which is what warmup exists to fix.
+    warmup_epochs: int = 0

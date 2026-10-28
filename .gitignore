@@ -24,6 +24,10 @@ sudoku_hparam_sweep/
 sudoku_hparam_sweep_*/
 sudoku_transition/
 _sudoku2_smoke/
+# Throwaway CPU runs that check a new training flag end to end before a real
+# job is submitted (lr schedules, warmup); they write real checkpoints.
+_smoke_lr_schedule/
+_smoke_warmup_*/
 sudoku_attention_distance/
 sudoku_attention_evolution/
 
