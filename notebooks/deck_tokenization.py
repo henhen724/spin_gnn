@@ -136,12 +136,16 @@ def page_tokenization(out, ex):
             "The graph section is a neighbour table, not an image:\nnode, then its "
             f"{ex.cfg.degree} neighbours.",
             size=SMALL - 1, va="top")
+    # Black bold, not red: red keys MODEL IDENTITY on every other page of the
+    # decks this module feeds, and prose emphasis in the same red made "red"
+    # mean both "the leaked model" and "look here".
     ax.text(0.0, -0.02, "THE ORDER WITHIN A ROW IS THE LEAK.",
-            size=SMALL + 1, va="top", weight="bold", color="#d62728")
+            size=SMALL + 1, va="top", weight="bold", color="0.0")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
 
     ax = fig.add_axes([0.06, 0.11, 0.90, 0.31]); ax.axis("off")
-    ax.text(0, 1.0, f"THIS INSTANCE, {len(ex.tokens)} TOKENS (seed {ex.seed})",
+    # The seed is provenance, not content: it moved to the footer.
+    ax.text(0, 1.0, f"THIS INSTANCE, {len(ex.tokens)} TOKENS",
             size=SMALL, weight="bold", va="top")
     y = 0.80
     for name, start, end in ex.section_bounds():
@@ -157,8 +161,9 @@ def page_tokenization(out, ex):
             size=SMALL - 1, va="top")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
 
-    footer(fig, "DD is sudoku's 'naked single' rule transplanted to graph colouring, which is where the "
-                "code's sudoku names come from; the task itself is the graph, not a 9x9 grid."
+    footer(fig, "DD is single-candidate elimination -- sudoku's 'naked single' rule transplanted to graph "
+                "colouring, which is where the code's sudoku names come from; the task itself is the graph, "
+                f"not a 9x9 grid. Instance shown: seed {ex.seed}."
                 + ("" if ex.cfg.shuffle_adj else " These rows are the LEAKED (colour-sorted) order."))
     out.savefig(fig)
 
@@ -217,18 +222,24 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
     else:
         known = {c for c in nbr_cols if c is not None}
         missing = sorted(set(range(ex.cfg.n_colors)) - known)
+        # Name the still-unknown neighbours explicitly. Listing five neighbours
+        # and then three colours leaves the audience counting to work out which
+        # two were blank, which is exactly where a room stalls.
+        unk = [x for x, c in zip(ex.adj[node], nbr_cols) if c is None]
         lines = [
             f"node N{node}, neighbours "
             + " ".join(f"N{x}" for x in ex.adj[node]),
             f"their colours known before this round:",
             f"   {sorted(known)}  ({len(known)} = q-1 of the {ex.cfg.n_colors})",
+            "   still unknown: " + (" ".join(f"N{x}" for x in unk) if unk else "none"),
             f"only colour left: {missing[0]}",
             f"so the trace emits  N{node} COLOR_{ded}",
         ]
+        # 0.13, not 0.15: six lines at 0.15 push the italic note below the axes.
         for i, line in enumerate(lines):
-            ax.text(0.0, 0.84 - 0.15 * i, line, size=SMALL - 2, va="top",
-                    **(MONO if i in (2, 4) else {}))
-        ax.text(0.0, 0.84 - 0.15 * len(lines) - 0.02,
+            ax.text(0.0, 0.84 - 0.13 * i, line, size=SMALL - 2, va="top",
+                    **(MONO if i in (2, 3, 5) else {}))
+        ax.text(0.0, 0.84 - 0.13 * len(lines) - 0.02,
                 "The model is never shown this reasoning --\nonly the node/colour pair.",
                 size=SMALL - 3, va="top", color="0.4", style="italic")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
@@ -239,7 +250,8 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
              "in rounds 1 and 2, which is the serial computation\nthat network depth has to supply.",
              size=SMALL, va="top")
     if note:
-        fig.text(0.06, 0.24, note, size=SMALL - 1, va="top", color="#d62728")
+        # black bold, not red -- see the note on prose emphasis above
+        fig.text(0.06, 0.24, note, size=SMALL - 1, va="top", weight="bold")
     pool = getattr(ex, "pool_depths", None)
     how = {"median": "the median", "deep": "the 90th percentile",
            "first": "the first"}.get(getattr(ex, "pick", ""), "one")

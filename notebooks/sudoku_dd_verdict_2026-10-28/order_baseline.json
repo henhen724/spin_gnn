@@ -1,0 +1,29 @@
+{
+ "n_instances": 1000,
+ "n_rounds": 3746,
+ "n_rounds_ascending": 3746,
+ "ascending_frac": 1.0,
+ "n_positions": 8840,
+ "rules": {
+  "const": {
+   "accuracy": 0.04479638009049774,
+   "max_f1": 0.08575140753572975,
+   "argmax_v": 23
+  },
+  "succ": {
+   "accuracy": 0.13733031674208146,
+   "max_f1": 0.1834862385321101,
+   "argmax_v": 23
+  },
+  "min_unknown": {
+   "accuracy": 0.5700226244343891,
+   "max_f1": 0.6321243523316062,
+   "argmax_v": 23
+  },
+  "min_remain": {
+   "accuracy": 1.0,
+   "max_f1": 1.0,
+   "argmax_v": 0
+  }
+ }
+}

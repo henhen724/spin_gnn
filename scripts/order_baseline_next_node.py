@@ -1,9 +1,10 @@
 """How much of `next_node` at pre_node positions is explained by EMISSION ORDER?
 
 Finding 21 left one thing unexplained: at pre_node positions -- where the node
-about to be emitted is not yet on the page -- the LEAKED model has more
-next_node-family SAE features than the leak-free one (60 vs 15 at layer 12,
-best F1 0.741 vs 0.545). Finding 16 measured that round events are emitted in
+about to be emitted is not yet on the page -- the dictionaries find plenty of
+next_node-family features in EVERY arm (at layer 12: 53 features / best F1
+0.816 for the 1.0000 model, 15 / 0.545 for its 0.8540 twin, 60 / 0.741 for the
+leaked one). Finding 16 measured that round events are emitted in
 ASCENDING NODE INDEX for 100% of rounds, and `shuffle_adj` permutes each node's
 neighbour list only (spin_gnn/config.py:184) -- it does not touch event order.
 So "the index goes up" is an uncontrolled explanation for every pre_node
@@ -37,6 +38,7 @@ next_node feature has to earn.
 Light enough for a login node (no GPU, no model): ~1 min for 1000 instances.
 """
 import argparse
+import json
 import sys
 
 import numpy as np
@@ -73,6 +75,8 @@ def main():
     ap.add_argument("--rho", type=float, default=0.3)
     ap.add_argument("--rho-max", type=float, default=0.95)
     ap.add_argument("--n-instances", type=int, default=1000)
+    # Written so a deck can read these numbers instead of hand-typing them.
+    ap.add_argument("--json", default=None, help="also write the summary here")
     # Same stream as sudoku_sae.py (instance i at seed_start + i), so this is a
     # strict prefix of the positions the SAE was scored on.
     ap.add_argument("--seed-start", type=int, default=600_000_000)
@@ -127,12 +131,21 @@ def main():
           f"{n_rounds_ascending}/{n_rounds} = {n_rounds_ascending / n_rounds:.4f}")
     print(f"pre_node positions scored: {truth.size}\n")
     print(f"{'rule':<12}{'accuracy':>10}{'max-over-v F1':>16}{'argmax v':>10}")
+    summary = {"n_instances": args.n_instances, "n_rounds": n_rounds,
+               "n_rounds_ascending": n_rounds_ascending,
+               "ascending_frac": n_rounds_ascending / n_rounds,
+               "n_positions": int(truth.size), "rules": {}}
     for k in ("const", "succ", "min_unknown", "min_remain"):
         acc = float(np.mean(preds[k] == truth))
         f1, v = max_f1_over_nodes(preds[k], truth, cfg.n_nodes)
         print(f"{k:<12}{acc:>10.4f}{f1:>16.4f}{v:>10d}")
-    print("\nCompare with sae_summary_by_kind.csv, pre_node, best_next_node_f1:")
-    print("  leak-free 0.545 at L12 (15 features), leaked 0.741 at L12 (60 features).")
+        summary["rules"][k] = {"accuracy": acc, "max_f1": f1, "argmax_v": int(v)}
+    print("\nCompare with sae_summary_by_kind.csv, pre_node, best_next_node_f1 at L12:")
+    print("  leak-free 1.0000: 0.816 (53 features); its 0.8540 twin: 0.545 (15); leaked: 0.741 (60).")
+    if args.json:
+        with open(args.json, "w") as f:
+            json.dump(summary, f, indent=1)
+        print(f"wrote {args.json}")
     return 0
 
 
