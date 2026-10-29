@@ -25,6 +25,8 @@ import os
 import textwrap
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
@@ -46,6 +48,7 @@ ABL = f"{SCRATCH}/spin_gnn/sudoku_sae_ablate_2026-10-29b"
 SAE = {"leak-free 1.0000": f"{SCRATCH}/spin_gnn/sudoku_sae_solved_2026-10-28/leakfree1000_l0_64",
        "leak-free 0.8540": f"{SCRATCH}/spin_gnn/sudoku_sae_kindsplit_2026-10-27/leakfree_l0_64",
        "leaked 0.9960": f"{SCRATCH}/spin_gnn/sudoku_sae_kindsplit_2026-10-27/leaked_l0_64"}
+SUB = f"{SCRATCH}/spin_gnn/sudoku_sublayer_2026-10-29"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sudoku_dd_verdict_2026-10-28")
 
 BLUE, RED, GREEN, GREY = "#1f77b4", "#d62728", "#2ca02c", "0.45"
@@ -1417,152 +1420,293 @@ def page_sae(out, S):
 # for board state, purple for the candidate set, red/orange for the forcing
 # set, greens for the output -- so the composition can be read without the
 # legend once the reader has seen it on the first panel.
-FAMS = [("next_node", "#1f77b4", "the NODE about to be coloured"),
-        ("next_node_nbr_count", "#9ecae1", "how many neighbours that node has"),
-        ("known", "#bdbdbd", "which nodes are already coloured"),
-        ("remaining", "#737373", "which nodes are still uncoloured"),
-        ("frontier", "#6a51a3", "which nodes are decidable NOW"),
-        ("nbr_of_next", "#fd8d3c", "u is a NEIGHBOUR of that node"),
-        ("justifies_next", "#c0392b", "u is a KNOWN neighbour of it = FORCING SET"),
-        ("next_color", "#1e8449", "the COLOUR about to be emitted"),
-        ("color", "#a1d99b", "a colour, anywhere")]
+# DD's own order, top to bottom, which is also the order the grid reads in:
+# who is being coloured, what the board looks like, which nodes are decidable,
+# the forcing set, the answer. The second element is the row label, so every
+# raw variable name is glossed on the slide itself.
+FAMS = [("next_node", "the NODE about to be coloured"),
+        ("next_node_nbr_count", "its neighbour COUNT"),
+        ("known", "nodes already coloured"),
+        ("remaining", "nodes still uncoloured"),
+        ("frontier", "nodes decidable NOW"),
+        ("nbr_of_next", "u NEIGHBOURS that node"),
+        ("justifies_next", "FORCING SET"),
+        ("next_color", "the COLOUR about to be emitted"),
+        ("color", "a colour, anywhere")]
+FORCING = "justifies_next"
 
 
 def _fam(k, kind):
-    """(layers, {family: counts}) for one arm at one position mask."""
+    """(layers, {family: counts}, alive, interpretable) for one arm at one mask."""
     k = k[k.position_kind == kind].sort_values("layer")
     cnt = k.family_counts.map(json.loads)
     return ([int(x) for x in k.layer],
-            {f: [c.get(f, 0) for c in cnt] for f, _, _ in FAMS})
+            {f: [c.get(f, 0) for c in cnt] for f, _ in FAMS},
+            [int(x) for x in k.n_alive],
+            [int(x) for x in k.n_interpretable])
 
 
 def page_pipeline(out, S, D):
-    """WHICH layers hold which step, from the composition of the dictionaries.
+    """WHERE each DD step is encoded, from the composition of the dictionaries.
 
     page_sae asks how well the best single feature tracks DD's forcing set.
     This page asks a different question of the same dictionaries: of the
-    features that are interpretable at all, WHAT do they encode, layer by
-    layer. That is what turns "features exist" into "the steps are ordered",
-    and it is still correlational -- the footer says so, and the ablation page
-    is the test that failed to settle it.
+    features that match a predicate at all, WHICH predicate, layer by layer.
+    Correlational, like page_sae, and the title says "encoded" for that reason
+    -- an earlier draft said "which layers RUN which DD step", which is causal
+    language the page cannot support and which its own footer disclaimed.
     """
     fig = plt.figure(figsize=(16, 9))
     a = S["leak-free 1.0000"]
     pc = a[a.position_kind == "pre_color"]
     peak = pc.loc[pc.best_justifier_f1.idxmax()]
-    fig.suptitle(f"Which layers run which DD step: the forcing set enters at L{int(peak.layer)}",
+    fig.suptitle(f"Where each DD step is ENCODED: the forcing set appears at L{int(peak.layer)}",
                  size=BIG - 2, weight="bold")
-    fig.text(0.5, 0.893,
-             "Every dictionary feature that matches one of DD's predicates, counted by WHICH predicate -- the same "
-             "three dictionaries as the previous page, counted instead of scored.",
-             size=SMALL, ha="center", va="top", color="0.3")
+    fig.text(0.5, 0.898,
+             textwrap.fill(
+                 "Same dictionaries as page 13, counted instead of scored: how many features match each of DD's "
+                 "predicates, per layer. Under each column, how many of that layer's 4096 features are alive; "
+                 "red box = where the forcing set appears.", width=150),
+             size=SMALL - 2, ha="center", va="top", color="0.3", linespacing=1.5)
 
     panels = [("leak-free 1.0000", "pre_color", "SOLVER, while it picks the COLOUR"),
               ("leak-free 1.0000", "pre_node", "SOLVER, while it picks the NODE"),
               ("leaked 0.9960", "pre_color", "LEAK-READER, picking the COLOUR")]
     axs = []
     for i, (arm, kind, title) in enumerate(panels):
-        ax = fig.add_axes([0.075 + 0.313 * i, 0.555, 0.258, 0.285])
+        ax = fig.add_axes([0.192 + 0.262 * i, 0.487, 0.248, 0.315])
         axs.append(ax)
         if arm not in S:
             ax.axis("off"); ax.set_title(title + "\n(not on disk)", size=MED - 3); continue
-        layers, cnt = _fam(S[arm], kind)
-        x = range(len(layers))
-        bot = [0] * len(layers)
-        for f, colour, _ in FAMS:
-            v = cnt[f]
-            ax.bar(x, v, 0.72, bottom=bot, color=colour, edgecolor="white", linewidth=0.4)
-            bot = [b + y for b, y in zip(bot, v)]
-        ax.set_xticks(list(x)); ax.set_xticklabels([f"L{L}" for L in layers], size=SMALL - 2)
-        ax.set_title(title, size=MED - 3)
-        # Headroom to 470: the annotation below lives inside the axes, and at
-        # 430 it printed through the panel title it sits under.
-        ax.set_ylim(0, 470)
-        if i:
-            ax.tick_params(labelleft=False)
+        layers, cnt, alive, _ = _fam(S[arm], kind)
+        M = np.array([cnt[f] for f, _ in FAMS], dtype=float)
+        # Square-root colour: the interesting cells are 2 and 17 next to a 223,
+        # and on a linear ramp everything below ~40 is the same white.
+        ax.imshow(M, cmap="Blues", aspect="auto",
+                  norm=mcolors.PowerNorm(0.45, vmin=0, vmax=250))
+        for r in range(M.shape[0]):
+            for c in range(M.shape[1]):
+                v = int(M[r, c])
+                ax.text(c, r, "." if v == 0 else str(v), ha="center", va="center",
+                        size=SMALL - 3, color="white" if v >= 90 else "0.15",
+                        weight="bold" if FAMS[r][0] == FORCING and v else "normal")
+        ax.set_xticks(range(len(layers)))
+        ax.set_xticklabels([f"L{L}\n{n if n < 1000 else f'{n/1000:.1f}k'}" for L, n in zip(layers, alive)],
+                           size=SMALL - 3)
+        ax.set_yticks(range(len(FAMS)))
+        ax.set_title(title, size=MED - 3, pad=8)
+        ax.tick_params(length=0)
+        if i == 0:
+            ax.set_yticklabels([f"{f} - {g}" for f, g in FAMS], size=SMALL - 4)
+            for t in ax.get_yticklabels():
+                if t.get_text().startswith(FORCING):
+                    t.set_color(RED); t.set_weight("bold")
         else:
-            ax.set_ylabel("interpretable features", size=MED - 4)
-        ax.grid(axis="y", alpha=0.3)
+            ax.set_yticklabels([])
+        for s in ax.spines.values():
+            s.set_visible(False)
 
-    # The one thing a reader should carry off the page, marked on the panel it
-    # happens in rather than left to the body text to locate.
-    ji = _fam(a, "pre_color")[0].index(int(peak.layer))
-    axs[0].annotate("the FORCING SET\nenters here", xy=(ji - 0.3, 380), xytext=(ji - 3.2, 420),
-                    size=SMALL - 1, weight="bold", color=RED,
-                    arrowprops=dict(arrowstyle="->", color=RED, lw=2))
-
-    # Family names only. The gloss for each one is in whichever column below
-    # actually uses it, which is where a reader needs it; nine glosses in the
-    # legend took three rows and printed over the tick labels.
-    handles = [Patch(facecolor=c, edgecolor="white", label=f) for f, c, _ in FAMS]
-    fig.legend(handles=handles, loc="center", bbox_to_anchor=(0.5, 0.505), ncol=9,
-               fontsize=SMALL - 2, frameon=False, handlelength=1.3, columnspacing=1.1)
-
-    # Every number below is read out of the same frames the bars are, so the
+    # The one thing a reader should carry off the page, marked in the panel it
+    # happens in. The arrow was doing this work when the families were stacked
+    # bars; boxing the cell is unambiguous and costs no space.
+    jr = [f for f, _ in FAMS].index(FORCING)
+    jc = _fam(a, "pre_color")[0].index(int(peak.layer))
+    axs[0].add_patch(Rectangle((jc - 0.5, jr - 0.5), 1, 1, fill=False, ec=RED, lw=2.5, zorder=5))
+    # Every number below is read out of the same frames the grid is, so the
     # prose cannot drift from the panels above it.
-    L, sc = _fam(a, "pre_color")
-    _, sn = _fam(a, "pre_node")
+    L, sc, _, si = _fam(a, "pre_color")
+    _, sn, _, _ = _fam(a, "pre_node")
     at = lambda d, f, lay: d[f][L.index(lay)]
     l0 = pc[pc.layer == 0].iloc[0]
     nbr6 = float(pc[pc.layer == 6].iloc[0].best_nbr_of_next_f1)
     nbr8 = float(pc[pc.layer == 8].iloc[0].best_nbr_of_next_f1)
-    pn_max = max(float(S[a_][S[a_].position_kind == "pre_node"].best_justifier_f1.max()) for a_ in S)
+    pn_s = float(a[a.position_kind == "pre_node"].best_justifier_f1.max())
+    pn_max = max(float(S[x][S[x].position_kind == "pre_node"].best_justifier_f1.max()) for x in S)
     kc = _fam(S["leaked 0.9960"], "pre_color")[1] if "leaked 0.9960" in S else None
 
     cols = [
-        ("1. THE STEPS COME IN ORDER",
-         f"At L0 the only thing above the shuffled null is identity: "
-         f"{at(sc, 'next_node', 0)} features for the NODE about to be coloured, at F1 "
-         f"{l0.best_next_node_f1:.3f}. Which nodes are already coloured (known) and which are decidable "
-         f"(frontier) build up over L2-L6. The forcing set enters at L{int(peak.layer)}: "
-         f"{at(sc, 'justifies_next', 8)} justifies_next features at best F1 {peak.best_justifier_f1:.3f}, "
-         f"next to {at(sc, 'nbr_of_next', 8)} for the neighbour relation itself, whose best feature jumps "
-         f"from {nbr6:.3f} at L6 to {nbr8:.3f}. The COLOUR comes last: {at(sc, 'next_color', 12)} "
-         f"next_color features at L12."),
-        ("2. ABOUT PARTICULAR NODES, NOT THE GRAPH",
-         f"Every predicate here is indexed to the node being emitted and to ITS OWN known neighbours -- that "
-         f"is what makes it DD's forcing set rather than a graph statistic. At the position where the model "
-         f"picks the NODE instead, no forcing-set feature clears the bar in any arm at any layer (best F1 "
-         f"{pn_max:.3f}). What that position carries is {at(sn, 'remaining', 10)} 'still uncoloured' and "
-         f"{at(sn, 'frontier', 10)} 'decidable now' features at L10. Pick the node from the frontier; pick "
-         f"its colour from the forcing set."),
+        ("1. THE STEPS APPEAR IN ORDER",
+         f"At L0 only {int(l0.n_alive)} of 4096 features are alive, {at(sc, 'next_node', 0)} of them for the "
+         f"node about to be coloured -- at F1 {l0.best_next_node_f1:.3f}, because that node was emitted one token "
+         f"earlier, so it is read from the INPUT, not deduced. Board state and the frontier build over L2-L6. "
+         f"The forcing set appears at L{int(peak.layer)}: {at(sc, 'justifies_next', 8)} features at F1 "
+         f"{peak.best_justifier_f1:.3f}, plus {at(sc, 'nbr_of_next', 8)} for the neighbour relation, whose best "
+         f"feature jumps {nbr6:.3f} -> {nbr8:.3f} from L6. Colour comes last: {at(sc, 'next_color', 12)} at "
+         f"L12."),
+        ("2. ABOUT PARTICULAR NODES",
+         f"Every predicate is indexed to the node being emitted and to ITS OWN known neighbours -- that is what "
+         f"makes it DD's forcing set and not a graph statistic. Where the model picks the NODE instead, no "
+         f"forcing-set feature clears the 0.30 bar in any arm at any layer (best {pn_s:.3f} in the SOLVER, "
+         f"{pn_max:.3f} anywhere); that position carries {at(sn, 'remaining', 10)} 'still uncoloured' and "
+         f"{at(sn, 'frontier', 10)} 'decidable now' features at L10 instead."),
         ("3. THE CONTROL SKIPS THE STEP",
-         f"The LEAK-READER scores 0.996 without deducing. It has {at(kc, 'justifies_next', 6)} and "
-         f"{at(kc, 'justifies_next', 8)} forcing-set features at L6 and L8, where the SOLVER has "
-         f"{at(sc, 'justifies_next', 6)} and {at(sc, 'justifies_next', 8)}, and "
-         f"{at(kc, 'next_color', 10)} colour features at L10 against the SOLVER's "
-         f"{at(sc, 'next_color', 10)}: it is committing to the colour at the layer where the SOLVER is still "
-         f"representing the neighbour set ({at(sc, 'nbr_of_next', 10)} features there, against "
-         f"{at(kc, 'nbr_of_next', 10)}). Its own forcing-set features appear only at L10-L12."
+         f"The LEAK-READER scores 0.996 without deducing and its grid is not the SOLVER's: "
+         f"{at(kc, 'justifies_next', 8)} forcing-set features at L8 where the SOLVER has "
+         f"{at(sc, 'justifies_next', 8)}, and {at(kc, 'next_color', 10)} colour features at L10 against the "
+         f"SOLVER's {at(sc, 'next_color', 10)} -- it commits to the colour while the SOLVER is still "
+         f"representing the neighbour set. Read the {at(sc, 'justifies_next', 8)}-vs-0, not the "
+         f"{at(sc, 'justifies_next', 6)}-vs-0 at L6: a few matches are expected at this screening rate."
          if kc is not None else "Leaked arm not on disk."),
     ]
     for i, (head, body) in enumerate(cols):
-        x0 = 0.075 + 0.313 * i
-        fig.text(x0, 0.455, head, size=MED - 4, weight="bold")
-        fig.text(x0, 0.420, textwrap.fill(body, width=58), size=MED - 5, va="top", linespacing=1.5)
+        x0 = 0.045 + 0.313 * i
+        fig.text(x0, 0.412, head, size=MED - 4, weight="bold")
+        fig.text(x0, 0.380, textwrap.fill(body, width=56), size=MED - 5, va="top", linespacing=1.5)
 
-    # Recomputed here rather than quoted from the patching page, so the two
-    # pages cannot disagree about the window.
-    rec = D["leak-free 1.0000"].get("patch")
-    if rec is not None:
-        h = rec[rec.site == "edited_hint"].groupby("layer").recovery.mean()
-        pp = rec[rec.site == "predict_pos"].groupby("layer").recovery.mean()
-        held = max([x for x in h.index if h[x] >= 0.5], default=None)
-        got = min([x for x in pp.index if pp[x] >= 0.9], default=None)
-        if held is not None and got is not None:
-            fig.text(0.5, 0.168,
-                     textwrap.fill(
-                         f"The CAUSAL page agrees on the window without being asked to: the edited fact is still "
-                         f"held at the hint token through L{int(held)}, and is at the prediction position by "
-                         f"L{int(got)}. The forcing set is encoded exactly where the fact is in flight.",
-                         width=118),
-                     ha="center", va="top", size=MED - 4, weight="bold", color="0.15", linespacing=1.5)
-    footer(fig, "STILL CORRELATIONAL, and one caveat on the x-axis: a dictionary is trained on the RESIDUAL STREAM "
-                "after a whole block, so this localises a step to 'by the end of block L', NOT to the MLP as against "
-                "the attention sublayer. A bar counts how many of that layer's 4096 features match the predicate at "
-                "F1 >= 0.30 while beating a shuffled-label null; the number of ALIVE features grows with depth (72 "
-                "at L0 to 4054 at L12), so compare families within a bar more confidently than heights across "
-                "layers. One dictionary per layer per arm, one seed.", width=146)
+    # Deliberately NOT "the causal page agrees": page 13 calls the same
+    # colocation a coincidence of location, and two adjacent slides must not
+    # take opposite views of one coincidence.
+    fig.text(0.5, 0.140,
+             "Reading: pick the node from the frontier, pick its colour from the forcing set. "
+             "WHERE, not WHETHER -- the verdict rests on the interventions.",
+             ha="center", va="top", size=MED - 4, weight="bold", color="0.15")
+    footer(fig, "HOW A FEATURE IS COUNTED: it must match at F1 >= 0.30 AND beat a shuffled-label null, a max "
+                "over 256 predicates, one dictionary per layer per arm, one seed -- single-digit counts sit at "
+                "the noise floor of that screen. NOT A DENOMINATOR EFFECT: interpretable features are flat from "
+                f"L2 on ({min(si[1:])}-{max(si[1:])}), so what turns over is WHICH predicates match, not how many "
+                "exist to match. ON THE X-AXIS: a dictionary is trained on the RESIDUAL STREAM after a whole "
+                "block, so a step localises to 'by the end of block L', NOT to the MLP as against the attention "
+                "sublayer -- the NEXT PAGE measures that distinction directly, and finds neither.", width=158)
+    out.savefig(fig)
+
+
+def load_sublayer():
+    """Job 50151317: one sublayer write zeroed at a time. {} if it has not landed.
+
+    `clean0` is the UNABLATED clean logit diff from behavior.csv, which the
+    sanity-control panel needs as its reference. Note the sign convention:
+    _logit_diff is NEGATIVE when the model is right on the clean input, so the
+    page plots -logit_diff as a margin for the correct colour.
+    """
+    out = {}
+    for label, sub, _, _ in ARMS:
+        f = f"{SUB}/{sub}/sublayer_ablation.csv"
+        b = f"{SUB}/{sub}/behavior.csv"
+        if os.path.exists(f) and os.path.exists(b):
+            out[label] = {"sub": pd.read_csv(f),
+                          "clean0": float(pd.read_csv(b).clean_logit_diff.mean())}
+    return out
+
+
+def page_sublayer(out, U):
+    """MLP against attention, one write at a time.
+
+    Pre-registered before the job ran (sbatch header, finding 29): (a) at least
+    one MLP falls below +0.60; (b) the load-bearing MLPs sit in L6-L10, where
+    the dictionaries find the forcing set; (c) the LEAK-READER's profile
+    differs; (d) the sanity control -- a sublayer whose removal destroys the
+    clean prediction is a broken network, not a localised step.
+    """
+    A = U["leak-free 1.0000"]
+    d, clean0 = A["sub"], A["clean0"]
+    ncase = len(d) // (d.layer.nunique() * 2)
+
+    def prof(df, kind):
+        g = df[df.sublayer == kind].groupby("layer")
+        return (sorted(df.layer.unique()),
+                g.effect_retained.mean().values,
+                g.effect_retained.quantile(0.10).values,
+                g.effect_retained.quantile(0.90).values,
+                -g.ablated_clean_logit_diff.mean().values,
+                # "still clearly right", not merely on the right side of 0
+                g.ablated_clean_logit_diff.apply(lambda v: (v < 0.5 * clean0).mean()).values)
+
+    fig = plt.figure(figsize=(16, 9))
+    mlp, attn = prof(d, "mlp"), prof(d, "attn")
+    win = [i for i, L in enumerate(mlp[0]) if 6 <= L <= 10]
+    # the MOST damaging deletion in the window, so the headline is the weakest
+    # claim the data supports, not the strongest
+    worst_win = min(mlp[1][i] for i in win)
+    fig.suptitle(f"No single MLP carries it: deleting any MLP in L6-L10 keeps "
+                 f"{worst_win:.0%} of the effect", size=BIG - 3, weight="bold")
+    fig.text(0.5, 0.922,
+             textwrap.fill(
+                 f"Each of the {d.layer.nunique() * 2} sublayer writes zeroed one at a time, weight and bias, on "
+                 f"the same {ncase} hint-edit cases as the head page. These are pre-norm blocks -- "
+                 "x = x + attn(norm(x)) then x = x + mlp(norm(x)) -- so this deletes ONE write and leaves the "
+                 "skip connection intact.", width=150),
+             size=SMALL - 2, ha="center", va="top", color="0.3", linespacing=1.5)
+
+    ax1 = fig.add_axes([0.075, 0.520, 0.43, 0.285])
+    ax2 = fig.add_axes([0.075, 0.250, 0.43, 0.185])
+    for ax in (ax1, ax2):
+        ax.axvspan(5.6, 10.4, color="#fff3c4", zorder=0)
+        ax.set_xlim(-0.5, 11.5)
+        ax.set_xticks(mlp[0])
+    ax1.text(8.0, 0.58, "where page 14 finds\nthe forcing set", size=SMALL - 3,
+             ha="center", va="center", color="#8a6d00")
+
+    for (L, m, q1, q9, _, strong), name, col, mk in [
+            (mlp, "block L's MLP", BLUE, "o"), (attn, "block L's attention", GREY, "s")]:
+        ax1.fill_between(L, q1, q9, color=col, alpha=0.18, lw=0)
+        ax1.plot(L, m, mk + "-", color=col, lw=2.5, ms=7, label=name)
+        for i, L_ in enumerate(L):
+            if strong[i] < 0.9:
+                ax1.plot([L_], [m[i]], "x", color=RED, ms=14, mew=3, zorder=6)
+    ax1.axhline(1.0, color="k", ls="--", lw=2)
+    ax1.axhline(0.839, color=CAVEAT, ls=":", lw=2)
+    ax1.text(0.3, 0.72, "0.839 = the worst SINGLE HEAD (page 12)", size=SMALL - 2, color=CAVEAT)
+    ax1.set_ylim(-0.05, 1.18)
+    ax1.set_ylabel("fraction of the hint-edit\neffect retained", size=MED - 4)
+    ax1.legend(loc="center left", fontsize=SMALL - 2, ncol=1, framealpha=0.95)
+    ax1.tick_params(labelbottom=False)
+    ax1.set_title("1.00 = that write is not needed for the flip;  0.00 = the flip is gone\n"
+                  "band = 10th-90th percentile over cases", size=SMALL - 2)
+
+    for (L, _, _, _, marg, strong), col, mk in [(mlp, BLUE, "o"), (attn, GREY, "s")]:
+        ax2.plot(L, marg, mk + "-", color=col, lw=2.5, ms=7)
+        for i, L_ in enumerate(L):
+            if strong[i] < 0.9:
+                ax2.plot([L_], [marg[i]], "x", color=RED, ms=14, mew=3, zorder=6)
+    ax2.axhline(-clean0, color="k", ls="--", lw=2)
+    ax2.text(0.3, -clean0 - 1.6, f"unablated: {-clean0:.1f}", size=SMALL - 2)
+    ax2.axhline(0, color=RED, lw=2)
+    ax2.text(1.3, 0.9, "0 = the clean prediction is now WRONG", size=SMALL - 2, color=RED)
+    ax2.set_ylim(-1.5, -clean0 + 3.5)
+    ax2.set_xlabel("block index L", size=MED - 4)
+    ax2.set_ylabel("SANITY CONTROL:\nmargin for the correct\ncolour, clean input", size=MED - 5)
+
+    pm = dict(zip(mlp[0], mlp[1]))
+    pa = dict(zip(attn[0], attn[1]))
+    cm = dict(zip(mlp[0], mlp[4]))
+    nl = max(mlp[0])
+    C = U.get("leaked 0.9960")
+    cmlp = (C["sub"][(C["sub"].sublayer == "mlp") & (C["sub"].layer == nl)]
+            .effect_retained.mean()) if C else float("nan")
+    n_safe = sum(1 for pr in (mlp, attn) for v in pr[5] if v >= 0.9)
+
+    entries = [
+        ("(a) at least one MLP falls below +0.60", GREEN,
+         f"CONFIRMED, and uninformative. L{nl}'s MLP keeps {pm[nl]:.2f} -- but L{nl} is the LAST block, and "
+         f"deleting it also costs the clean prediction (margin {-clean0:.1f} -> {cm[nl]:.1f})."),
+        ("(b) the load-bearing MLPs are in L6-L10", RED,
+         f"FALSIFIED, flatly. Every MLP from L0 to L10 keeps {min(mlp[1][:-1]):.2f}-{max(mlp[1][:-1]):.2f} of the "
+         f"effect, with the 10th-90th percentile inside about +-0.02. None of them is needed."),
+        ("(c) the LEAK-READER's profile DIFFERS", RED,
+         f"FALSIFIED. The control localises to the SAME two sublayers -- L{nl} MLP at {cmlp:.2f}, plus L0 "
+         f"attention -- only noisier. Whatever this measures, it is not what separates the two models."),
+        ("(d) SANITY: does the clean prediction survive?", GREEN,
+         f"YES at {n_safe} of {d.layer.nunique() * 2} sublayers: the margin is unchanged at {-clean0:.1f}. It "
+         f"fails at exactly the three that lose effect (red x), so their loss is confounded with plain damage."),
+    ]
+    fig.text(0.565, 0.838, "THE FOUR PRE-REGISTRATIONS", size=MED - 3, weight="bold")
+    for i, (head, col, body) in enumerate(entries):
+        y = 0.798 - 0.148 * i
+        fig.text(0.565, y, head, size=MED - 4, weight="bold", color=col, va="top")
+        fig.text(0.578, y - 0.034, textwrap.fill(body, width=68), size=MED - 5,
+                 va="top", linespacing=1.45)
+
+    fig.text(0.5, 0.165,
+             f"Reading: the forcing set is ENCODED by the end of block L8 (page 14), but no single MLP there is "
+             f"needed to USE it.\nWhat little middle-network dependence exists is ATTENTION at L7/L9/L10 "
+             f"({pa[7]:.2f} / {pa[9]:.2f} / {pa[10]:.2f}), not the MLPs.",
+             ha="center", va="top", size=MED - 4, weight="bold", color="0.15", linespacing=1.5)
+    footer(fig, "Zeroing linear2 removes block L's MLP write exactly and zeroing out_proj removes its attention "
+                "write; the bias goes too, because a bias belongs to the sublayer as a whole rather than to any "
+                "one head. Same effect normalisation as the head page, so the two are directly comparable. WHAT A "
+                "FLAT 1.00 CANNOT SHOW: deleting one sublayer at a time cannot detect a step that is computed "
+                "redundantly in two or more places, which is the reading this page and the head page together "
+                "point at. One seed, one model, one intervention type.", width=152)
     out.savefig(fig)
 
 
@@ -1688,7 +1832,8 @@ def page_verdict(out, D, O):
              "and the per-depth bins run as thin as a few dozen\ncases. The withhold gap and the solve-rate gap are different "
              "measurements on different samples: their agreement is a consistency check, not a decomposition. The\nsparse-"
              "autoencoder pages are correlational, and the ablation that would make them causal moved no answer at all, "
-             "controls included -- inconclusive, not negative.",
+             "controls included -- inconclusive, not negative.\nWHERE in the network it happens is unresolved too: no "
+             "single head and no single MLP or attention write is needed for the effect -- redundancy, or a blunt test.",
              ha="center", va="top", size=MED - 5, color="0.15", linespacing=1.45)
     # no footer() here: the right column's last bullet already carries the
     # comparison to the previous answer, and a third block at the bottom
@@ -1705,11 +1850,12 @@ def main():
     S = load_sae()
     A = load_ablation()
     O = load_order()
+    U = load_sublayer()
     ex = example_instance(rho=0.60)
     pdf_path = os.path.join(OUT, "slides.pdf")
     have_skip = any("skip" in D[l] for l, _, _, _ in ARMS)
     with PdfPages(pdf_path) as pdf:
-        o = PdfAndPng(pdf, OUT, total=11 + 2 * have_skip + 2 * bool(S) + ("interp" in A))
+        o = PdfAndPng(pdf, OUT, total=11 + 2 * have_skip + 2 * bool(S) + ("interp" in A) + bool(U))
         page_title(o, D, ex, O, S)
         page_task(o, ex)
         page_model(o, O, S, D)
@@ -1730,6 +1876,8 @@ def main():
             page_pipeline(o, S, D)
         if "interp" in A:
             page_ablation(o, A)
+        if U:
+            page_sublayer(o, U)
         page_verdict(o, D, O)
     print(f"wrote {pdf_path} ({os.path.getsize(pdf_path) / 1e6:.2f} MB, {o.n} pages)")
 

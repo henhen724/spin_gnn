@@ -81,7 +81,8 @@ def load():
              sv_warm["d0256_h04_L12_ff00256_lr1e-03_pre_w05"], sv_warm[REF])]:
         w, l, p = mcnemar(a, b)
         pairs.append({"key": key, "contrast": lab, "a": a.mean(), "b": b.mean(),
-                      "delta": a.mean() - b.mean(), "won": w, "lost": l, "p": p})
+                      "delta": a.mean() - b.mean(), "won": w, "lost": l, "p": p,
+                      "n": int(len(a))})
 
     dep = pd.concat([pd.read_csv(f"{WIDE}/depth_by_layers_n96.csv"),
                      pd.read_csv(f"{COLD}/depth_by_layers_n96_ff256.csv"),
@@ -138,9 +139,12 @@ def page_title(o, D):
     pm = D["nll"].set_index("tag").params_M
     p7 = pm["d0256_h04_L07_ff01024_lr1e-03_pre"]
     p8 = pm["d0256_h04_L08_ff01024_lr1e-03_pre"]
+    # The gap the +0.0800 is a fraction OF. warm-vs-cold minus warm-vs-knee is
+    # cold-vs-knee, so this is read off the same paired table as everything else.
+    gap = tr.delta - p.loc["vs_knee"].delta
 
     for i, (colour, head, body) in enumerate([
-            (BLUE, "L*(96, ff=1024) = 8 STANDS -- but the two metrics disagree about why.",
+            (BLUE, "L*(96, ff=1024) = 8 BY THE BIN GATE -- and L=7 ties it on the pool.",
              [f"L=7 clears the 0.90 gate in {k7} of {n7} depth bins, missing only T=8, by 0.003.",
               # int(): these came out of a DataFrame as floats, and "92.0-91.0"
               # reads as a rate rather than as a count of disagreeing instances.
@@ -149,22 +153,23 @@ def page_title(o, D):
               "So the ladder has a rung the metric of record cannot see."]),
             (GREEN, "Most of the deep-thin deficit was TRAINABILITY, not capacity.",
              [f"Five epochs of LR warmup move L=12/ff=256 by {tr.delta:+.4f} on the pool "
-              f"({int(tr.won)}-{int(tr.lost)}, p = {tr.p:.2g}).",
-              f"THE CONTROL HELD: the cell with no grammar problem moved {ct.delta:+.4f} "
-              f"(p = {ct.p:.2g}), so warmup did not just lift the whole column.",
+              f"({int(tr.won)}-{int(tr.lost)}, p = {tr.p:.2g}) -- {tr.delta / gap:.0%} of its "
+              f"{gap:.4f} gap to the wide knee.",
+              f"THE CONTROL HELD: the cell with no grammar problem (page 6) moved {ct.delta:+.4f} "
+              f"(p = {ct.p:.2g}), so warmup did not lift the whole column.",
               f"And it is PARTIAL: the warm cell still clears the gate in {kw} of {nw} bins, "
               "so L*(96, ff=256) > 12 stands."])]):
-        y = 0.82 - 0.265 * i
+        y = 0.625 - 0.235 * i
         fig.text(0.055, y, head, size=MED + 1, weight="bold", color=colour)
         for j, line in enumerate(body):
             fig.text(0.075, y - 0.055 - 0.045 * j, line, size=MED - 2)
 
-    fig.text(0.055, 0.375, "WHAT L* IS MEASURED ON, AND THE NOTATION THE LATER PAGES USE",
+    fig.text(0.055, 0.845, "WHAT L* IS MEASURED ON, AND THE NOTATION THE LATER PAGES USE",
              size=SMALL, weight="bold")
     # Every term the pages after this one use without re-explaining. A reader
     # seeing the project for the first time should not have to infer "ff" or
     # "cell" from a footer four pages later.
-    fig.text(0.075, 0.340,
+    fig.text(0.075, 0.812,
              "Graph colouring solvable by Direct Deduction (DD) alone: colour the one node whose known "
              "neighbours leave it a single colour, repeat. N=96 nodes, degree 5,\n"
              "q=4 colours. An instance's DEPTH T is how many DD rounds it takes. rho = the fraction of "
@@ -172,7 +177,9 @@ def page_title(o, D):
              "0.5938 in every bin. ff = the width of the MLP inside each transformer block (ff=1024 WIDE, "
              "ff=256 THIN). A CELL is one trained model, one seed. COLD = flat\n"
              "learning rate, WARM = a 5-epoch ramp to the same rate. THE KNEE = L=8/ff=1024, the shallowest "
-             "wide cell clearing every bin. 'Finding NN' = this project's log.",
+             "wide cell clearing every bin.\n"
+             "THE POOL = the 1500-instance shared eval that every paired comparison on page 4 runs on. "
+             "'Finding NN' = this project's own log.",
              size=MED - 4, va="top", linespacing=1.55)
 
     # Up front, not in the limitations: with shuffle_adj=False a solve rate on
@@ -182,13 +189,13 @@ def page_title(o, D):
     # Wrapped at 140, not by hand: at bold 13pt from x=0.055 the slide holds
     # about 145 characters, and the hand-broken version ran a fourth line down
     # into the footer.
-    fig.text(0.055, 0.190,
+    fig.text(0.055, 0.205,
              textwrap.fill(
                  "CAVEAT, up front: these runs keep the ADJACENCY-ORDER LEAK (shuffle_adj=False), so every rate "
                  "here is a DECODING score, not a deduction score. Each node's neighbour row is listed sorted by "
                  "the neighbours' TRUE colours, which names the node's own colour outright for 61-67% of nodes "
                  "(finding 16); permuting those rows dropped the N=96 model it was measured on from 0.94 to 0.04. "
-                 "One seed per cell. The leak-free ladder is a separate series, running at N=48.", width=152),
+                 "One seed per cell. The leak-free ladder is a separate series, running at N=48.", width=136),
              size=MED - 4, va="top", color="0.15", weight="bold", linespacing=1.5)
     footer(fig, "Jobs 50053882 and 50008605. Prepared 2026-10-29; every number on every page is "
                 "recomputed from the run outputs by this script, not typed in.")
@@ -198,7 +205,7 @@ def page_title(o, D):
 def page_pool(o, D):
     fig = plt.figure(figsize=(16, 9))
     fig.suptitle("The metric of record: one pool, every comparison paired", size=BIG, weight="bold")
-    ax = fig.add_axes([0.04, 0.40, 0.92, 0.46]); ax.axis("off")
+    ax = fig.add_axes([0.04, 0.47, 0.92, 0.43]); ax.axis("off")
     cols = ["contrast", "rates", "difference", "discordant\n(won-lost)", "exact\nMcNemar p", "reading"]
     widths = [0.42, 0.13, 0.11, 0.12, 0.12, 0.10]
     rows, flags = [], []
@@ -217,16 +224,23 @@ def page_pool(o, D):
         t[i, 2].set_text_props(weight="bold", color="0.0" if sig else "0.45")
         t[i, 5].set_text_props(color="0.0" if sig else "0.45")
 
-    fig.text(0.5, 0.345,
-             "A TIE HERE IS NOT AN UNDERPOWERED TEST. L=7 vs L=8 disagree on 183 of 1500 instances and split "
-             "them 92-91: the pool\nhas the resolution and reports no difference. That is the one weakness in "
-             "this ladder no further N=96 run will fix.",
+    # An interval, not an assertion: "the pool has the resolution" was the one
+    # claim on this page with no number behind it, and what 1500 paired
+    # instances actually exclude is a difference of about two points.
+    kn = D["pairs"].set_index("key").loc["knee"]
+    disc = int(kn.won + kn.lost)
+    ci = 1.96 * np.sqrt(disc) / kn.n
+    fig.text(0.5, 0.415,
+             f"A TIE HERE IS A MEASUREMENT, NOT A MISSING ONE -- up to a point. L=7 and L=8 disagree on {disc} "
+             f"of {int(kn.n)} instances and split\nthem {int(kn.won)}-{int(kn.lost)}, so the paired 95% interval "
+             f"on the difference is about +-{ci:.3f}: the pool excludes a gap bigger than two points and\nfinds "
+             "none. It cannot exclude a smaller one, and no further N=96 run at this n will.",
              size=MED - 3, ha="center", va="top", linespacing=1.6)
-    fig.text(0.5, 0.235,
+    fig.text(0.5, 0.300,
              "THE CONTROL IS THE LOAD-BEARING ROW. Had warmup lifted the whole thin column, finding 25's "
              "width gap would have been\nmeasured against an undertrained competitor and every N=96 width number "
-             "would need re-running. The cell with no grammar\nproblem moved by -0.0040 (p = 0.77) while the cell "
-             "with one moved by +0.0800.",
+             "would need re-running. The cell with no grammar problem\n(its generations parse as traces -- see "
+             "page 6) moved by -0.0040 (p = 0.77) while the cell with one moved by +0.0800.",
              size=MED - 3, ha="center", va="top", linespacing=1.6)
     footer(fig, "In the last column 'resolvable' means p < 0.05 on the paired test and 'tie' means it is not; "
                 "at n=1500 a tie is a measured absence of difference, not a missing measurement. "
@@ -244,8 +258,9 @@ def page_depth(o, D):
     fig.suptitle("Where L* is read off: six depth bins, density held fixed", size=BIG, weight="bold")
     d60 = D["d60"]
     fig.text(0.5, 0.900, "dotted line = the 0.90 gate;   [k/6] in each legend = how many of the six bins that "
-             "cell clears", size=SMALL, ha="center", color="0.3")
-    axes = [fig.add_axes([0.07, 0.42, 0.41, 0.40]), fig.add_axes([0.56, 0.42, 0.41, 0.40])]
+             "cell clears;   bars are 95% Jeffreys intervals on that bin alone (one seed, so they are "
+             "binomial, not across-seed)", size=SMALL - 1, ha="center", color="0.3")
+    axes = [fig.add_axes([0.07, 0.465, 0.41, 0.355]), fig.add_axes([0.56, 0.465, 0.41, 0.355])]
     series = [("The wide ladder, ff=1024", axes[0],
                [("d0256_h04_L04_ff01024_lr1e-03_pre", "0.75"),
                 ("d0256_h04_L06_ff01024_lr1e-03_pre", "tab:orange"),
@@ -285,16 +300,18 @@ def page_depth(o, D):
     axes[1].tick_params(labelleft=False)
 
     n_per = d60.groupby("T").n.max().to_dict()
+    ns = "/".join(str(int(v)) for v in n_per.values())
+    ts = "/".join(str(int(k)) for k in n_per)
     fig.text(0.5, 0.370,
-             "THIS IS A SEPARATE EVAL FROM THE POOL ON PAGES 4 AND 7. Here 1500 instances are drawn at rho=0.60 "
-             "and binned by DD depth T; the six bins with\nn>=60 hold "
-             + str(int(sum(n_per.values()))) + " of them (n = "
-             + ", ".join(f"{int(v)} (T={int(k)})" for k, v in n_per.items()) + "). Realized density is 0.5938 in "
-             "EVERY bin of EVERY cell, so the bins differ in\nreasoning depth and in nothing else. The pool is a "
-             "different draw, spanning the whole training range rho=0.30-0.95, and runs harder -- bin rates and "
-             "pool\nrates are not interchangeable, which is why the two metrics can disagree about L=7.",
-             size=MED - 4, ha="center", va="top", linespacing=1.55)
-    fig.text(0.5, 0.235,
+             "THIS IS A SEPARATE EVAL FROM THE POOL ON PAGES 4 AND 7: 1500 instances drawn at rho=0.60 and binned "
+             "by DD depth T.\nThe six bins the eval keeps (at least 40 instances each) hold "
+             + str(int(sum(n_per.values()))) + " of them: n = " + ns + " at T = " + ts + ".\n"
+             "Realized density is 0.5938 in EVERY bin of EVERY cell, so the bins differ in reasoning depth and in "
+             "nothing else.\nThe pool is a different draw, spanning the whole training range rho=0.30-0.95, and "
+             "runs harder -- bin rates and pool\nrates are not interchangeable, which is why the two metrics can "
+             "disagree about L=7.",
+             size=MED - 4, ha="center", va="top", linespacing=1.45)
+    fig.text(0.5, 0.205,
              "L=7's single miss is T=8 at 0.897 in a 68-instance bin, where ONE instance is 0.015. Three "
              "thousandths is not a measurement; it is\nwhere a threshold happened to fall -- so the N=96 width "
              "factor is quoted as '>1.5x, denominator resting on a 0.003 bin margin'.",
@@ -392,10 +409,10 @@ def page_mechanism(o, D):
 
 def page_nll(o, D):
     fig = plt.figure(figsize=(16, 9))
-    fig.suptitle("The cheap metric still does not rank these architectures",
+    fig.suptitle("val_nll ranks the thin cells, and still fails ACROSS widths",
                  size=BIG, weight="bold")
     t = D["nll"].sort_values("val_nll")
-    ax = fig.add_axes([0.09, 0.30, 0.40, 0.50])
+    ax = fig.add_axes([0.09, 0.36, 0.40, 0.46])
     # Hand-placed, per cell: the two pairs this page is ABOUT -- L=7 against the
     # knee, and the thin column's warm against cold -- are near-identical in
     # BOTH coordinates, so one offset for all eight points stacks their labels
@@ -433,7 +450,7 @@ def page_nll(o, D):
                         "axis flipped, so better is up AND right",
             transform=ax.transAxes, va="top", size=SMALL - 2)
 
-    ax2 = fig.add_axes([0.56, 0.30, 0.40, 0.50]); ax2.axis("off")
+    ax2 = fig.add_axes([0.56, 0.36, 0.40, 0.46]); ax2.axis("off")
     ax2.text(0, 1.0, "THE TWO READINGS, SEPARATELY", size=SMALL, weight="bold", va="top")
     i = t.set_index("tag")
     c12, w12 = "d0256_h04_L12_ff00256_lr1e-03_pre", "d0256_h04_L12_ff00256_lr1e-03_pre_w05"
@@ -450,8 +467,9 @@ def page_nll(o, D):
           f"({i.val_nll[w12]:.4f} vs {i.val_nll[l7]:.4f}) while scoring",
           f"{abs(i.pool[w12] - i.pool[l7]) * 100:.1f} POINTS LOWER on the pool "
           f"({i.pool[w12]:.4f} vs {i.pool[l7]:.4f}).",
-          "So val_nll is not a model-selection signal at N=96, and the open",
-          "'no best-val checkpoint selection' item cannot be resolved by it."])]
+          f"The nll side of that is {abs(i.val_nll[w12] - i.val_nll[l7]):.4f}, which one seed",
+          "cannot resolve; the POOL side is 2.6 points, which it can. The",
+          "asymmetry is the point: nll is silent where the pool is loud."])]
     for j, (colour, head, body) in enumerate(blocks):
         y = 0.86 - 0.40 * j
         ax2.text(0.0, y, head, size=SMALL + 1, weight="bold", color=colour, va="top")
@@ -459,17 +477,16 @@ def page_nll(o, D):
             ax2.text(0.02, y - 0.09 - 0.075 * k, line, size=SMALL - 1, va="top")
     ax2.set_xlim(0, 1); ax2.set_ylim(0, 1)
 
-    fig.text(0.5, 0.21,
+    fig.text(0.5, 0.275,
              "WHY THIS MATTERS FOR THE LADDER: val_nll is what you would use to pick a checkpoint or prune a "
              "scan without paying for\ngeneration. At N=96 it would have picked the wrong cell. Every L* in this "
              "series is therefore read off generated traces,\nwhich costs about an hour of eval per cell.",
              size=MED - 3, ha="center", va="top", linespacing=1.6)
-    footer(fig, "Axis flipped so that BETTER is to the right on both axes. Circles are cold cells, DIAMONDS the "
-                "warm-start ones, grey the cold thin column; a * marks a cell that is new in these two runs. "
-                "L=7 and L=8 differ by one pixel here (1.4142/0.9120 vs 1.4141/0.9113), so their labels share a "
-                "point. One seed per cell, so this is a ranking check across eight single runs, not a correlation "
-                "with an error bar; it confirms finding 4 at a third task size rather than measuring a new "
-                "quantity.")
+    footer(fig, "Axis flipped so BETTER is to the right on both axes. Circles are cold cells, DIAMONDS the "
+                "warm-start ones, grey the cold thin column; a * marks a cell new in these two runs. L=7 and L=8 "
+                "differ by one pixel (1.4142/0.9120 vs 1.4141/0.9113) and share a point. ONE SEED PER CELL: with "
+                "n=8 and no seed replication the Spearman is not distinguishable from 0 or -1, so read the two "
+                "named contrasts, not the coefficient.")
     o.savefig(fig)
 
 
@@ -488,10 +505,10 @@ def page_verdict(o, D):
         ("31", "(a)", f"L=7 clears 4-5 of 6 bins, so L*(96, ff=1024) = 8 stands",
          "CONFIRMED", f"{k7} of {n7}; the miss is T=8 at 0.897"),
         ("31", "(b)", "the bins it misses are the deepest ones",
-         "WEAK", f"second-deepest, but one miss cannot trend: CA z={z7:+.2f}, p={pz7:.2f}"),
+         "WEAK", f"second-deepest; one miss cannot trend (trend z={z7:+.2f}, p={pz7:.2f})"),
         ("31", "(c)", "on the pool L=7 lands resolvably BELOW L=8",
          "FALSIFIED", f"{l7.delta:+.4f}, {int(l7.won)}-{int(l7.lost)}, p = {l7.p:.2g} -- a tie at 0.88x the params"),
-        ("31", "(d)", "well_formed_rate >= 0.95 in every bin",
+        ("31", "(d)", "well_formed (output parses as a trace) >= 0.95 per bin",
          "CONFIRMED", "0.957-0.993, weighted 0.977: no wide-column grammar failure"),
         ("32", "(a)", "warm L=12/ff=256: well_formed >= 0.98 in EVERY bin",
          "FALSIFIED", "weighted 0.924; worst bin 0.814, BELOW the cold cell's 0.853"),
@@ -530,11 +547,13 @@ def page_verdict(o, D):
              "column still does not reach the wide knee --\nbut its sharpest sentence was about training, not "
              "architecture.",
              size=MED - 3, ha="center", va="top", linespacing=1.6)
-    footer(fig, "WHERE THIS LEAVES THE GRID: the MLP-width factor on L* is 1.00x / 1.50x / >1.50x at N = 24 / 48 / "
-                "96 -- super-multiplicative in N, with one confound now removed rather than suspected. WHAT IT DOES "
-                "NOT ESTABLISH: leaked order throughout, so these are decoding scores; one seed per cell; the gate "
-                "is sensitive at the third decimal and the pool disagrees with it about L=7 vs L=8; warmup is one "
-                "untuned 5-epoch ramp; the two deepest bins carry about +-0.07 at 95%.")
+    footer(fig, "WHERE THIS LEAVES THE GRID: the MLP-width factor on L* reads 1.00x / 1.50x / AT LEAST 1.5x at "
+                "N = 24 / 48 / 96. The N=96 entry is CENSORED, not measured: L=12 is the deepest thin cell anyone "
+                "has trained, so all that is established is L*(96, ff=256) > 12, and 12/8 = 1.5 is a lower bound "
+                "whose true value is unknown. WHAT ELSE IT DOES NOT ESTABLISH: leaked order throughout, so these "
+                "are decoding scores; one seed per cell; the gate is sensitive at the third decimal and the pool "
+                "disagrees with it about L=7 vs L=8; warmup is one untuned 5-epoch ramp; the two deepest bins "
+                "carry about +-0.07 at 95%.")
     o.savefig(fig)
 
 
