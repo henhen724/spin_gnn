@@ -146,114 +146,218 @@ def load_ablation():
         p = f"{ABL}/{sub}/ablate_summary.csv"
         if os.path.exists(p):
             out[key] = pd.read_csv(p).sort_values("layer").reset_index(drop=True)
-    nd = f"{ABL}/solved_pre_node_null"
-    if os.path.isdir(nd):
-        out["node_ran"] = os.path.exists(f"{nd}/ablate_summary.csv")
+    nd = f"{ABL}/solved_pre_node_null/ablate_summary.csv"
+    if os.path.isdir(os.path.dirname(nd)):
+        out["node_ran"] = os.path.exists(nd)
+        if out["node_ran"]:
+            out["node"] = pd.read_csv(nd).sort_values("layer").reset_index(drop=True)
     return out
+
+
+def paired_gap_ci(layer, sub="solved_pre_color_interp"):
+    """95% interval on the binding-minus-other gap, from the per-case file.
+
+    `ablate_summary.csv` carries the McNemar p but not the discordant counts,
+    and a null result is unreadable without an interval: "no effect" and "too
+    few paired cases to see one" give the same p. Returns None if the per-case
+    file is missing, in which case the page simply omits the interval.
+    """
+    p = f"{ABL}/{sub}/ablate_layer{int(layer):02d}.csv"
+    if not os.path.exists(p):
+        return None
+    r = pd.read_csv(p)
+    r = r[(r.n_bind > 0) & (r.n_nonbind > 0)]
+    if not len(r):
+        return None
+    nb = r.zero_jn_nonbind_correct.astype(bool)
+    bd = r.zero_jn_bind_correct.astype(bool)
+    b, c, n = int((nb & ~bd).sum()), int((bd & ~nb).sum()), len(r)
+    if b + c == 0:
+        # Every pair concordant. The normal approximation collapses to the
+        # single point 0.000, which would claim infinite precision from a
+        # result that is really "no discordant pair was observed". The rule of
+        # three bounds the discordant rate at 3/n with 95% confidence, and the
+        # gap cannot exceed the discordant rate.
+        return -3.0 / n, 3.0 / n, 0
+    diff = (b - c) / n
+    # paired normal approximation on the difference of two correlated
+    # proportions: only the discordant pairs carry information about it.
+    h = 1.96 * float(np.sqrt(max(b + c - (b - c) ** 2 / n, 0.0))) / n
+    return diff - h, diff + h, b + c
 
 
 def page_ablation(out, A):
     """Correlational -> causal: remove the features and see if the rule breaks.
 
-    Everything is scored against `recon` (the SAE's own reconstruction spliced
-    back in, nothing zeroed), so reconstruction error is netted out of every
-    bar instead of being charged to the ablation. The headline is the
-    bind-vs-nonbind pair, which is matched on family, count, position, layer
-    and cases, and differs only in WHICH neighbour the removed features refer
-    to -- so no reconstruction-error or feature-count story can open a gap.
+    Everything is scored against the reconstruction condition (the SAE's own
+    output spliced back in, nothing zeroed), so reconstruction error is netted
+    out of every bar instead of being charged to the ablation. The headline is
+    the binding-vs-other pair, matched on family, count, position, layer and
+    cases, differing only in which neighbour the removed features refer to --
+    so no reconstruction-error or feature-count story can open a gap.
     """
     k = A["interp"]
     d = k.zero_jn_nonbind_acc - k.zero_jn_bind_acc
-    best = k.loc[d.idxmax()]
+    bi = int(d.idxmax())
+    best = k.loc[bi]
     gap = float(d.max())
     used = bool(best.bind_vs_nonbind_p < 0.05 and gap > 0)
-    head = ("Removing the features that encode the FORCING neighbour breaks the deduction;\n"
-            f"removing the same number of its siblings does not -- L{int(best.layer)}, "
-            f"{gap:+.3f}, p = {best.bind_vs_nonbind_p:.3g}" if used else
-            "Removing those features does not change the answer: the forcing set is\n"
-            f"encoded, and this test cannot show it being USED (best gap {gap:+.3f}, "
-            f"p = {best.bind_vs_nonbind_p:.3g})")
+    # Pre-registered control (b), and it is read FIRST because it decides
+    # whether the designed contrast is readable at all: removing the WHOLE
+    # forcing set has to cost something. If it costs nothing, no condition on
+    # the page moved the output and the answer is "inconclusive", not "null".
+    drop = float((k.recon_acc - k.zero_jn_all_acc).max())
+    sensitive = drop > 0.01
+    mcols = [f"{c}_margin" for c in ("recon", "zero_jn_all", "zero_jn_bind", "zero_jn_nonbind", "zero_random")]
+    dm = k[mcols].sub(k.clean_margin, axis=0)
+    mv = float(dm.abs().max().max())
+    # signed, because the sign is the point: the forcing-set ablation moves the
+    # margin UP. The largest shift in the panel is the random control's, down.
+    jn = float(dm.zero_jn_all_margin.iloc[0])
+    ci = paired_gap_ci(best.layer)
+    cis = f", 95% CI [{ci[0]:+.3f}, {ci[1]:+.3f}]" if ci else ""
+    if used:
+        head = ("Zero the features for the one neighbour that forces the answer and the deduction breaks;\n"
+                f"zero as many for an equally-known neighbour and it does not -- layer {int(best.layer)}, "
+                f"gap {gap:+.2f}, p = {best.bind_vs_nonbind_p:.3g}")
+    elif sensitive:
+        head = ("Zeroing those features does not change the answer: the forcing set is encoded here,\n"
+                f"and this test cannot show it being used -- best gap {gap:+.2f}, "
+                f"p = {best.bind_vs_nonbind_p:.3g}")
+    else:
+        head = ("Nothing we remove moves the answer -- not the binding neighbour's features, not the whole\n"
+                "forcing set, not a random set of the same size. This test has no sensitivity to report from.")
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 9))
-    fig.suptitle(head, size=BIG - 6, weight="bold", linespacing=1.4)
+    fig = plt.figure(figsize=(16, 9))
+    fig.suptitle(head, size=BIG - 6, weight="bold", linespacing=1.4, y=0.985)
+    fig.text(0.5, 0.888, "The binding neighbour is the one whose colour rules out the node's last alternative; its fellow "
+                         "known neighbours are just as known, but not decisive.",
+             ha="center", va="top", size=MED - 4, color="0.35")
+    ax1 = fig.add_axes([0.085, 0.46, 0.375, 0.30])
+    ax2 = fig.add_axes([0.590, 0.46, 0.375, 0.30])
     x = np.arange(len(k))
     w = 0.34
-    ax1.bar(x - w / 2, k.zero_jn_bind_acc, w, color=RED,
-            label="zero the BINDING neighbour's features")
-    ax1.bar(x + w / 2, k.zero_jn_nonbind_acc, w, color=GREY,
-            label="zero ANOTHER known neighbour's, same count")
+    b1 = ax1.bar(x - 0.19, k.zero_jn_bind_acc, w, color=RED)
+    b2 = ax1.bar(x + 0.19, k.zero_jn_nonbind_acc, w, color=GREY)
+    # One segment per layer, drawn only over that layer's pair: the ceiling is
+    # measured per layer and a line spanning the axis would imply one number.
     for i, r in enumerate(k.itertuples()):
-        ax1.plot([i - 0.48, i + 0.48], [r.recon_acc] * 2, color="k", lw=3, ls="--")
-    ax1.plot([], [], color="k", lw=3, ls="--", label="recon: SAE in, NOTHING zeroed (baseline)")
-    # p and n live under the axis, not over the bars: these accuracies sit near
-    # 1.0 and an annotation above each bar collides with the legend.
+        ax1.plot([i - 0.30, i + 0.30], [r.recon_acc] * 2, color="k", lw=3, ls="--")
+    ln, = ax1.plot([], [], color="k", lw=3, ls="--")
+    # p and n go under the axis, not over the bars: these accuracies sit near
+    # the top of the panel and per-bar annotations would land in the legend.
     ax1.set_xticks(x)
-    ax1.set_xticklabels([f"L{int(r.layer)}\np = {r.bind_vs_nonbind_p:.3g}\n{int(r.n_paired)} paired cases"
-                         for r in k.itertuples()], size=SMALL)
-    ax1.set_ylabel("accuracy on the FORCED colour")
-    ax1.set_title("THE PAIR THAT CARRIES THE CLAIM\nmatched on everything but WHICH neighbour", size=MED)
-    # headroom for the legend, which has to sit inside: these accuracies run to
-    # ~0.97, so there is no empty corner. Ticks stop at 1.0 so the slack above
-    # the bars cannot be misread as accuracy above 1.
-    ax1.set_ylim(0, 1.7)
+    ax1.set_xticklabels([f"layer {int(r.layer)} of 12\n{int(r.n_paired)} cases, p = {r.bind_vs_nonbind_p:.3g}"
+                         for r in k.itertuples()], size=SMALL - 1)
+    ax1.set_ylabel("share of cases still answered\nwith the forced colour", size=SMALL)
+    ax1.set_ylim(0, 1.05)
     ax1.set_yticks(np.arange(0, 1.01, 0.2))
-    ax1.legend(loc="upper left", fontsize=SMALL - 1)
+    # Pinned, not auto: only one layer yielded features under the headline gate,
+    # and a single auto-scaled group stretches two bars across the whole panel,
+    # which reads as a full-width block rather than as a matched pair.
+    ax1.set_xlim(-0.6, len(k) - 0.4)
+    # Legends above the axes, not inside: these bars run to ~0.97, so an inside
+    # legend either covers them or needs dead headroom that reads as accuracy.
+    # Handles passed explicitly because legend() collects lines before patches,
+    # which would otherwise split the red/grey pair across the two columns.
+    ax1.legend([b1, b2, ln], ["zero the binding neighbour's features",
+                              "zero another known neighbour's, same count",
+                              "nothing zeroed: the ceiling, not 1.0"],
+               loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2,
+               frameon=False, fontsize=SMALL - 2)
 
-    for j, (c, lab, col) in enumerate([("clean_acc", "clean: no SAE in the path", BLUE),
-                                       ("recon_acc", "recon: SAE in, nothing zeroed", "k"),
-                                       ("zero_jn_all_acc", "zero ALL forcing-set features", RED),
-                                       ("zero_random_acc", "zero as many, chosen at random", GREY)]):
-        ax2.bar(x + (j - 1.5) * 0.2, k[c], 0.2, color=col, label=lab)
+    # The controls are read as a change in the decision margin, not as a second
+    # accuracy panel: when accuracy sits at the ceiling in every condition, five
+    # accuracy bars are five identical bars. The margin is where a perturbation
+    # shows up at all, and its size is what decides whether the left panel's
+    # answer is a null or an unreadable test. Hatching keeps red and grey from
+    # reading as the left panel's two series continued across the page.
+    for j, (c, lab, col, hat) in enumerate([
+            ("recon", "nothing zeroed (SAE in)", "0.35", ""),
+            ("zero_jn_all", "the whole forcing set", RED, "//"),
+            ("zero_jn_bind", "the binding neighbour's", RED, ""),
+            ("zero_random", "as many at random", GREY, "\\\\")]):
+        ax2.bar(x + (j - 1.5) * 0.2, k[f"{c}_margin"] - k.clean_margin, 0.2,
+                color=col, hatch=hat, edgecolor="w", label=lab)
+    ax2.axhline(0, color="k", lw=1)
+    ax2.set_xlim(-0.6, len(k) - 0.4)
     ax2.set_xticks(x)
-    ax2.set_xticklabels([f"L{int(r.layer)}\n{int(r.n_jn_features)} features removed"
-                         for r in k.itertuples()], size=SMALL)
-    ax2.set_title("THE CONTROLS\nis any of this just reconstruction damage?", size=MED)
-    ax2.set_ylim(0, 1.7)
-    ax2.set_yticks(np.arange(0, 1.01, 0.2))
-    ax2.legend(loc="upper left", fontsize=SMALL - 1, ncol=2)
+    ax2.set_xticklabels([f"layer {int(r.layer)} of 12\n{int(r.n_jn_features)} features removed"
+                         for r in k.itertuples()], size=SMALL - 1)
+    ax2.set_ylabel("change in decision margin, logits\n"
+                   f"(the clean margin is {k.clean_margin.iloc[0]:.1f})", size=SMALL)
+    ax2.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2,
+               frameon=False, fontsize=SMALL - 2)
+
+    fig.text(0.2725, 0.845, "THE PAIR THAT CARRIES THE CLAIM" if used else "THE PAIR THAT WOULD CARRY THE CLAIM",
+             ha="center", va="top", size=MED - 2, weight="bold")
+    fig.text(0.7775, 0.845, "THE CONTROLS: did the forward pass move at all?",
+             ha="center", va="top", size=MED - 2, weight="bold")
+    fig.text(0.2725, 0.410, "p compares red against grey on the same cases, exact McNemar, two-sided.\nA case counts only if it "
+                            "owns features for both kinds of neighbour.",
+             ha="center", va="top", size=SMALL - 2, color="0.35", linespacing=1.4)
 
     rep = ""
     if "null" in A:
         n = A["null"]
         nb = n.loc[(n.zero_jn_nonbind_acc - n.zero_jn_bind_acc).idxmax()]
         rep = (f" The powered replication -- the same test widened to every feature that beats its null, "
-               f"{int(nb.n_paired)} paired cases at L{int(nb.layer)} -- gives "
-               f"{nb.zero_jn_nonbind_acc - nb.zero_jn_bind_acc:+.3f}, p = {nb.bind_vs_nonbind_p:.3g}.")
+               f"{int(nb.n_paired)} paired cases at layer {int(nb.layer)} -- gives "
+               f"{nb.zero_jn_nonbind_acc - nb.zero_jn_bind_acc:+.2f}, p = {nb.bind_vs_nonbind_p:.3g}.")
     nodeline = ""
     if A.get("node_ran") is False:
-        nodeline = (" At the token that picks the NODE there was nothing to ablate at any layer, as "
-                    "pre-registered: the forcing set is encoded before the COLOUR only.")
+        nodeline = (" At the token that picks the node there was nothing to ablate at any layer, as "
+                    "pre-registered: the forcing set is encoded before the colour only.")
+    elif "node" in A:
+        nd = A["node"]
+        nodeline = (" Prediction (d) is falsified: at the token that picks the node the widened gate did find features to "
+                    f"ablate ({int(nd.n_jn_features.max())} at layer {int(nd.loc[nd.n_jn_features.idxmax(), 'layer'])}) "
+                    "where finding 21 found none, and removing those changed nothing there either.")
     design = (
-        "THE DESIGN: every bar is read against `recon` -- the SAE's own reconstruction spliced back in with nothing zeroed -- so "
-        "reconstruction error is netted out rather than charged to the ablation. The two bars on the left remove the same NUMBER of "
-        "features, from the same FAMILY, POSITION and LAYER, on the same CASES; they differ only in which neighbour the features "
-        "refer to, the one whose colour does the forcing or another known neighbour whose colour does not. No reconstruction-error "
-        "story and no feature-count story can open a gap between them; only the model reading that neighbour's colour to eliminate "
-        "a candidate can." + rep + nodeline)
-    verdict = (
-        "READ IT AS: the elimination is not merely encoded here, it is computed here -- the one SAE result on this deck that is "
-        "causal rather than correlational."
-        if used else
-        "READ IT HONESTLY: this does NOT show the features being used. They are present and decodable (previous page), but removing "
-        "them costs no more than removing a count-matched random set. Two readings survive and this run cannot separate them: the "
-        "rule may be spread over more features than the gate selects -- the head-ablation page found exactly that redundancy -- or "
-        "these features may be a readout of a decision made elsewhere. Either way the verdict on the next page rests on the "
-        "interventions, which do not depend on this page.")
-    # Wrapped here rather than hard-wrapped in the literal: `rep` and `nodeline`
-    # are spliced into the middle of the paragraph and only exist on some runs,
-    # so any \n placed by hand lands in the wrong spot once they appear. The
-    # null branch is four lines longer than the other, which is why the plots
-    # give up height here rather than this text giving up words.
+        "THE DESIGN: every bar is read against the reconstruction condition (the SAE's own output spliced back in, nothing zeroed), "
+        "so reconstruction error is netted out rather than charged to the ablation. The two bars on the left remove the same number "
+        "of features, of the same kind, at the same position, in the same layer, on the same cases; they differ only in which "
+        "neighbour the features refer to, the one whose colour does the forcing or another known neighbour whose colour does not. "
+        "Only the model reading that neighbour's colour to eliminate a candidate can open a gap between them." + rep + nodeline)
+    if used:
+        verdict = (
+            "READ IT AS: these features are necessary for the answer, not merely correlated with it -- the one causal SAE result on "
+            "this deck. Two caveats stay attached. It does not separate computing the elimination from reading out an elimination "
+            "made elsewhere: zeroing a readout the rest of the network consumes breaks the answer too. And layer "
+            f"{int(best.layer)} is the best of the layers probed{cis}; the others are on the chart, unselected.")
+    elif sensitive:
+        verdict = (
+            "READ IT AS: this does not show the features being used. They are present and decodable (previous page), but removing "
+            f"them costs no more than removing a count-matched random set{cis} -- which rules out a large effect, not every effect. "
+            "Two readings survive and this run cannot separate them: the rule may be spread over more features than our selection "
+            "threshold picks up -- the head-ablation page found exactly that redundancy -- or these features may be a readout of a "
+            "decision made elsewhere. Either way the verdict on the next page rests on the interventions, which do not depend on "
+            "this page.")
+    else:
+        disc = ("not one discordant answer" if ci and ci[2] == 0 else
+                f"{ci[2]} discordant answers" if ci else "the paired comparison")
+        verdict = (
+            "READ IT AS: inconclusive -- and the control says so before the headline does. Removing the whole forcing set had to "
+            f"cost more than removing a count-matched random set; at layer {int(best.layer)} both cost nothing, "
+            f"{k.zero_jn_all_acc.iloc[0]:.3f} against a {k.recon_acc.iloc[0]:.3f} baseline, and the paired comparison has "
+            f"{int(best.n_paired)} cases with {disc}{cis}. The clean decision margin is {k.clean_margin.iloc[0]:.1f} logits; the "
+            f"largest of these ablations shifts it by {mv:.2f}, under {100 * mv / k.clean_margin.iloc[0]:.1f}% of the margin, and "
+            f"removing the forcing set shifts it the wrong way, towards MORE confidence ({jn:+.2f}). So this is not evidence that "
+            f"the features go unused. It is a test in which zeroing {int(best.n_jn_features)} of 4096 features at one token cannot "
+            "perturb a decision this overdetermined -- no sensitivity, so no null to report. The verdict on the next page rests on "
+            "the interventions, which do move the answer.")
+    # Wrapped here rather than hard-wrapped in the literal: `rep`, `nodeline`
+    # and `cis` are spliced into the middle of the paragraphs and only exist on
+    # some runs, so any \n placed by hand lands in the wrong spot once they
+    # appear. The null branch is the longer of the two and sets the height.
     body = textwrap.fill(design, width=180) + "\n\n" + textwrap.fill(verdict, width=180)
-    fig.tight_layout(rect=[0, 0.40, 1, 0.97])
-    fig.text(0.5, 0.385, body, ha="center", va="top", size=MED - 6, linespacing=1.4)
-    # 4 footer lines, no more: the body above it reaches y ~ 0.13 and footer()
-    # grows upward from 0.012 at ~0.025 a line.
-    footer(fig, "Dictionaries from the 1.0000 arm, 4096 features per layer, one seed; "
-                f"{int(best.n_cases)} flippable round-0 deductions from the held-out shared pool. "
-                "A selective condition needs the case to own features for BOTH a binding and a non-binding neighbour, which is why "
-                "the paired n is below the case count. Exact McNemar, two-sided. The first run of this job hooked the wrong block "
-                "(the dictionary named layer L is trained on block L-1's output); its numbers are discarded, not shown here.",
+    fig.text(0.5, 0.358, body, ha="center", va="top", size=MED - 7, linespacing=1.4)
+    # 3 footer lines, no more: the null branch's body reaches y ~ 0.107 and
+    # footer() grows upward from 0.012 at ~0.022 a line.
+    footer(fig, "The first run hooked the wrong block (dictionary L reads encoder block L-1) and its numbers are discarded, not shown "
+                "here. Dictionaries: the model that solves the task (solve_rate 1.0000), 4096 features a layer, one seed. The "
+                f"{int(best.n_cases)} cases are held-out first-round deductions whose forced colour one neighbour's recolouring can "
+                "flip; features come from the previous page's threshold.",
            width=150)
     out.savefig(fig)
 
@@ -952,9 +1056,10 @@ def page_verdict(out, D):
         "* Localised in depth: edited hint -> L5,",
         "  handoff L6-L10, prediction by L10.",
         "",
-        "* CORRELATIONAL: it carries sparse features",
-        "  for DD's forcing set, peaking at that same",
-        "  L8 -- but so does the leaked model, later.",
+        "* CORRELATIONAL: sparse features for DD's",
+        "  forcing set peak at that same L8 -- but so",
+        "  do the leaked twin's. Ablating them moves",
+        "  nothing; nor do the controls (previous page).",
     ]
     right = [
         "WHAT IT DOES NOT DO",
@@ -998,8 +1103,8 @@ def page_verdict(out, D):
              "degree 5, q = 4), so nothing here is a claim about depth or scale; the per-depth and\nper-degree "
              "breakdowns have bins as thin as a few dozen cases, where the error bars overlap everything; the guard "
              "gap and the solve_rate\ngap are different measurements on different samples, so their agreement is a "
-             "consistency check, not a decomposition; and the sparse-\nautoencoder page is correlational, with one "
-             "dictionary per layer and one seed.",
+             "consistency check, not a decomposition; and the sparse-\nautoencoder pages are correlational: ablating those "
+             "features moved no answer at all, controls included, so that test is inconclusive.",
              ha="center", va="top", size=MED - 4, color="0.15", linespacing=1.45)
     # no footer() here: the right column's last bullet already carries the
     # comparison to the previous answer, and a third block at the bottom
