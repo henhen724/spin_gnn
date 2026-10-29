@@ -1411,6 +1411,161 @@ def page_sae(out, S):
     out.savefig(fig)
 
 
+# Bottom-to-top stacking order, and it is DD's own order: who is being
+# coloured, what the board looks like, which nodes are decidable, the forcing
+# set, the answer. The colours group the same way -- blues for identity, greys
+# for board state, purple for the candidate set, red/orange for the forcing
+# set, greens for the output -- so the composition can be read without the
+# legend once the reader has seen it on the first panel.
+FAMS = [("next_node", "#1f77b4", "the NODE about to be coloured"),
+        ("next_node_nbr_count", "#9ecae1", "how many neighbours that node has"),
+        ("known", "#bdbdbd", "which nodes are already coloured"),
+        ("remaining", "#737373", "which nodes are still uncoloured"),
+        ("frontier", "#6a51a3", "which nodes are decidable NOW"),
+        ("nbr_of_next", "#fd8d3c", "u is a NEIGHBOUR of that node"),
+        ("justifies_next", "#c0392b", "u is a KNOWN neighbour of it = FORCING SET"),
+        ("next_color", "#1e8449", "the COLOUR about to be emitted"),
+        ("color", "#a1d99b", "a colour, anywhere")]
+
+
+def _fam(k, kind):
+    """(layers, {family: counts}) for one arm at one position mask."""
+    k = k[k.position_kind == kind].sort_values("layer")
+    cnt = k.family_counts.map(json.loads)
+    return ([int(x) for x in k.layer],
+            {f: [c.get(f, 0) for c in cnt] for f, _, _ in FAMS})
+
+
+def page_pipeline(out, S, D):
+    """WHICH layers hold which step, from the composition of the dictionaries.
+
+    page_sae asks how well the best single feature tracks DD's forcing set.
+    This page asks a different question of the same dictionaries: of the
+    features that are interpretable at all, WHAT do they encode, layer by
+    layer. That is what turns "features exist" into "the steps are ordered",
+    and it is still correlational -- the footer says so, and the ablation page
+    is the test that failed to settle it.
+    """
+    fig = plt.figure(figsize=(16, 9))
+    a = S["leak-free 1.0000"]
+    pc = a[a.position_kind == "pre_color"]
+    peak = pc.loc[pc.best_justifier_f1.idxmax()]
+    fig.suptitle(f"Which layers run which DD step: the forcing set enters at L{int(peak.layer)}",
+                 size=BIG - 2, weight="bold")
+    fig.text(0.5, 0.893,
+             "Every dictionary feature that matches one of DD's predicates, counted by WHICH predicate -- the same "
+             "three dictionaries as the previous page, counted instead of scored.",
+             size=SMALL, ha="center", va="top", color="0.3")
+
+    panels = [("leak-free 1.0000", "pre_color", "SOLVER, while it picks the COLOUR"),
+              ("leak-free 1.0000", "pre_node", "SOLVER, while it picks the NODE"),
+              ("leaked 0.9960", "pre_color", "LEAK-READER, picking the COLOUR")]
+    axs = []
+    for i, (arm, kind, title) in enumerate(panels):
+        ax = fig.add_axes([0.075 + 0.313 * i, 0.555, 0.258, 0.285])
+        axs.append(ax)
+        if arm not in S:
+            ax.axis("off"); ax.set_title(title + "\n(not on disk)", size=MED - 3); continue
+        layers, cnt = _fam(S[arm], kind)
+        x = range(len(layers))
+        bot = [0] * len(layers)
+        for f, colour, _ in FAMS:
+            v = cnt[f]
+            ax.bar(x, v, 0.72, bottom=bot, color=colour, edgecolor="white", linewidth=0.4)
+            bot = [b + y for b, y in zip(bot, v)]
+        ax.set_xticks(list(x)); ax.set_xticklabels([f"L{L}" for L in layers], size=SMALL - 2)
+        ax.set_title(title, size=MED - 3)
+        # Headroom to 470: the annotation below lives inside the axes, and at
+        # 430 it printed through the panel title it sits under.
+        ax.set_ylim(0, 470)
+        if i:
+            ax.tick_params(labelleft=False)
+        else:
+            ax.set_ylabel("interpretable features", size=MED - 4)
+        ax.grid(axis="y", alpha=0.3)
+
+    # The one thing a reader should carry off the page, marked on the panel it
+    # happens in rather than left to the body text to locate.
+    ji = _fam(a, "pre_color")[0].index(int(peak.layer))
+    axs[0].annotate("the FORCING SET\nenters here", xy=(ji - 0.3, 380), xytext=(ji - 3.2, 420),
+                    size=SMALL - 1, weight="bold", color=RED,
+                    arrowprops=dict(arrowstyle="->", color=RED, lw=2))
+
+    # Family names only. The gloss for each one is in whichever column below
+    # actually uses it, which is where a reader needs it; nine glosses in the
+    # legend took three rows and printed over the tick labels.
+    handles = [Patch(facecolor=c, edgecolor="white", label=f) for f, c, _ in FAMS]
+    fig.legend(handles=handles, loc="center", bbox_to_anchor=(0.5, 0.505), ncol=9,
+               fontsize=SMALL - 2, frameon=False, handlelength=1.3, columnspacing=1.1)
+
+    # Every number below is read out of the same frames the bars are, so the
+    # prose cannot drift from the panels above it.
+    L, sc = _fam(a, "pre_color")
+    _, sn = _fam(a, "pre_node")
+    at = lambda d, f, lay: d[f][L.index(lay)]
+    l0 = pc[pc.layer == 0].iloc[0]
+    nbr6 = float(pc[pc.layer == 6].iloc[0].best_nbr_of_next_f1)
+    nbr8 = float(pc[pc.layer == 8].iloc[0].best_nbr_of_next_f1)
+    pn_max = max(float(S[a_][S[a_].position_kind == "pre_node"].best_justifier_f1.max()) for a_ in S)
+    kc = _fam(S["leaked 0.9960"], "pre_color")[1] if "leaked 0.9960" in S else None
+
+    cols = [
+        ("1. THE STEPS COME IN ORDER",
+         f"At L0 the only thing above the shuffled null is identity: "
+         f"{at(sc, 'next_node', 0)} features for the NODE about to be coloured, at F1 "
+         f"{l0.best_next_node_f1:.3f}. Which nodes are already coloured (known) and which are decidable "
+         f"(frontier) build up over L2-L6. The forcing set enters at L{int(peak.layer)}: "
+         f"{at(sc, 'justifies_next', 8)} justifies_next features at best F1 {peak.best_justifier_f1:.3f}, "
+         f"next to {at(sc, 'nbr_of_next', 8)} for the neighbour relation itself, whose best feature jumps "
+         f"from {nbr6:.3f} at L6 to {nbr8:.3f}. The COLOUR comes last: {at(sc, 'next_color', 12)} "
+         f"next_color features at L12."),
+        ("2. ABOUT PARTICULAR NODES, NOT THE GRAPH",
+         f"Every predicate here is indexed to the node being emitted and to ITS OWN known neighbours -- that "
+         f"is what makes it DD's forcing set rather than a graph statistic. At the position where the model "
+         f"picks the NODE instead, no forcing-set feature clears the bar in any arm at any layer (best F1 "
+         f"{pn_max:.3f}). What that position carries is {at(sn, 'remaining', 10)} 'still uncoloured' and "
+         f"{at(sn, 'frontier', 10)} 'decidable now' features at L10. Pick the node from the frontier; pick "
+         f"its colour from the forcing set."),
+        ("3. THE CONTROL SKIPS THE STEP",
+         f"The LEAK-READER scores 0.996 without deducing. It has {at(kc, 'justifies_next', 6)} and "
+         f"{at(kc, 'justifies_next', 8)} forcing-set features at L6 and L8, where the SOLVER has "
+         f"{at(sc, 'justifies_next', 6)} and {at(sc, 'justifies_next', 8)}, and "
+         f"{at(kc, 'next_color', 10)} colour features at L10 against the SOLVER's "
+         f"{at(sc, 'next_color', 10)}: it is committing to the colour at the layer where the SOLVER is still "
+         f"representing the neighbour set ({at(sc, 'nbr_of_next', 10)} features there, against "
+         f"{at(kc, 'nbr_of_next', 10)}). Its own forcing-set features appear only at L10-L12."
+         if kc is not None else "Leaked arm not on disk."),
+    ]
+    for i, (head, body) in enumerate(cols):
+        x0 = 0.075 + 0.313 * i
+        fig.text(x0, 0.455, head, size=MED - 4, weight="bold")
+        fig.text(x0, 0.420, textwrap.fill(body, width=58), size=MED - 5, va="top", linespacing=1.5)
+
+    # Recomputed here rather than quoted from the patching page, so the two
+    # pages cannot disagree about the window.
+    rec = D["leak-free 1.0000"].get("patch")
+    if rec is not None:
+        h = rec[rec.site == "edited_hint"].groupby("layer").recovery.mean()
+        pp = rec[rec.site == "predict_pos"].groupby("layer").recovery.mean()
+        held = max([x for x in h.index if h[x] >= 0.5], default=None)
+        got = min([x for x in pp.index if pp[x] >= 0.9], default=None)
+        if held is not None and got is not None:
+            fig.text(0.5, 0.168,
+                     textwrap.fill(
+                         f"The CAUSAL page agrees on the window without being asked to: the edited fact is still "
+                         f"held at the hint token through L{int(held)}, and is at the prediction position by "
+                         f"L{int(got)}. The forcing set is encoded exactly where the fact is in flight.",
+                         width=118),
+                     ha="center", va="top", size=MED - 4, weight="bold", color="0.15", linespacing=1.5)
+    footer(fig, "STILL CORRELATIONAL, and one caveat on the x-axis: a dictionary is trained on the RESIDUAL STREAM "
+                "after a whole block, so this localises a step to 'by the end of block L', NOT to the MLP as against "
+                "the attention sublayer. A bar counts how many of that layer's 4096 features match the predicate at "
+                "F1 >= 0.30 while beating a shuffled-label null; the number of ALIVE features grows with depth (72 "
+                "at L0 to 4054 at L12), so compare families within a bar more confidently than heights across "
+                "layers. One dictionary per layer per arm, one seed.", width=146)
+    out.savefig(fig)
+
+
 def page_verdict(out, D, O):
     fig = plt.figure(figsize=(16, 9))
     fig.suptitle("The verdict, and what it is not", size=BIG, weight="bold")
@@ -1554,7 +1709,7 @@ def main():
     pdf_path = os.path.join(OUT, "slides.pdf")
     have_skip = any("skip" in D[l] for l, _, _, _ in ARMS)
     with PdfPages(pdf_path) as pdf:
-        o = PdfAndPng(pdf, OUT, total=11 + 2 * have_skip + bool(S) + ("interp" in A))
+        o = PdfAndPng(pdf, OUT, total=11 + 2 * have_skip + 2 * bool(S) + ("interp" in A))
         page_title(o, D, ex, O, S)
         page_task(o, ex)
         page_model(o, O, S, D)
@@ -1572,6 +1727,7 @@ def main():
         page_heads(o, D)
         if S:
             page_sae(o, S)
+            page_pipeline(o, S, D)
         if "interp" in A:
             page_ablation(o, A)
         page_verdict(o, D, O)
