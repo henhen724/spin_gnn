@@ -443,13 +443,13 @@ def main():
             continue
         print(f"layer {layer}: training SAE (d_sae={args.expansion * acts.shape[2]})")
         if args.target_l0 > 0:
-            sae, feats, history, _ = train_sae_to_target_l0(
+            sae, feats, history, norm = train_sae_to_target_l0(
                 acts[layer], args.expansion * acts.shape[2], target_l0=args.target_l0,
                 l1_start=args.l1_coeff, max_tries=args.l1_max_tries,
                 epochs=args.sae_epochs, device=device, seed=args.seed,
             )
         else:
-            sae, feats, history, _ = train_sae(
+            sae, feats, history, norm = train_sae(
                 acts[layer], args.expansion * acts.shape[2], l1_coeff=args.l1_coeff,
                 epochs=args.sae_epochs, device=device, seed=args.seed,
             )
@@ -458,6 +458,15 @@ def main():
                               n_null_shifts=args.n_null_shifts, seed=args.seed)
 
         torch.save(sae.state_dict(), os.path.join(args.out_dir, f"sae_layer{layer:02d}.pt"))
+        # train_sae standardizes its inputs per-dimension, so the dictionary
+        # lives in (x - mu) / sigma space and a state_dict alone cannot be
+        # inverted back to residual-stream coordinates. Any causal use of these
+        # features -- ablation, steering, splicing a reconstruction back into
+        # the forward pass -- needs these two vectors. They were returned by
+        # train_sae all along and silently dropped here until 10-28.
+        mu, sigma = norm
+        torch.save({"mu": mu, "sigma": sigma},
+                   os.path.join(args.out_dir, f"norm_layer{layer:02d}.pt"))
         with open(os.path.join(args.out_dir, f"features_layer{layer:02d}.csv"), "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
             w.writeheader()
@@ -549,6 +558,19 @@ def main():
                         r["best_predicate_family"] == "next_node" for r in kinterp),
                     "family_counts": json.dumps(kfam, sort_keys=True),
                 })
+                # The PER-FEATURE rows, not just the aggregate. Finding 21's
+                # headline counts (69 justifies_next features at pre_color
+                # against the pooled CSV's 7) live in this scoring, so any
+                # causal follow-up has to select features from here -- selecting
+                # from the pooled file targets a different, much smaller set and
+                # would understate the ablation by construction.
+                with open(os.path.join(args.out_dir,
+                                       f"features_layer{layer:02d}_{kind}.csv"),
+                          "w", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=list(krows[0].keys()))
+                    w.writeheader()
+                    w.writerows(krows)
+
                 k = by_kind[-1]
                 print(f"    [{kind}] {k['n_positions']} positions, {len(kinterp)} interpretable; "
                       f"next_node={k['best_next_node_f1']:.3f} "
