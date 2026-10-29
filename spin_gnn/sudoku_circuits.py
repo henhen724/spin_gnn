@@ -254,6 +254,71 @@ def run_head_ablation(model, vocab, device, cases):
     return rows
 
 
+def run_sublayer_ablation(model, vocab, device, cases):
+    """Zero one whole SUBLAYER -- block i's MLP, or block i's attention -- and
+    measure the loss of the counterfactual effect.
+
+    The SAE pages localise a DD step to the residual stream AFTER a block,
+    which cannot say whether the MLP or the attention wrote it there. This
+    can. These are pre-norm blocks, so the two sublayers are separate additive
+    writes into the residual stream:
+
+        x = x + attn(norm1(x));  x = x + mlp(norm2(x))
+
+    so zeroing linear2 (weight AND bias) removes block i's MLP contribution
+    exactly, and zeroing out_proj (weight AND bias) removes its attention
+    contribution exactly. The skip connection is untouched either way, so the
+    rest of the network still receives a well-formed residual stream -- this
+    deletes one write, it does not cut the block out.
+
+    Unlike run_head_ablation the BIAS is zeroed too: a bias belongs to no
+    single head, which is why that function leaves it alone, but it does
+    belong to the sublayer as a whole.
+
+    effect_retained = 1.0 means that sublayer is irrelevant to the flip, 0.0
+    that removing it destroys the flip entirely. Same normalisation as
+    run_head_ablation, so the two are directly comparable.
+    """
+    n_layers = len(model.encoder.layers)
+    rows = []
+    for adj, colors, hints, trace, case in cases:
+        clean, corrupt, pos = build_pair(adj, colors, hints, trace, vocab, case)
+        clean_t = torch.from_numpy(clean).unsqueeze(0).to(device)
+        corrupt_t = torch.from_numpy(corrupt).unsqueeze(0).to(device)
+        with torch.no_grad():
+            base_effect = (_logit_diff(model(corrupt_t), pos, vocab, case)
+                           - _logit_diff(model(clean_t), pos, vocab, case))
+        if abs(base_effect) < 1e-6:
+            continue
+        for layer in range(n_layers):
+            blk = model.encoder.layers[layer]
+            for name, mod in [("mlp", blk.linear2), ("attn", blk.self_attn.out_proj)]:
+                saved_w = mod.weight.data.clone()
+                saved_b = None if mod.bias is None else mod.bias.data.clone()
+                try:
+                    with torch.no_grad():
+                        mod.weight.data.zero_()
+                        if mod.bias is not None:
+                            mod.bias.data.zero_()
+                        eff = (_logit_diff(model(corrupt_t), pos, vocab, case)
+                               - _logit_diff(model(clean_t), pos, vocab, case))
+                        clean_ld = _logit_diff(model(clean_t), pos, vocab, case)
+                finally:
+                    mod.weight.data.copy_(saved_w)
+                    if saved_b is not None:
+                        mod.bias.data.copy_(saved_b)
+                rows.append({
+                    "node": case["node"], "layer": layer, "sublayer": name,
+                    "ablated_effect": eff, "effect_retained": eff / base_effect,
+                    # Kept so a dead sublayer can be told from a load-bearing
+                    # one: an ablation that destroys the model's output
+                    # everywhere also destroys the effect, and that is not
+                    # localisation.
+                    "ablated_clean_logit_diff": clean_ld,
+                })
+    return rows
+
+
 def default_sites(tokens, vocab, case, predict_pos):
     """The four places the flipped color could be read from or written to."""
     graph_start = int(np.flatnonzero(tokens == vocab.BEGIN_GRAPH)[0]) + 1
@@ -286,7 +351,11 @@ def main():
                     help="disjoint from training, probes (5e8/9e8), series (7e8) and transition (8e8)")
     ap.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out-dir", type=str, required=True)
+    ap.add_argument("--stages", type=str, default="all",
+                    help="comma list from patching,heads,sublayer (behavior always runs), or 'all'")
     args = ap.parse_args()
+    stages = ({"patching", "heads", "sublayer"} if args.stages == "all"
+              else {x.strip() for x in args.stages.split(",")})
 
     model, vocab, config = load_checkpoint(args.checkpoint, device=args.device)
     model.eval()
@@ -341,25 +410,42 @@ def main():
               "below is where that sub-threshold sensitivity to neighbour colors lives -- not a "
               "circuit that determines the answer.")
 
-    patch = run_patching(model, vocab, args.device, cases, default_sites)
-    _write(os.path.join(args.out_dir, "patching.csv"), patch)
-    print("\nPATCHING: mean recovery by (layer, site)")
-    sites = list(dict.fromkeys(r["site"] for r in patch))
-    print("  layer " + "".join(f"{s:>14}" for s in sites))
-    for layer in sorted({r["layer"] for r in patch}):
-        cells = [np.mean([r["recovery"] for r in patch if r["layer"] == layer and r["site"] == s] or [np.nan])
-                 for s in sites]
-        print(f"  {layer:5d} " + "".join(f"{c:14.3f}" for c in cells))
+    ranked = []
+    if "patching" in stages:
+        patch = run_patching(model, vocab, args.device, cases, default_sites)
+        _write(os.path.join(args.out_dir, "patching.csv"), patch)
+        print("\nPATCHING: mean recovery by (layer, site)")
+        sites = list(dict.fromkeys(r["site"] for r in patch))
+        print("  layer " + "".join(f"{s:>14}" for s in sites))
+        for layer in sorted({r["layer"] for r in patch}):
+            cells = [np.mean([r["recovery"] for r in patch if r["layer"] == layer and r["site"] == s] or [np.nan])
+                     for s in sites]
+            print(f"  {layer:5d} " + "".join(f"{c:14.3f}" for c in cells))
 
-    abl = run_head_ablation(model, vocab, args.device, cases)
-    _write(os.path.join(args.out_dir, "head_ablation.csv"), abl)
-    print("\nABLATION: 10 heads whose removal most destroys the flip")
-    by_head = {}
-    for r in abl:
-        by_head.setdefault((r["layer"], r["head"]), []).append(r["effect_retained"])
-    ranked = sorted(((np.mean(v), k) for k, v in by_head.items()))[:10]
-    for retained, (layer, head) in ranked:
-        print(f"  L{layer:02d}H{head}  effect_retained={retained:+.3f}")
+    if "heads" in stages:
+        abl = run_head_ablation(model, vocab, args.device, cases)
+        _write(os.path.join(args.out_dir, "head_ablation.csv"), abl)
+        print("\nABLATION: 10 heads whose removal most destroys the flip")
+        by_head = {}
+        for r in abl:
+            by_head.setdefault((r["layer"], r["head"]), []).append(r["effect_retained"])
+        ranked = sorted(((np.mean(v), k) for k, v in by_head.items()))[:10]
+        for retained, (layer, head) in ranked:
+            print(f"  L{layer:02d}H{head}  effect_retained={retained:+.3f}")
+
+    if "sublayer" in stages:
+        sub = run_sublayer_ablation(model, vocab, args.device, cases)
+        _write(os.path.join(args.out_dir, "sublayer_ablation.csv"), sub)
+        print("\nSUBLAYER ABLATION: effect_retained by layer (1.00 = that sublayer is irrelevant)")
+        print("  layer       MLP      ATTN   | mean clean logit_diff with it removed")
+        for layer in sorted({r["layer"] for r in sub}):
+            cell = {}
+            for k in ("mlp", "attn"):
+                v = [r for r in sub if r["layer"] == layer and r["sublayer"] == k]
+                cell[k] = (np.mean([r["effect_retained"] for r in v]),
+                           np.mean([r["ablated_clean_logit_diff"] for r in v]))
+            print(f"  {layer:5d} {cell['mlp'][0]:+9.3f} {cell['attn'][0]:+9.3f}   |"
+                  f" mlp {cell['mlp'][1]:+8.2f}  attn {cell['attn'][1]:+8.2f}")
 
     with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
         json.dump({"clean_correct": clean_acc, "corrupt_flipped": flip, "both": both,
