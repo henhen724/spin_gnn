@@ -226,20 +226,28 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
         # and then three colours leaves the audience counting to work out which
         # two were blank, which is exactly where a room stalls.
         unk = [x for x, c in zip(ex.adj[node], nbr_cols) if c is None]
+        n_known_nbrs = sum(c is not None for c in nbr_cols)
+        # Why the counts do not match: with degree 5 and q = 4 the known
+        # neighbours usually repeat a colour, and a room that is counting
+        # "5 neighbours, 3 colours" stalls on exactly that line.
+        dup = (f"   ({n_known_nbrs} known neighbours, {len(known)} DISTINCT colours"
+               + (" -- some repeat)" if n_known_nbrs > len(known) else ")"))
         lines = [
             f"node N{node}, neighbours "
             + " ".join(f"N{x}" for x in ex.adj[node]),
             f"their colours known before this round:",
             f"   {sorted(known)}  ({len(known)} = q-1 of the {ex.cfg.n_colors})",
+            dup,
             "   still unknown: " + (" ".join(f"N{x}" for x in unk) if unk else "none"),
             f"only colour left: {missing[0]}",
             f"so the trace emits  N{node} COLOR_{ded}",
         ]
-        # 0.13, not 0.15: six lines at 0.15 push the italic note below the axes.
+        # 0.115, not 0.13: seven lines at 0.13 push the italic note below the
+        # axes and into the paragraph underneath.
         for i, line in enumerate(lines):
-            ax.text(0.0, 0.84 - 0.13 * i, line, size=SMALL - 2, va="top",
-                    **(MONO if i in (2, 3, 5) else {}))
-        ax.text(0.0, 0.84 - 0.13 * len(lines) - 0.02,
+            ax.text(0.0, 0.84 - 0.115 * i, line, size=SMALL - 2, va="top",
+                    **(MONO if i in (2, 3, 4, 6) else {}))
+        ax.text(0.0, 0.84 - 0.115 * len(lines) - 0.02,
                 "The model is never shown this reasoning --\nonly the node/colour pair.",
                 size=SMALL - 3, va="top", color="0.4", style="italic")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
@@ -256,7 +264,8 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
     how = {"median": "the median", "deep": "the 90th percentile",
            "first": "the first"}.get(getattr(ex, "pick", ""), "one")
     prov = (f"T={ex.n_rounds} rounds, {how} of 40 draws from this config "
-            f"(range {min(pool)}-{max(pool)}). " if pool else "")
+            f"(range {min(pool)}-{max(pool)}) -- one instance, shown to make the task legible; no "
+            "result in this deck is computed from it. " if pool else "")
     footer(fig, f"{prov}The worked deduction on the right uses the state BEFORE this round, which is "
                 f"what DD itself saw; it is recomputed from the graph, not read out of the model.")
     out.savefig(fig)
