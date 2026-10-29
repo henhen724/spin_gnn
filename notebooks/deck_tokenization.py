@@ -104,9 +104,10 @@ def page_tokenization(out, ex):
 
     v = ex.vocab
     rows = [("0-5", "BEGIN_HINTS BEGIN_GRAPH BEGIN_REASONING", ""),
-            ("", "BEGIN_ROUND SOLVED UNRESOLVED", "section + round markers"),
+            ("", "BEGIN_ROUND SOLVED UNRESOLVED", "markers (UNRESOLVED = DD got stuck; unused here)"),
             (f"{v.COLOR_0}-{v.COLOR_0 + v.n_colors - 1}",
-             " ".join(f"COLOR_{c}" for c in range(v.n_colors)), "the q colours"),
+             " ".join(f"COLOR_{c}" for c in range(v.n_colors)),
+             "the q colours (token name COLOR_n, prose 'colour')"),
             (f"{v.node_offset}-{v.size - 1}",
              f"N0 N1 ... N{v.n_nodes - 1}", "one id per node, no structure in the id")]
     ax = fig.add_axes([0.06, 0.50, 0.42, 0.31]); ax.axis("off")
@@ -127,11 +128,16 @@ def page_tokenization(out, ex):
                "BEGIN_REASONING  (BEGIN_ROUND (NODE COLOR)+)*",
                "SOLVED"]
     for i, g in enumerate(grammar):
-        ax.text(0.0, 0.80 - 0.17 * i, g, size=SMALL - 1, va="top", **MONO)
-    ax.text(0.0, 0.08,
-            "The graph section is a neighbour table, not an image: node, then its\n"
-            "degree neighbours. THE ORDER WITHIN A ROW IS THE LEAK.",
+        ax.text(0.0, 0.84 - 0.155 * i, g, size=SMALL - 1, va="top", **MONO)
+    ax.text(0.0, 0.26, "regex: * = zero or more, + = one or more, {degree} = exactly "
+                       f"{ex.cfg.degree}",
             size=SMALL - 2, va="top", color="0.4", style="italic")
+    ax.text(0.0, 0.15,
+            "The graph section is a neighbour table, not an image:\nnode, then its "
+            f"{ex.cfg.degree} neighbours.",
+            size=SMALL - 1, va="top")
+    ax.text(0.0, -0.02, "THE ORDER WITHIN A ROW IS THE LEAK.",
+            size=SMALL + 1, va="top", weight="bold", color="#d62728")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
 
     ax = fig.add_axes([0.06, 0.11, 0.90, 0.31]); ax.axis("off")
@@ -151,8 +157,9 @@ def page_tokenization(out, ex):
             size=SMALL - 1, va="top")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
 
-    footer(fig, f"spin_gnn.sudoku_tokens.Vocab + encode_instance; "
-                f"shuffle_adj={ex.cfg.shuffle_adj}")
+    footer(fig, "DD is sudoku's 'naked single' rule transplanted to graph colouring, which is where the "
+                "code's sudoku names come from; the task itself is the graph, not a 9x9 grid."
+                + ("" if ex.cfg.shuffle_adj else " These rows are the LEAKED (colour-sorted) order."))
     out.savefig(fig)
 
 
@@ -165,7 +172,7 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
     fig = plt.figure(figsize=(16, 9))
     fig.text(0.06, 0.93, title, size=BIG, weight="bold")
     hints = sorted(ex.trace["hints"].items())
-    hint_str = " ".join(f"N{n}={c}" for n, c in hints[:8]) + (" ..." if len(hints) > 8 else "")
+    hint_str = " ".join(f"N{n}=COLOR_{c}" for n, c in hints[:6]) + (" ..." if len(hints) > 6 else "")
     fig.text(0.06, 0.875,
              f"{len(hints)} hints of {ex.cfg.n_nodes} nodes, then "
              f"{ex.n_rounds} rounds of simultaneous deduction. Hints: {hint_str}", size=SMALL)
@@ -211,9 +218,10 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
         known = {c for c in nbr_cols if c is not None}
         missing = sorted(set(range(ex.cfg.n_colors)) - known)
         lines = [
-            f"node N{node}, neighbours {list(ex.adj[node])}",
-            f"colours known before this round:",
-            f"   {sorted(known)}  ({len(known)} = q-1)",
+            f"node N{node}, neighbours "
+            + " ".join(f"N{x}" for x in ex.adj[node]),
+            f"their colours known before this round:",
+            f"   {sorted(known)}  ({len(known)} = q-1 of the {ex.cfg.n_colors})",
             f"only colour left: {missing[0]}",
             f"so the trace emits  N{node} COLOR_{ded}",
         ]
@@ -236,8 +244,7 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
     how = {"median": "the median", "deep": "the 90th percentile",
            "first": "the first"}.get(getattr(ex, "pick", ""), "one")
     prov = (f"T={ex.n_rounds} rounds, {how} of 40 draws from this config "
-            f"(range {min(pool)}-{max(pool)}); " if pool else "")
-    footer(fig, f"{prov}seed {ex.seed}, shuffle_adj={ex.cfg.shuffle_adj}, "
-                f"shuffle_events={ex.cfg.shuffle_events}; evidence from "
-                f"sudoku_tokens.evidence_rounds (pre-round state, as DD saw it)")
+            f"(range {min(pool)}-{max(pool)}). " if pool else "")
+    footer(fig, f"{prov}The worked deduction on the right uses the state BEFORE this round, which is "
+                f"what DD itself saw; it is recomputed from the graph, not read out of the model.")
     out.savefig(fig)

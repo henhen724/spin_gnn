@@ -70,6 +70,18 @@
 # and at one feature per node almost no case qualifies. The headline is the
 # `interpretable` pass; `beats_null` is the powered replication.
 #
+# ATTEMPT 2 (10-29 01:40). Attempt 1, job 50092236, FAILED after 55 s with
+# IndexError: index 12 is out of range, and the crash exposed a worse bug than
+# itself. sudoku_activations.ActCollector files encoder block i's output under
+# SAE layer index i+1 (index 0 being the embedding), so the dictionary named
+# "layer 8" lives on encoder.layers[7]. The ablation hooked encoder.layers[8]
+# -- one block too late at every layer, and off the end of the stack at 12.
+# Fixed to layers[layer-1] in sudoku_sae_ablate.py. Attempt 1's numbers are
+# therefore void: its "no effect at L8" spliced an L8 dictionary into L9's
+# residual stream. Its output is kept (sud2saeAbl-50092236.out, and the CSVs
+# under sudoku_sae_ablate_2026-10-29) and this attempt writes to a new -29b
+# directory rather than overwriting it.
+#
 # COST. Six conditions x one forward pass per case per layer: 300 cases x 3
 # layers x 6 = 5400 forwards on a 12-layer d=256 model over ~200 tokens, which
 # is minutes. The real cost is generating 1200 instances and their DD traces on
@@ -86,7 +98,7 @@ cd "${SLURM_SUBMIT_DIR}"
 
 SOLVED="${SCRATCH}/spin_gnn/sudoku_n24_data_2026-10-26/data240k_ep100/d0256_h04_L12_ff01024_lr1e-03_pre_shuf"
 SAE="${SCRATCH}/spin_gnn/sudoku_sae_solved_2026-10-28/leakfree1000_l0_64"
-OUT="${SCRATCH}/spin_gnn/sudoku_sae_ablate_2026-10-29"
+OUT="${SCRATCH}/spin_gnn/sudoku_sae_ablate_2026-10-29b"
 mkdir -p "$OUT"
 
 if [ ! -f "${SAE}/norm_layer08.pt" ]; then

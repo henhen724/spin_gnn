@@ -51,3 +51,4 @@ sudoku_attention_evolution/
 /sudoku_circuits_*/
 notebooks/**/page*.png
 notebooks/_tokpages/
+_smoke_*/

@@ -201,7 +201,14 @@ def run_case(model, sae, mu, sigma, vocab, device, layer, adj, trace, case,
             with torch.no_grad():
                 logits = model(tok_t)
         else:
-            h = model.encoder.layers[layer].register_forward_hook(
+            # SAE layer indices are OFF BY ONE from encoder block indices:
+            # sudoku_activations.ActCollector stores block i's output under
+            # index i+1, reserving 0 for the embedding. So the dictionary
+            # named "layer 8" was trained on encoder.layers[7]'s output, and
+            # hooking encoder.layers[8] applied it one block too late (and
+            # crashed outright at layer 12, which is layers[11]'s output).
+            assert layer >= 1, "layer 0 is the embedding, not a block output"
+            h = model.encoder.layers[layer - 1].register_forward_hook(
                 _ablation_hook(sae, mu, sigma, pos, kill))
             try:
                 with torch.no_grad():
