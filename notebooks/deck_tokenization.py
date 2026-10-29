@@ -154,11 +154,25 @@ def page_tokenization(out, ex):
         ax.text(0.0, y, name, size=SMALL - 1, weight="bold", va="top")
         ax.text(0.13, y, " ".join(shown) + tail, size=SMALL - 2, va="top", **MONO)
         y -= 0.20
+    # NOT "loss is on the REASONING section only". sat_dataset2.__getitem__
+    # returns (seq[:-1], seq[1:]) and the collate mask is a PADDING mask
+    # (mask[i, :length] = True) -- there is no section mask anywhere, so the
+    # loss covers the problem statement too. It is the EVAL that is sectioned:
+    # train_sudoku_transformer prompts through BEGIN_REASONING and generates.
+    # This also settles why page 10's BEGIN_ROUND outcome means anything: it is
+    # a trained target like every other token.
     ax.text(0.0, y - 0.02,
-            f"Loss is on the REASONING section only: {ex.n_rounds} rounds, "
-            f"{ex.n_deductions} deductions, {2 * ex.n_deductions} target tokens. "
-            f"Everything before BEGIN_REASONING is the problem statement.",
-            size=SMALL - 1, va="top")
+            "TRAINING LOSS is next-token cross-entropy on EVERY token, the problem statement included -- "
+            "there is no section mask.\n"
+            "AT EVAL the model is PROMPTED with everything through BEGIN_REASONING and generates the rest: "
+            f"{ex.n_rounds} rounds, {ex.n_deductions} deductions,\n"
+            # There is no END_REASONING token: `grep -rn END_REASONING spin_gnn/*.py`
+            # finds nothing, and SPECIAL_BASE_NAMES in sudoku_tokens.py is exactly
+            # the six this page's VOCABULARY block lists. The sequence terminates
+            # with SOLVED or UNRESOLVED, as the GRAMMAR block beside it shows.
+            f"{2 * ex.n_deductions} node+colour tokens, plus the BEGIN_ROUND markers and the SOLVED/UNRESOLVED "
+            "terminator, which are trained targets like any other token.",
+            size=SMALL - 1, va="top", linespacing=1.5)
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
 
     footer(fig, "DD is single-candidate elimination -- sudoku's 'naked single' rule transplanted to graph "

@@ -213,6 +213,19 @@ def layer_spans(layers):
     return ", ".join(out)
 
 
+def threshold_label(ax, y):
+    """Label the COUNTED threshold inside a panel, just above its own line.
+
+    BOTH panels of the SAE page draw this line, so both carry the label: one
+    labelled line beside a bare line of the same style reads as two different
+    quantities. Above the line at the far left, the one band no curve enters --
+    every arm sits below 0.25 up to L5 -- and clear of the legend box above.
+    """
+    ax.text(0.015, y + 0.03, f"COUNTED needs F1 >= {y:.2f}",
+            transform=ax.get_yaxis_transform(), ha="left", va="bottom",
+            size=SMALL - 2, color="0.3")
+
+
 def twin_skip_mcnemar(D, a="leak-free 1.0000", b="leak-free 0.8540"):
     """Paired twin comparison on the withhold test: (n, b_only, a_only, p).
 
@@ -410,9 +423,16 @@ def page_ablation(out, A):
     if "null" in A:
         n = A["null"]
         nb = n.loc[(n.zero_jn_nonbind_acc - n.zero_jn_bind_acc).idxmax()]
-        rep = (f" The powered replication -- the same test widened to every feature that beats its null, "
-               f"{int(nb.n_paired)} paired cases at layer {int(nb.layer)} -- gives "
-               f"{nb.zero_jn_nonbind_acc - nb.zero_jn_bind_acc:+.2f}, p = {nb.bind_vs_nonbind_p:.3g}.")
+        # Whether the replication's cases ARE the headline's cases is computed,
+        # not assumed: both printed the same count with nothing saying they were
+        # the same cases, which reads as a second, independent sample.
+        same = (int(nb.n_paired) == int(best.n_paired)
+                and int(nb.layer) == int(best.layer))
+        rep = (" The powered replication -- the same test widened to every feature that beats its null -- "
+               + (f"runs on the SAME {int(nb.n_paired)} paired cases at layer {int(nb.layer)}, not a second "
+                  f"sample, and gives " if same else
+                  f"has {int(nb.n_paired)} paired cases at layer {int(nb.layer)} and gives ")
+               + f"{nb.zero_jn_nonbind_acc - nb.zero_jn_bind_acc:+.2f}, p = {nb.bind_vs_nonbind_p:.3g}.")
     nodeline = ""
     if A.get("node_ran") is False:
         nodeline = (" At the token that picks the node there was nothing to ablate at any layer, as "
@@ -576,11 +596,15 @@ def page_title(out, D, ex, O, S):
                  ha="left", va="top", size=MED - 3, linespacing=1.5)
     # Three lines from 0.145: the scope of the word YES belongs next to the
     # word, not only on the last slide, and the block has to clear the footer.
+    # Wrapped to 115 characters, not by hand: the hand breaks put 137 characters
+    # on the first line, which at bold 14pt from x=0.045 ran to the slide's right
+    # edge while the third line stopped at two thirds of the width.
     fig.text(0.045, 0.145,
-             "CAVEAT, up front: one task configuration (N = 24, degree 5, q = 4) and ONE CHECKPOINT PER MODEL, no "
-             "seed replicates -- so every leak-free\nvs leaked contrast is also two separate training runs. And YES "
-             "means DD's PROPAGATION STEP: these tests do not separate DD from\nanother propagator with the same "
-             "one-step behaviour (last slide).",
+             textwrap.fill(
+                 "CAVEAT, up front: one task configuration (N = 24, degree 5, q = 4) and ONE CHECKPOINT PER MODEL, "
+                 "no seed replicates -- so every leak-free vs leaked contrast is also two separate training runs. "
+                 "And YES means DD's PROPAGATION STEP: these tests do not separate DD from another propagator with "
+                 "the same one-step behaviour (last slide).", width=115),
              ha="left", va="top", size=MED - 3, color="0.15", weight="bold", linespacing=1.5)
     missing = [ROLE[k] for k, v in D.items() if "chain" not in v or "skip" not in v]
     footer(fig, "Prepared 2026-10-29. Every number on every page is computed from the run outputs, not typed in."
@@ -695,7 +719,11 @@ def page_model(out, O, S, D):
         "  in the adjacency row encoded its colour, and 61-67% of",
         "  nodes could be read off with no deduction at all.",
         "  Permuting the rows at test time collapses a model trained",
-        "  on them: 0.9975 -> 0.1450 -- load-bearing, not incidental.",
+        # Both numbers are THIS model. 0.9975 -> 0.1450 is the 400-instance
+        # ordering eval; the 99.6% below is the 1500-instance shared pool, and
+        # a reader who sees 0.9975 and 99.6% unlabelled asks which is right.
+        "  on them: 0.9975 -> 0.1450 (n=400 order ablation) --",
+        "  load-bearing, not incidental.",
         "",
         # <= 58 characters a line, indent included: at 62 these ran past the
         # right edge of the slide and lost their last word.
@@ -801,9 +829,13 @@ def page_guard_design(out):
     # Wrapped to ~95 monospace characters, not ~84: at 24 lines the block's last
     # two lines printed on top of the caveats below it. The page has the width.
     body = [
-        "Both tests on the previous page SELECT a node that DD forces and then REDIRECT the forcing. A",
-        "model that simply wrote a colour for whichever unknown node came next in index order would pass",
-        "them both. So break the forcing instead of redirecting it -- the WITHHOLD test:",
+        # NOT "a model that writes a colour for the next unknown node in index order
+        # would pass them both" -- it would not: those tests score the COLOUR, which
+        # still takes elimination. What they leave open is the NODE, which they fix.
+        "Both tests on the previous page EDIT the forcing set of a node the prefix has named, and score",
+        "the COLOUR the model writes. They hold the NODE FIXED, so they say nothing about the other",
+        "half of DD: WHICH node the model names as determined. So break the forcing instead of",
+        "redirecting it -- the WITHHOLD test:",
         "",
         "   recolour w to a colour that ANOTHER known neighbour of v already holds.",
         "",
@@ -923,7 +955,11 @@ def page_table(out, D):
                 "logit gap is a reversal of preference, not a shift in confidence. 'kept its old answer' = named the "
                 "node anyway (withhold) or re-asserted its own colour (chained). 'control' is chance, 1/q, on the rule "
                 "rows; on the withhold row the placebo edit -- the same edit on a hint that is NOT a neighbour of v, "
-                "so DD's round is unchanged -- and p tests the withhold rate against it on the same cases. n is 350 "
+                # NOT "p tests the withhold rate against it": the control cell shows how
+                # often the placebo STILL NAMES v (0.94), the opposite polarity to the
+                # withhold column, so that reading makes p=2e-99 impossible on 350 cases.
+                "so DD's round is unchanged -- and p pairs the two WITHHOLD rates, same cases: broken against "
+                "1 - the placebo shown. n is 350 "
                 "or 250 by when each run was submitted, not by filtering; paired tests use the 250 shared cases, at "
                 "most 2 per instance.", width=150)
     out.savefig(fig)
@@ -1128,10 +1164,15 @@ def page_guard(out, D):
             f"twin kept naming v and the SOLVER withheld it,\n{mn[2]} the other way (exact McNemar p = {mn[3]:.1g}). "
             "ONE SEED PER ARM, so that is a within-pair consistency result, not a measured effect of training-set size.")
     fig.text(0.5, 0.235, twin, ha="center", va="top", size=MED - 3, linespacing=1.5)
+    # "gives 0.188 (n=234)" named no quantity: a reader cannot tell 0.188 of
+    # what, and the deck calls the same measurement "withhold" on four pages
+    # and "guard" on two. One name, and the number says what it is of.
     footer(fig, "Same cases as the hint-edit test, and the case lists are byte-identical across models, so the arms "
-                "are paired instance for instance. Conditioning on cases the twin gets right on the clean prompt "
-                "gives 0.188 (n=234). Its 0.176 guard gap is the same order as its 0.146 solve-rate gap -- different "
-                "measurements on different samples, so a consistency check, not a decomposition. The LEAK-READER "
+                "are paired instance for instance. 0.176 = the WEAK TWIN still naming v with the forcing broken; on "
+                "just the cases it gets right on the clean prompt it still names v on 0.188 (n=234), so that is not "
+                "only the twin being wrong more often. Its 0.176 withhold gap is the same order as its 0.146 "
+                "solve-rate gap -- different measurements on different samples, so a consistency check, not a "
+                "decomposition. The LEAK-READER "
                 "withholds too (0.992), which is why this page is a twin comparison and not evidence for DD on its "
                 "own: a model can stop answering for reasons that have nothing to do with elimination.")
     out.savefig(fig)
@@ -1190,8 +1231,8 @@ def page_patching(out, D):
              "RECOVERY = copy one activation from the clean run into the corrupted run at that (layer, position) and "
              "measure how much of the flip\nit undoes: 1.00 = that one activation carries the whole edited fact, 0.00 "
              "= none of it. w is the neighbour whose colour the edit changes.\nThe two CONTROL columns -- the adjacency "
-             f"rows of w and of another known neighbour u -- never exceed {ctrl_max:.2f} anywhere, so the deduction "
-             "never\nroutes through the adjacency table; they are left out of the grid to keep it readable.",
+             f"rows of w and of another known neighbour u -- never exceed {ctrl_max:.2f} anywhere, so the EDITED FACT "
+             "does not\ntravel through the adjacency rows; they are left out of the grid to keep it readable.",
              ha="center", va="top", size=MED - 4, linespacing=1.5)
     a, b = "leak-free 1.0000", "leak-free 0.8540"
     # "about N layers earlier" between two single checkpoints is a difference
@@ -1202,9 +1243,13 @@ def page_patching(out, D):
            f"L{release[a]:.1f} against L{release[b]:.1f}), both delivering it by L10. One seed per arm, so "
            f"read that as a difference between these two checkpoints, not as a depth-of-handoff effect."
            if a in release and b in release else "")
-    footer(fig, "Read upwards: the edited colour is held AT the edited hint through L5, handed off between L6 and "
-                "L10, and has arrived at the prediction position by L10. L11 at the prediction position is the "
-                "built-in positive control and must read 1.00; it does." + gap
+    # L10 and L11 are different claims and used to sit in one breath: the fact
+    # ARRIVES by L10, and L11 is the last layer, where a patch has to work by
+    # construction. Spelled out, because a reader who reads them as one asks
+    # why the deck's own positive control is also its result.
+    footer(fig, "Read upwards: the edited colour is held AT the edited hint through L5, handed off over L6-L10, and is "
+                "at the prediction position by L10 -- one layer before the output. L11 is the last layer, so patching "
+                "it there MUST restore the edit: that is the built-in positive control, and it reads 1.00." + gap
                 + " In the LEAK-READER's panel recovery is a fraction of an effect that is near chance to begin with "
                   "(it follows the edit on 0.388 of cases), so its numbers localise a weak sensitivity, not a rule.",
            width=132)
@@ -1300,13 +1345,20 @@ def page_sae(out, S):
     ax1.plot(null.index, null.values, ls="--", lw=2.5, color="k",
              label="best F1 a SHUFFLED label gets")
     ax1.axhline(MIN_F1, color="0.4", ls="-.", lw=2)
+    threshold_label(ax1, MIN_F1)
     ax1.set_title("while the model picks the COLOUR", size=MED + 1)
     ax1.set_xlabel("transformer layer the dictionary was trained on", size=MED - 3)
-    ax1.set_ylabel("best feature's F1 for 'is a KNOWN\nneighbour of the node being emitted'",
-                   size=MED - 4)
-    # Headroom to 1.35 so the legend has somewhere to sit: at ylim 1.0 the
-    # three-line box landed squarely on the mid-stack peak it is describing.
-    ax1.set_ylim(0, 1.35)
+    # Three lines of <= 24 characters: rotated, each line runs along the axes'
+    # HEIGHT (185 pt here), so a 45-character line overshoots it by half again.
+    # The predicate is the known neighbourhood and the title calls it the
+    # forcing set; that they are the same set is reconciled in the body below,
+    # which has the room for the reason.
+    ax1.set_ylabel("best feature's F1 for\n'is a KNOWN neighbour of\nthe node being emitted'",
+                   size=MED - 5)
+    # Headroom to 1.55, not 1.35: the box's height in POINTS is fixed, so its
+    # bottom edge sits at ~0.53 x ylim, and at 1.35 that is 0.72 -- through the
+    # L8 peak markers at 0.73 it is describing.
+    ax1.set_ylim(0, 1.55)
     ax1.legend(loc="upper left", fontsize=SMALL - 1, framealpha=0.95)
 
     for kind, name, ls, ms in [("pre_color", "before a COLOUR token", "-", "o"),
@@ -1318,18 +1370,12 @@ def page_sae(out, S):
                  ms=11, label=f"{name}: {n} features{why}")
     ax2.plot(null.index, null.values, ls="--", lw=2.5, color="k", label="shuffled label")
     ax2.axhline(MIN_F1, color="0.4", ls="-.", lw=2)
-    # The counting threshold is labelled HERE, in the only corner of either panel
-    # that no curve enters: in the left panel every position for it crosses a
-    # curve, and both panels draw the line in the same style, so one label reads
-    # for both.
-    ax2.text(0.02, MIN_F1 - 0.01, f"COUNTED needs F1 >= {MIN_F1:.2f}",
-             transform=ax2.get_yaxis_transform(), ha="left", va="top",
-             size=SMALL - 2, color="0.3")
+    threshold_label(ax2, MIN_F1)
     ax2.set_title(f"{ROLE['leak-free 1.0000']}: the same dictionary, by position", size=MED + 1)
     # The same words as ax1: two different labels on two shared axes read as
     # two different quantities.
     ax2.set_xlabel("transformer layer the dictionary was trained on", size=MED - 3)
-    ax2.set_ylim(0, 1.35)
+    ax2.set_ylim(0, 1.55)
     ax2.legend(loc="upper left", fontsize=SMALL - 1, framealpha=0.95)
 
     fig.tight_layout(rect=[0, 0.305, 1, 0.88])
@@ -1342,14 +1388,19 @@ def page_sae(out, S):
                   f"{layer_spans([int(x) for x in lk.layer[lk.n_just > 0]])}")
     else:
         lk_txt = "features of its own"
+    # Wrapped at 150, not hand-broken: `lk_txt` is spliced into the middle, and
+    # read (1) now has to carry the axis-vs-title reconciliation, which no hand
+    # break survives. Five lines is the budget -- the footer runs to six.
     fig.text(0.5, 0.29,
-             "A feature is COUNTED only when it matches one of DD's own predicates at F1 >= 0.30 (F1 = the harmonic "
-             "mean of precision and recall)\nAND beats a shuffled-label null. Three things to read: (1) the forcing "
-             "set is encoded where DD's rule needs it -- at the token that predicts\nthe COLOUR, while at the token "
-             "that picks the node no feature clears the 0.30 bar; (2) the SOLVER is NOT more interpretable\nthan the "
-             "WEAK TWIN, which is what their equal rule scores already said; (3) THE LEAK-READER ENCODES IT TOO -- "
-             f"{lk_txt}, after\nthe window where the SOLVER uses it. Encoding it is not "
-             "using it: that is why this page is not the evidence, and the four intervention pages are.",
+             textwrap.fill(
+                 "A feature is COUNTED only when it matches one of DD's own predicates at F1 >= 0.30 (the harmonic "
+                 "mean of precision and recall) AND beats a shuffled-label null. Three things to read: (1) the axis "
+                 "predicate, 'a KNOWN neighbour of the node being emitted', IS that node's FORCING SET here (slide 2), "
+                 "and it is encoded where DD's rule needs it -- at the token that predicts the COLOUR, while at the "
+                 "token picking the node nothing clears the 0.30 bar; (2) the SOLVER is NOT more interpretable than "
+                 "the WEAK TWIN, as their equal rule scores already said; (3) THE LEAK-READER ENCODES IT TOO -- "
+                 f"{lk_txt}, after the window where the SOLVER uses it. Encoding it is not using it: the evidence is "
+                 "the four intervention pages.", width=150),
              ha="center", va="top", size=MED - 4, linespacing=1.5)
     footer(fig, "CORRELATIONAL -- this page says WHERE the structure sits, not whether the model uses it. Sparse "
                 "autoencoder, 4096 features per layer, ~64 active per token, trained on 53,200 activations per layer, "
@@ -1392,7 +1443,10 @@ def page_verdict(out, D, O):
         "* Chaining: measuring (50077245).",
         "  with no decay across the rounds.",
         "",
-        "* Guards it: break the forcing and it stops",
+        # "withholds", not "guards": pages 1, 7, 8 and 10 all call this test the
+        # WITHHOLD test, and only this page and page 10's footer called the same
+        # number a "guard", which reads as a second measurement.
+        "* Withholds it: break the forcing and it stops",
         f"  naming the node {1 - sk:.3f} of the time, while a"
         if sk is not None else "  (measuring, job 50082120)",
         # The placebo in the SAME polarity as pages 8 and 10, which both report
@@ -1403,7 +1457,7 @@ def page_verdict(out, D, O):
         "  THREE models pass this one, so passing",
         "  it is not by itself evidence of DD.",
         "",
-        f"* The WEAK TWIN guards only {1 - bsk:.3f} -- the" if bsk is not None else "",
+        f"* The WEAK TWIN withholds only {1 - bsk:.3f} -- the" if bsk is not None else "",
         "  first test here to separate the TWINS,",
         "  and the same order as its 0.146 solve gap.",
         "",
@@ -1432,16 +1486,21 @@ def page_verdict(out, D, O):
         "",
         *order,
         "",
-        "* Route through the adjacency table: the",
-        f"  graph rows never recover above {ctrl:.2f} anywhere,",
-        "  in any layer, in any of the three models.",
+        # Scoped to what patching measures. "Never routes through the adjacency
+        # table" contradicted the LEAK-READER bullet four lines below, which says
+        # it reads exactly that table: patching tracks where the EDITED FACT
+        # travels, not where the answer comes from.
+        "* Carry the EDITED FACT through the adjacency",
+        f"  rows: patching them recovers at most {ctrl:.2f}, in any",
+        "  layer, in any of the three models. Reading that",
+        "  table is a separate matter -- see below.",
         "",
-        # Four lines, not five: the adjacency bullet above needed a second line
-        # for its measured bound and this column has no room to spare.
+        # Three lines, not four: the adjacency bullet above needed a fourth for
+        # the reconciliation and this column has no room to spare.
         "* Concentrate the rule anywhere we can point at:",
-        "  ablating the worst of the 48 heads one at a" if worst is not None else "",
-        f"  time still leaves {worst:.0%} of it. It is distributed;" if worst is not None else "",
-        "  this deck says THAT it runs DD, not which heads.",
+        f"  ablating the worst of the 48 heads leaves {worst:.0%} of it."
+        if worst is not None else "",
+        "  Distributed; this deck says THAT it runs DD.",
         "",
         # NOT "never learned the rule": 0.388 against a 0.250 chance rate at
         # n=350 has a Wilson interval clear of chance, so the honest word is
@@ -1471,7 +1530,7 @@ def page_verdict(out, D, O):
              "exact algorithm, and a different propagator with the\nsame one-step behaviour would pass every test on this deck. "
              "One checkpoint per model and no seed replicates, so every leak-free vs leaked contrast is also two\nseparate "
              "training runs. One task configuration (N = 24, degree 5, q = 4), so nothing here is a claim about depth or scale, "
-             "and the per-depth bins run as thin as a few dozen\ncases. The guard gap and the solve-rate gap are different "
+             "and the per-depth bins run as thin as a few dozen\ncases. The withhold gap and the solve-rate gap are different "
              "measurements on different samples: their agreement is a consistency check, not a decomposition. The\nsparse-"
              "autoencoder pages are correlational, and the ablation that would make them causal moved no answer at all, "
              "controls included -- inconclusive, not negative.",
