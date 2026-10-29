@@ -52,3 +52,7 @@ sudoku_attention_evolution/
 notebooks/**/page*.png
 notebooks/_tokpages/
 _smoke_*/
+# $HOME/spin_gnn symlinks to $SCRATCH/spin_gnn, so "put it on $SCRATCH" puts it
+# in the repo root. Layout smoke tests render pages from fabricated summaries
+# and must never be mistaken for a run.
+_*_smoke/
