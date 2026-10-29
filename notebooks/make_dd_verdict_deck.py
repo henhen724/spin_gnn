@@ -382,7 +382,7 @@ def page_ablation(out, A):
     # figure argued against its own caption. The point of this panel is that
     # nothing moved, and only a fixed axis can show that.
     for j, (c, lab, col, hat) in enumerate([
-            ("recon", "nothing zeroed (SAE in)", "0.35", ""),
+            ("recon", "_nolegend_", "0.35", ""),
             ("zero_jn_all", "the whole forcing set", RED, "//"),
             ("zero_jn_bind", "the binding neighbour's", RED, ""),
             ("zero_random", "as many at random", GREY, "\\\\")]):
@@ -390,6 +390,8 @@ def page_ablation(out, A):
                 100 * (k[f"{c}_margin"] - k.clean_margin) / k.clean_margin, 0.2,
                 color=col, hatch=hat, edgecolor="w", label=lab)
     ax2.axhline(0, color="k", lw=1)
+    ax2.text(0.015, 0.04, "the solid 0 line = nothing zeroed (the SAE's own reconstruction)",
+             transform=ax2.transAxes, va="bottom", size=SMALL - 3)
     ax2.set_xlim(-0.6, len(k) - 0.4)
     # +-5%, not +-100%. The wide axis was honest and unreadable: four bars under
     # 1% drew as nothing at all, and a panel of invisible bars reads as a figure
@@ -466,7 +468,7 @@ def page_ablation(out, A):
             f"them costs no more than removing a count-matched random set{cis} -- which rules out a large effect, not every effect. "
             "Two readings survive and this run cannot separate them: the rule may be spread over more features than our selection "
             "threshold picks up -- the head-ablation page found exactly that redundancy -- or these features may be a readout of a "
-            "decision made elsewhere. Either way the verdict on the next page rests on the interventions, which do not depend on "
+            "decision made elsewhere. Either way the verdict on page 17 rests on the interventions, which do not depend on "
             "this page.")
     else:
         disc = ("not one discordant answer" if ci and ci[2] == 0 else
@@ -480,7 +482,7 @@ def page_ablation(out, A):
             + ("the wrong way, towards MORE confidence" if jn > 0 else "down by less than that") +
             ". So this is not evidence that the features go unused. It is a test in which zeroing "
             f"{int(best.n_jn_features)} of 4096 features at one token cannot perturb a decision this overdetermined -- no "
-            "sensitivity, so no null to report. The verdict on the next page rests on the interventions, which do move the answer.")
+            "sensitivity, so no null to report. The verdict on page 17 rests on the interventions, which do move the answer.")
     # Wrapped here rather than hard-wrapped in the literal: `rep`, `nodeline`
     # and `cis` are spliced into the middle of the paragraphs and only exist on
     # some runs, so any \n placed by hand lands in the wrong spot once they
@@ -659,7 +661,7 @@ def page_task(out, ex):
         "",
         "  REASONING DEPTH T = how many rounds an instance needs,",
         f"  1 to 6 at this hint count ({len(ex.hints)} of {c.n_nodes}). The example",
-        f"  on the next slide needs {ex.n_rounds}.",
+        f"  in the worked trace on slide 5 needs {ex.n_rounds}.",
     ]
     # 14pt at 1.45, not 16 at 1.5: the right column is 21 lines once the binding
     # neighbour is defined here (it used to be defined on the page that uses it
@@ -725,8 +727,8 @@ def page_model(out, O, S, D):
         # Both numbers are THIS model. 0.9975 -> 0.1450 is the 400-instance
         # ordering eval; the 99.6% below is the 1500-instance shared pool, and
         # a reader who sees 0.9975 and 99.6% unlabelled asks which is right.
-        "  on them: 0.9975 -> 0.1450 (n=400 order ablation) --",
-        "  load-bearing, not incidental.",
+        "  on them: 0.9975 -> 0.1450 (n=400 ablation subset;",
+        "  the 99.6% below is the full 1500 pool) -- load-bearing.",
         "",
         # <= 58 characters a line, indent included: at 62 these ran past the
         # right edge of the slide and lost their last word.
@@ -1110,11 +1112,11 @@ def page_guard(out, D):
     ax1.bar(x + 0.26, br, 0.25, color=cols, edgecolor="k", hatch="///", alpha=0.85,
             label="forcing BROKEN")
     ax1.set_xticks(x); ax1.set_xticklabels(labels, size=SMALL - 1)
-    ax1.set_ylabel("fraction that did what DD does:\nnamed v (clean, placebo) / withheld it (broken)",
-                   size=MED - 3)
+    ax1.set_ylabel("fraction that did\nwhat DD does", size=MED - 3)
     ax1.set_ylim(0, 1.30)
-    ax1.text(0.5, 0.985, "HIGH is correct in all three conditions, as everywhere else in this deck.\n"
-                         "ALL THREE MODELS PASS: this test separates the twins, not leaked from leak-free.",
+    ax1.text(0.5, 0.985, "HIGH is correct in all three: the PLACEBO scores the OPPOSITE event\n"
+                         "(a ceiling on edit noise, not a baseline to subtract).\n"
+                         "ALL THREE MODELS PASS: this separates the twins, not leaked from leak-free.",
              transform=ax1.transAxes, ha="center", va="top", size=SMALL - 3)
     # legend above the axes, not inside: the 1.000 bars reach the top and any
     # in-axes box lands on their value labels. Grey handles, not the bars' own:
@@ -1429,7 +1431,7 @@ FAMS = [("next_node", "the NODE about to be coloured"),
         ("known", "nodes already coloured"),
         ("remaining", "nodes still uncoloured"),
         ("frontier", "nodes decidable NOW"),
-        ("nbr_of_next", "u NEIGHBOURS that node"),
+        ("nbr_of_next", "NEIGHBOURS that node"),
         ("justifies_next", "FORCING SET"),
         ("next_color", "the COLOUR about to be emitted"),
         ("color", "a colour, anywhere")]
@@ -1566,7 +1568,7 @@ def page_pipeline(out, S, D):
                 f"L2 on ({min(si[1:])}-{max(si[1:])}), so what turns over is WHICH predicates match, not how many "
                 "exist to match. ON THE X-AXIS: a dictionary is trained on the RESIDUAL STREAM after a whole "
                 "block, so a step localises to 'by the end of block L', NOT to the MLP as against the attention "
-                "sublayer -- the NEXT PAGE measures that distinction directly, and finds neither.", width=158)
+                "sublayer -- PAGE 16 measures that distinction directly, and finds neither.", width=158)
     out.savefig(fig)
 
 
@@ -1645,10 +1647,10 @@ def page_sublayer(out, U):
                 ax1.plot([L_], [m[i]], "x", color=RED, ms=14, mew=3, zorder=6)
     ax1.axhline(1.0, color="k", ls="--", lw=2)
     ax1.axhline(0.839, color=CAVEAT, ls=":", lw=2)
-    ax1.text(0.3, 0.72, "0.839 = the worst SINGLE HEAD (page 12)", size=SMALL - 2, color=CAVEAT)
+    ax1.text(0.3, 0.40, "0.839 = the worst SINGLE HEAD (page 12)", size=SMALL - 2, color=CAVEAT)
     ax1.set_ylim(-0.05, 1.18)
     ax1.set_ylabel("fraction of the hint-edit\neffect retained", size=MED - 4)
-    ax1.legend(loc="center left", fontsize=SMALL - 2, ncol=1, framealpha=0.95)
+    ax1.legend(loc="lower center", fontsize=SMALL - 2, ncol=2, framealpha=0.95)
     ax1.tick_params(labelbottom=False)
     ax1.set_title("1.00 = that write is not needed for the flip;  0.00 = the flip is gone\n"
                   "band = 10th-90th percentile over cases", size=SMALL - 2)
@@ -1740,7 +1742,7 @@ def page_verdict(out, D, O):
         "",
         f"* Chains it off its OWN deductions: {ch:.3f}," if ch is not None else
         "* Chaining: measuring (50077245).",
-        "  with no decay across the rounds.",
+        "  no decay across rounds; depth >= 3 is only n=28.",
         "",
         # "withholds", not "guards": pages 1, 7, 8 and 10 all call this test the
         # WITHHOLD test, and only this page and page 10's footer called the same
@@ -1792,7 +1794,7 @@ def page_verdict(out, D, O):
         "* Carry the EDITED FACT through the adjacency",
         f"  rows: patching them recovers at most {ctrl:.2f}, in any",
         "  layer, in any of the three models. Reading that",
-        "  table is a separate matter -- see below.",
+        "  table is a separate matter -- see LIMITATIONS.",
         "",
         # Three lines, not four: the adjacency bullet above needed a fourth for
         # the reconciliation and this column has no room to spare.

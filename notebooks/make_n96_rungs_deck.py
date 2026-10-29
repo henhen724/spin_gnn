@@ -1,7 +1,7 @@
 """Slide deck for findings 31 and 32: the last rung of the N=96 ladder.
 
 Companion to notebooks/sudoku_n96_rungs_2026-10-29_results.ipynb, which carries
-the full argument; this is the 8-page version meant to be read on a phone. Every
+the full argument; this is the 9-page version meant to be read on a phone. Every
 number is recomputed here from the run directories, not copied from the
 notebook's markdown, so the two can be diffed against each other.
 
