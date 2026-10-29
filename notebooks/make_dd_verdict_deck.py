@@ -35,6 +35,11 @@ SCRATCH = os.environ["SCRATCH"]
 CIRC = f"{SCRATCH}/spin_gnn/sudoku_circuits_leakfree_2026-10-28"
 CHAIN = f"{SCRATCH}/spin_gnn/sudoku_chain_2026-10-28"
 SKIP = f"{SCRATCH}/spin_gnn/sudoku_skip_2026-10-28"
+# SAE dictionaries. The 1.0000 arm is job 50075499; the other two were trained
+# by 49744985 with byte-identical hyper-parameters, so the three are one table.
+SAE = {"leak-free 1.0000": f"{SCRATCH}/spin_gnn/sudoku_sae_solved_2026-10-28/leakfree1000_l0_64",
+       "leak-free 0.8540": f"{SCRATCH}/spin_gnn/sudoku_sae_kindsplit_2026-10-27/leakfree_l0_64",
+       "leaked 0.9960": f"{SCRATCH}/spin_gnn/sudoku_sae_kindsplit_2026-10-27/leaked_l0_64"}
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sudoku_dd_verdict_2026-10-28")
 
 BLUE, RED, GREEN, GREY = "#1f77b4", "#d62728", "#2ca02c", "0.45"
@@ -96,6 +101,27 @@ def load():
     return out
 
 
+def load_sae():
+    """By-kind SAE summaries, one frame per arm, or {} if none are on disk.
+
+    `justifies_next[u]` = "u is a KNOWN neighbour of the node being emitted",
+    i.e. exactly the set DD eliminates over. `n_just` is how many dictionary
+    features matched one of those predicates well enough to be called
+    interpretable; `best_justifier_f1` is the best single feature's F1.
+    """
+    out = {}
+    for label, d in SAE.items():
+        p = f"{d}/sae_summary_by_kind.csv"
+        if not os.path.exists(p):
+            continue
+        k = pd.read_csv(p)
+        counts = k.family_counts.map(json.loads)
+        k["n_just"] = counts.map(lambda c: c.get("justifies_next", 0))
+        k["n_nbr"] = counts.map(lambda c: c.get("nbr_of_next", 0))
+        out[label] = k
+    return out
+
+
 def page_title(out, D, ex):
     fig = plt.figure(figsize=(16, 9))
     a = D["leak-free 1.0000"]
@@ -149,7 +175,7 @@ def page_title(out, D, ex):
     footer(fig, "Prepared 2026-10-29. One task configuration (N=24 nodes, degree 5, q=4 colours) and "
                 "one checkpoint per model -- no seed replicates, so every leak-free vs leaked contrast "
                 "is also two separate training runs. Jobs 50075339 (round 0), 50077245 (chained), "
-                "50082120 (withholding)."
+                "50082120 (withholding), 50075499 + 49744985 (sparse autoencoders)."
                 + (f" Arms still running: {', '.join(missing)}." if missing else ""))
     out.savefig(fig)
 
@@ -572,6 +598,65 @@ def page_heads(out, D):
     out.savefig(fig)
 
 
+def page_sae(out, S):
+    """The one non-causal page: what the features themselves encode.
+
+    Kept after the interventions on purpose. A feature that correlates with
+    DD's forcing set is not evidence that the model uses it -- that is what
+    pages 7-11 are for. What this page adds is WHERE the structure sits.
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 9))
+    a = S["leak-free 1.0000"]
+    pc = a[a.position_kind == "pre_color"]
+    peak = pc.loc[pc.best_justifier_f1.idxmax()]
+    fig.suptitle("It carries sparse features for DD's own forcing set,\npeaking at "
+                 f"L{int(peak.layer)} -- where the causal patch hands the fact off",
+                 size=BIG - 3, weight="bold", linespacing=1.4)
+
+    for label, _, _, colour in ARMS:
+        if label not in S:
+            continue
+        k = S[label]
+        k = k[k.position_kind == "pre_color"].sort_values("layer")
+        n_tot = int(k.n_just.sum())
+        ax1.plot(k.layer, k.best_justifier_f1, "o-", color=colour, lw=3, ms=11,
+                 label=f"{label}  ({n_tot} features)")
+    null = pd.concat([S[l][S[l].position_kind == "pre_color"]
+                      for l in S]).groupby("layer").median_best_f1_null.max()
+    ax1.plot(null.index, null.values, ls="--", lw=2.5, color="k",
+             label="best F1 a SHUFFLED label gets")
+    ax1.set_title("while it picks the COLOUR", size=MED + 1)
+    ax1.set_xlabel("transformer layer the dictionary was trained on")
+    ax1.set_ylabel("best single feature's F1 for\n'u is a KNOWN neighbour of the\nnode being emitted'",
+                   size=MED - 2)
+    ax1.set_ylim(0, 1.0)
+    ax1.legend(loc="upper left", fontsize=SMALL)
+
+    for kind, name, ls, ms in [("pre_color", "before a COLOUR token", "-", "o"),
+                               ("pre_node", "before a NODE token", ":", "s")]:
+        k = a[a.position_kind == kind].sort_values("layer")
+        ax2.plot(k.layer, k.best_justifier_f1, ls=ls, marker=ms, color=BLUE, lw=3,
+                 ms=11, label=f"{name}  ({int(k.n_just.sum())} features)")
+    ax2.plot(null.index, null.values, ls="--", lw=2.5, color="k", label="shuffled label")
+    ax2.set_title("leak-free 1.0000: the same structure, by position", size=MED + 1)
+    ax2.set_xlabel("transformer layer")
+    ax2.set_ylim(0, 1.0)
+    ax2.legend(loc="upper left", fontsize=SMALL)
+
+    fig.tight_layout(rect=[0, 0.24, 1, 0.90])
+    fig.text(0.5, 0.225,
+             "The forcing set is encoded where DD's rule needs it: at the token that predicts the colour, never at "
+             "the token that picks\nthe node. The 1.0000 model is NOT more interpretable than its 0.854 twin -- which "
+             "is what their equal rule scores already said.",
+             ha="center", va="top", size=MED - 2, linespacing=1.5)
+    footer(fig, "Sparse autoencoder, d_sae=4096, L0 ~ 64, trained on 53,200 activations per layer, then scored "
+                "separately on the 26,600 positions before a colour token and the 26,600 before a node token. A "
+                "feature counts only if its F1 beats a shuffled-label null (dashed). One dictionary per layer per "
+                "arm, one seed, and best F1 is a maximum over 256 candidate predicates, so a few points apart is a "
+                "tie. Correlational: it says WHERE, not whether.")
+    out.savefig(fig)
+
+
 def page_verdict(out, D):
     fig = plt.figure(figsize=(16, 9))
     fig.suptitle("The verdict, and what it is not", size=BIG, weight="bold")
@@ -602,6 +687,9 @@ def page_verdict(out, D):
         "",
         "* Localised: edited hint -> L5, handoff",
         "  L6-L10, prediction position by L10.",
+        "",
+        "* And it carries sparse features for DD's",
+        "  forcing set, peaking at that same L8.",
     ]
     right = [
         "WHAT IT DOES NOT DO",
@@ -629,10 +717,10 @@ def page_verdict(out, D):
              "Working picture: sweep nodes in index order; emit one only when its known neighbours "
              "leave it a\nsingle colour, counting the ones it just derived. That is DD's propagation step.",
              ha="center", va="top", size=MED, weight="bold", linespacing=1.5)
-    fig.text(0.05, 0.765, "\n".join(left), ha="left", va="top", size=MED - 3,
-             family="monospace", linespacing=1.45, color=GREEN)
-    fig.text(0.53, 0.765, "\n".join(right), ha="left", va="top", size=MED - 3,
-             family="monospace", linespacing=1.45, color=RED)
+    fig.text(0.05, 0.785, "\n".join(left), ha="left", va="top", size=MED - 4,
+             family="monospace", linespacing=1.35, color=GREEN)
+    fig.text(0.53, 0.785, "\n".join(right), ha="left", va="top", size=MED - 4,
+             family="monospace", linespacing=1.35, color=RED)
     fig.text(0.5, 0.115,
              "LIMITATIONS: one checkpoint per model and no seed replicates, so every leak-free vs leaked contrast is "
              "also two separate training\nruns; one task configuration (N=24, degree 5, q=4); and the guard gap and "
@@ -651,11 +739,12 @@ def main():
     D = load()
     if "r0" not in D["leak-free 1.0000"]:
         raise SystemExit("arm A round-0 results missing -- job 50075339 output not found")
+    S = load_sae()
     ex = example_instance(rho=0.60)
     pdf_path = os.path.join(OUT, "slides.pdf")
     have_skip = any("skip" in D[l] for l, _, _, _ in ARMS)
     with PdfPages(pdf_path) as pdf:
-        o = PdfAndPng(pdf, OUT, total=10 + 2 * have_skip)
+        o = PdfAndPng(pdf, OUT, total=10 + 2 * have_skip + bool(S))
         page_title(o, D, ex)
         page_task(o, ex)
         page_tokenization(o, ex)
@@ -670,6 +759,8 @@ def main():
             page_guard(o, D)
         page_patching(o, D)
         page_heads(o, D)
+        if S:
+            page_sae(o, S)
         page_verdict(o, D)
     print(f"wrote {pdf_path} ({os.path.getsize(pdf_path) / 1e6:.2f} MB, {o.n} pages)")
 
