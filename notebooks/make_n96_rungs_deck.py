@@ -557,10 +557,132 @@ def page_verdict(o, D):
     o.savefig(fig)
 
 
+LF48 = f"{S}/sudoku_n48_leakfree_lstar_2026-10-29"   # 50099945, the first leak-free ladder
+CAV = "#b7791f"   # amber: this deck's RED/GREEN pair has no "confounded" colour
+
+
+def load_n48():
+    """Job 50099945's two tables. {} if the run has not landed."""
+    f, g = f"{LF48}/depth_lstar_50099945.csv", f"{LF48}/sharedpool_n1500_50099945.csv"
+    if not (os.path.exists(f) and os.path.exists(g)):
+        return {}
+    d = pd.read_csv(f)
+    d["L"] = d.checkpoint.str.extract(r"_L(\d+)_").astype(int)
+    q = pd.read_csv(g)
+    q["L"] = q.checkpoint.str.extract(r"_L(\d+)_").astype(int)
+    return {"bins": d, "pool": q.set_index("L")}
+
+
+def ca_trend(ks, ns, xs):
+    """Cochran-Armitage trend z over ordered bins. Negative = falling with x."""
+    ks, ns, xs = np.asarray(ks, float), np.asarray(ns, float), np.asarray(xs, float)
+    N, K = ns.sum(), ks.sum()
+    pbar = K / N
+    xbar = (ns * xs).sum() / N
+    num = (ks * (xs - xbar)).sum()
+    var = pbar * (1 - pbar) * (ns * (xs - xbar) ** 2).sum()
+    return num / np.sqrt(var) if var > 0 else float("nan")
+
+
+def page_n48(o, E):
+    """The ladder without the leak, at N=48.
+
+    Pre-registered in the sbatch header before the run: (a) L*(T) rises with T
+    by at least one rung at rho=0.60; (b) the leak-free L* is larger than the
+    leaked one; (c) not tested here (fixed ff=1024); (d) low confidence, the
+    deep cells' per-T curves are flatter than the shallow cells'.
+    """
+    d, pool = E["bins"], E["pool"]
+    fig = plt.figure(figsize=(16, 9))
+    fig.suptitle("Take the leak away and six layers is not enough at N = 48",
+                 size=BIG - 2, weight="bold")
+    fig.text(0.5, 0.905,
+             "A DIFFERENT SERIES: leak-free (adjacency rows permuted), N = 48, the 240000 x 100ep budget that "
+             "solved N = 24, three cells L = 6 / 4 / 3 at ff = 1024, two densities.",
+             size=SMALL - 2, ha="center", va="top", color="0.3")
+
+    STY = {6: (BLUE, "o", "L=6 (top of the ladder)"), 4: (CAV, "s", "L=4"), 3: (RED, "^", "L=3")}
+    for ax, rho, pos in [(fig.add_axes([0.075, 0.575, 0.40, 0.230]), 0.75, "top"),
+                         (fig.add_axes([0.075, 0.270, 0.40, 0.230]), 0.60, "bot")]:
+        sub = d[d.rho_requested == rho]
+        for L, (col, mk, lab) in STY.items():
+            r = sub[sub.L == L].sort_values("T")
+            ax.plot(r["T"], r.solve_rate, mk + "-", color=col, lw=2.5, ms=8,
+                    label=lab if pos == "top" else None)
+        ax.axhline(GATE, color="k", ls="--", lw=2)
+        ax.set_ylim(-0.05, 1.08)
+        ax.set_xticks(sorted(sub["T"].unique()))
+        ax.set_ylabel("solve rate", size=MED - 4)
+        rr = sub.realized_rho
+        ax.set_title(f"density requested {rho:.2f}, REALIZED {rr.min():.3f}-{rr.max():.3f} in every bin",
+                     size=SMALL - 2)
+        if pos == "top":
+            # next to the line it describes: the band between the gate and L=4
+            # is the only empty region of this panel.
+            ax.text(sorted(sub["T"].unique())[0] + 0.05, 0.80,
+                    "dashed = the 0.90 gate that defines L*", size=SMALL - 2)
+            ax.legend(loc="lower left", fontsize=SMALL - 2)
+        else:
+            ax.set_xlabel("T, the number of DD rounds the instance needs", size=MED - 4)
+
+    s75 = d[(d.rho_requested == 0.75) & (d.L == 6)].sort_values("T")
+    s60 = d[(d.rho_requested == 0.60) & (d.L == 6)].sort_values("T")
+    z = ca_trend((s75.solve_rate * s75.n).round(), s75.n, s75["T"])
+    clears = {L: int(((d.rho_requested == 0.60) & (d.L == L) & (d.solve_rate >= GATE)).sum())
+              for L in (6, 4, 3)}
+    nbin = int((d.rho_requested == 0.60).sum() / 3)
+    r75 = dict(zip(s75["T"], s75.solve_rate))
+    r60 = dict(zip(s60["T"], s60.solve_rate))
+    tlo, thi = int(s60["T"].min()), int(s60["T"].max())
+    d4 = d[(d.rho_requested == 0.60) & (d.L == 4)].solve_rate
+
+    entries = [
+        ("(a) L*(T) RISES with T by a rung", GREEN,
+         f"CONFIRMED at density 0.75, where realized density is identical in all three bins: L = 6 clears the "
+         f"gate at T = 2 ({r75[2]:.3f}) and T = 3 ({r75[3]:.3f}) and misses at T = 4 ({r75[4]:.3f}). So L*(2) = "
+         f"L*(3) = 6 and L*(4) > 6 -- the gate crosses between T = 3 and T = 4. Cochran-Armitage z = {z:.1f}."),
+        ("   ... and UNTESTABLE at density 0.60", CAV,
+         f"The pre-registration named 0.60, and there the anchor is FLOORED: L = 6 clears {clears[6]} of {nbin} "
+         f"bins ({max(r60.values()):.3f} at T = {tlo} down to {r60[thi]:.3f} at T = {thi}), L = 4 and L = 3 clear "
+         f"none. No cell above the gate means no rung to compare -- the failure mode this series was ordered "
+         f"deepest-cell-first to catch."),
+        ("(b) leak-free L* > leaked L*", GREEN,
+         f"CONFIRMED in its N = 48 form, and this is the number to quote: the LEAKED ladder puts L*(48) at 4 "
+         f"(finding 14), the leak-free one needs MORE than 6 -- at three times the data. The leak was worth at "
+         f"least two rungs of depth here."),
+        ("(d) deep cells flatter in T", RED,
+         f"FALSIFIED as stated, confounded as measured: L = 6 falls {r60[tlo] - r60[thi]:.3f} over T = {tlo}-{thi} "
+         f"while L = 4 falls {d4.max() - d4.min():.3f} -- but L = 4 sits at {d4.max():.2f} and L = 3 at 0.00, so the "
+         f"shallow cells cannot fall. (c) was not tested; this ladder is at fixed ff = 1024."),
+    ]
+    fig.text(0.545, 0.862, "THE PRE-REGISTRATIONS, AS RESOLVED", size=MED - 3, weight="bold")
+    for i, (head, col, body) in enumerate(entries):
+        y = 0.820 - 0.152 * i
+        fig.text(0.545, y, head, size=MED - 4, weight="bold", color=col, va="top")
+        fig.text(0.558, y - 0.034, textwrap.fill(body, width=78), size=MED - 5,
+                 va="top", linespacing=1.45)
+
+    fig.text(0.5, 0.185,
+             f"Reading: the leak-free task at N = 48 is NOT solved at six layers -- shared pool "
+             f"{pool.solve_rate[6]:.3f} [{pool.wilson_lo[6]:.3f}, {pool.wilson_hi[6]:.3f}] against "
+             f"{pool.solve_rate[4]:.3f} at L = 4 and {pool.solve_rate[3]:.3f} at L = 3, n = 1500.\n"
+             f"L*(48, leak-free, ff = 1024) lies in (6, 12]: twelve layers solved N = 24 outright. The next series "
+             f"is L = 8 and L = 12 UPWARD, not L = 3 downward.",
+             ha="center", va="top", size=MED - 4, weight="bold", color="0.15", linespacing=1.5)
+    footer(fig, "WHY THIS IS THE HONEST VERSION OF THE DEPTH QUESTION: every L* in this deck and every one in the "
+                "project before today was measured on the leaked encoding, where a model can read part of the "
+                "colouring off the order of the adjacency rows. This is the first rung measured without it. WHAT IT "
+                "IS NOT: one seed per cell, one checkpoint, three rungs, and the density-0.75 reading rests on three "
+                "bins of 674 / 531 / 194 instances. The gate is a threshold on a continuous curve, so L* moves if "
+                "the gate does.", width=156)
+    o.savefig(fig)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     set_style()
     D = load()
+    E = load_n48()
     # pick="deep" and not "median": this deck's subject IS reasoning depth, and
     # a median instance at N=96 would illustrate a shallower task than the bins
     # the verdict is read from. shuffle_adj=False to match the runs.
@@ -568,7 +690,7 @@ def main():
                           shuffle_adj=False, pick="deep")
     pdf_path = os.path.join(OUT, "slides.pdf")
     with PdfPages(pdf_path) as pdf:
-        o = PdfAndPng(pdf, OUT, total=8)
+        o = PdfAndPng(pdf, OUT, total=8 + bool(E))
         page_title(o, D)
         page_tokenization(o, ex)
         # The note slot: this page is shared with the verdict deck, where the
@@ -584,6 +706,8 @@ def main():
         page_mechanism(o, D)
         page_nll(o, D)
         page_verdict(o, D)
+        if E:
+            page_n48(o, E)
     print(f"wrote {pdf_path} ({os.path.getsize(pdf_path) / 1e6:.2f} MB, {o.n} pages)")
 
 
