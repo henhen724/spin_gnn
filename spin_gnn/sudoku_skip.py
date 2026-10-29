@@ -97,17 +97,26 @@ def find_unforceable_deductions(adj, colors, hints, trace, vocab, rng, max_per_i
     for rank, (node, c) in enumerate(trace["rounds"][0]):
         node, c = int(node), int(c)
         nbrs = [int(u) for u in adj[node]]
-        known = {u: hints[u] for u in nbrs if u in hints}   # round 0 => all hints
+        # Forcing must be computed from EVERYTHING THE PREFIX REVEALS, not just
+        # the hints. DD determines round 0 from hints alone, but the model reads
+        # a prefix that also shows the round-0 deductions emitted before v, and a
+        # neighbour among those can hold the colour we are about to free -- in
+        # which case breaking the hint leaves v forced to the reader. 18 of 350
+        # cases hit exactly that on the first run of this job.
+        avail = _revealed_before(trace, hints, node)
+        known = {u: avail[u] for u in nbrs if u in avail}
         covered = sorted(set(known.values()))
         if len(covered) != q - 1 or c in covered:
             continue
         counts = {col: sum(1 for x in known.values() if x == col) for col in covered}
         singles = [col for col, k in counts.items() if k == 1]
-        if not singles:
+        # the unique holder has to be a HINT, so there is a hint colour token to
+        # edit; a unique holder that is itself a deduction is a different test
+        a = next((col for col in singles
+                  if next(u for u, cl in known.items() if cl == col) in hints), None)
+        if a is None:
             continue
-        a = singles[0]
         w = next(u for u, col in known.items() if col == a)
-        avail = _revealed_before(trace, hints, node)
         # b: another covered colour, so recolouring w to b leaves a uncovered
         # and v with two candidates. It must keep the REVEALED colouring proper,
         # i.e. no neighbour of w already shows b.
@@ -116,6 +125,11 @@ def find_unforceable_deductions(adj, colors, hints, trace, vocab, rng, max_per_i
         if not cands:
             continue
         b = int(cands[0])
+        # belt and braces: the edit must actually un-force v
+        broken = dict(avail)
+        broken[w] = b
+        if _is_forced(adj, broken, node, q):
+            continue
         # placebo: a hint that is NOT a neighbour of v and not v itself, whose
         # colour can be changed while keeping the revealed colouring proper.
         nbr_set = set(nbrs) | {node}
@@ -207,6 +221,10 @@ def run_skip_behavior(model, vocab, device, cases):
             "v_still_forced_broken": _is_forced(adj, avail_broken, case["node"], vocab.n_colors),
             "pred_node": pred_node,
             "pred_is_node_token": pred_node >= 0,
+            # when it is NOT a node token this is usually BEGIN_ROUND, i.e. "the
+            # round is over" -- which is DD's own answer when nothing else is
+            # determined, so the name has to be recorded, not just the flag
+            "pred_token": vocab.name(pred_b),
             "pred_is_forced": (pred_node >= 0
                                and _is_forced(adj, avail_broken, pred_node, vocab.n_colors)),
             "pred_is_unknown": pred_node >= 0 and pred_node not in avail_broken,
@@ -269,6 +287,17 @@ def main():
     print(f"  placebo_emits_v      {plac:.3f}   (specificity control, should match clean)")
     print(f"  of the {len(skipped)} skips: names a FORCED node {forced_of_skipped:.3f}, "
           f"an unknown node {unknown_of_skipped:.3f}")
+    tok_counts = {}
+    for r in skipped:
+        if not r["pred_is_node_token"]:
+            tok_counts[r["pred_token"]] = tok_counts.get(r["pred_token"], 0) + 1
+    node_skips = [r for r in skipped if r["pred_is_node_token"]]
+    if node_skips:
+        print(f"    restricted to the {len(node_skips)} that name a node at all: forced "
+              f"{sum(r['pred_is_forced'] for r in node_skips) / len(node_skips):.3f}")
+    if tok_counts:
+        print(f"    non-node predictions: {tok_counts}  "
+              f"(BEGIN_ROUND = 'round over', DD's own answer when nothing else is forced)")
     print(f"  mean logit drop on v   broken {np.mean([r['corrupt_v_logit_drop'] for r in rows]):+.3f}"
           f"   placebo {np.mean([r['placebo_v_logit_drop'] for r in rows]):+.3f}")
 
@@ -293,6 +322,11 @@ def main():
                    "n_skipped": len(skipped),
                    "skipped_pred_is_forced": forced_of_skipped,
                    "skipped_pred_is_unknown": unknown_of_skipped,
+                   "skipped_names_a_node": (sum(r["pred_is_node_token"] for r in skipped) / len(skipped)
+                                            if skipped else float("nan")),
+                   "skipped_forced_given_node": (sum(r["pred_is_forced"] for r in node_skips) / len(node_skips)
+                                                 if node_skips else float("nan")),
+                   "skipped_non_node_tokens": tok_counts,
                    "by_round0_rank": {str(k): {"n": len(g),
                                                "clean": sum(x["clean_emits_v"] for x in g) / len(g),
                                                "broken": sum(x["corrupt_emits_v"] for x in g) / len(g),
