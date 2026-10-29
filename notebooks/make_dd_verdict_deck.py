@@ -21,6 +21,7 @@ computed from the CSVs the two jobs wrote.
 """
 import json
 import os
+import textwrap
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,6 +36,10 @@ SCRATCH = os.environ["SCRATCH"]
 CIRC = f"{SCRATCH}/spin_gnn/sudoku_circuits_leakfree_2026-10-28"
 CHAIN = f"{SCRATCH}/spin_gnn/sudoku_chain_2026-10-28"
 SKIP = f"{SCRATCH}/spin_gnn/sudoku_skip_2026-10-28"
+# Job 50098957. The -29 (no b) directory is attempt 1's output, which is VOID:
+# it hooked encoder.layers[layer] while the dictionaries are indexed one higher,
+# so every condition was spliced one block too late. Do not point this here.
+ABL = f"{SCRATCH}/spin_gnn/sudoku_sae_ablate_2026-10-29b"
 # SAE dictionaries. The 1.0000 arm is job 50075499; the other two were trained
 # by 49744985 with byte-identical hyper-parameters, so the three are one table.
 SAE = {"leak-free 1.0000": f"{SCRATCH}/spin_gnn/sudoku_sae_solved_2026-10-28/leakfree1000_l0_64",
@@ -124,6 +129,133 @@ def load_sae():
         k["n_nbr"] = counts.map(lambda c: c.get("nbr_of_next", 0))
         out[label] = k
     return out
+
+
+def load_ablation():
+    """SAE feature-ablation summaries, or {} if the job has not landed yet.
+
+    `interp` is finding 19/21's own interpretability gate, which is the
+    headline; `null` is the same test widened to every feature that beats its
+    shuffled-label null, which buys paired cases at the cost of precision.
+    `node_ran` records whether the pre_node arm found anything to ablate at
+    all: the pre-registered prediction is that it does not, and a missing
+    summary file is that prediction confirmed, not a failure.
+    """
+    out = {}
+    for key, sub in [("interp", "solved_pre_color_interp"), ("null", "solved_pre_color_null")]:
+        p = f"{ABL}/{sub}/ablate_summary.csv"
+        if os.path.exists(p):
+            out[key] = pd.read_csv(p).sort_values("layer").reset_index(drop=True)
+    nd = f"{ABL}/solved_pre_node_null"
+    if os.path.isdir(nd):
+        out["node_ran"] = os.path.exists(f"{nd}/ablate_summary.csv")
+    return out
+
+
+def page_ablation(out, A):
+    """Correlational -> causal: remove the features and see if the rule breaks.
+
+    Everything is scored against `recon` (the SAE's own reconstruction spliced
+    back in, nothing zeroed), so reconstruction error is netted out of every
+    bar instead of being charged to the ablation. The headline is the
+    bind-vs-nonbind pair, which is matched on family, count, position, layer
+    and cases, and differs only in WHICH neighbour the removed features refer
+    to -- so no reconstruction-error or feature-count story can open a gap.
+    """
+    k = A["interp"]
+    d = k.zero_jn_nonbind_acc - k.zero_jn_bind_acc
+    best = k.loc[d.idxmax()]
+    gap = float(d.max())
+    used = bool(best.bind_vs_nonbind_p < 0.05 and gap > 0)
+    head = ("Removing the features that encode the FORCING neighbour breaks the deduction;\n"
+            f"removing the same number of its siblings does not -- L{int(best.layer)}, "
+            f"{gap:+.3f}, p = {best.bind_vs_nonbind_p:.3g}" if used else
+            "Removing those features does not change the answer: the forcing set is\n"
+            f"encoded, and this test cannot show it being USED (best gap {gap:+.3f}, "
+            f"p = {best.bind_vs_nonbind_p:.3g})")
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 9))
+    fig.suptitle(head, size=BIG - 6, weight="bold", linespacing=1.4)
+    x = np.arange(len(k))
+    w = 0.34
+    ax1.bar(x - w / 2, k.zero_jn_bind_acc, w, color=RED,
+            label="zero the BINDING neighbour's features")
+    ax1.bar(x + w / 2, k.zero_jn_nonbind_acc, w, color=GREY,
+            label="zero ANOTHER known neighbour's, same count")
+    for i, r in enumerate(k.itertuples()):
+        ax1.plot([i - 0.48, i + 0.48], [r.recon_acc] * 2, color="k", lw=3, ls="--")
+    ax1.plot([], [], color="k", lw=3, ls="--", label="recon: SAE in, NOTHING zeroed (baseline)")
+    # p and n live under the axis, not over the bars: these accuracies sit near
+    # 1.0 and an annotation above each bar collides with the legend.
+    ax1.set_xticks(x)
+    ax1.set_xticklabels([f"L{int(r.layer)}\np = {r.bind_vs_nonbind_p:.3g}\n{int(r.n_paired)} paired cases"
+                         for r in k.itertuples()], size=SMALL)
+    ax1.set_ylabel("accuracy on the FORCED colour")
+    ax1.set_title("THE PAIR THAT CARRIES THE CLAIM\nmatched on everything but WHICH neighbour", size=MED)
+    # headroom for the legend, which has to sit inside: these accuracies run to
+    # ~0.97, so there is no empty corner. Ticks stop at 1.0 so the slack above
+    # the bars cannot be misread as accuracy above 1.
+    ax1.set_ylim(0, 1.7)
+    ax1.set_yticks(np.arange(0, 1.01, 0.2))
+    ax1.legend(loc="upper left", fontsize=SMALL - 1)
+
+    for j, (c, lab, col) in enumerate([("clean_acc", "clean: no SAE in the path", BLUE),
+                                       ("recon_acc", "recon: SAE in, nothing zeroed", "k"),
+                                       ("zero_jn_all_acc", "zero ALL forcing-set features", RED),
+                                       ("zero_random_acc", "zero as many, chosen at random", GREY)]):
+        ax2.bar(x + (j - 1.5) * 0.2, k[c], 0.2, color=col, label=lab)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([f"L{int(r.layer)}\n{int(r.n_jn_features)} features removed"
+                         for r in k.itertuples()], size=SMALL)
+    ax2.set_title("THE CONTROLS\nis any of this just reconstruction damage?", size=MED)
+    ax2.set_ylim(0, 1.7)
+    ax2.set_yticks(np.arange(0, 1.01, 0.2))
+    ax2.legend(loc="upper left", fontsize=SMALL - 1, ncol=2)
+
+    rep = ""
+    if "null" in A:
+        n = A["null"]
+        nb = n.loc[(n.zero_jn_nonbind_acc - n.zero_jn_bind_acc).idxmax()]
+        rep = (f" The powered replication -- the same test widened to every feature that beats its null, "
+               f"{int(nb.n_paired)} paired cases at L{int(nb.layer)} -- gives "
+               f"{nb.zero_jn_nonbind_acc - nb.zero_jn_bind_acc:+.3f}, p = {nb.bind_vs_nonbind_p:.3g}.")
+    nodeline = ""
+    if A.get("node_ran") is False:
+        nodeline = (" At the token that picks the NODE there was nothing to ablate at any layer, as "
+                    "pre-registered: the forcing set is encoded before the COLOUR only.")
+    design = (
+        "THE DESIGN: every bar is read against `recon` -- the SAE's own reconstruction spliced back in with nothing zeroed -- so "
+        "reconstruction error is netted out rather than charged to the ablation. The two bars on the left remove the same NUMBER of "
+        "features, from the same FAMILY, POSITION and LAYER, on the same CASES; they differ only in which neighbour the features "
+        "refer to, the one whose colour does the forcing or another known neighbour whose colour does not. No reconstruction-error "
+        "story and no feature-count story can open a gap between them; only the model reading that neighbour's colour to eliminate "
+        "a candidate can." + rep + nodeline)
+    verdict = (
+        "READ IT AS: the elimination is not merely encoded here, it is computed here -- the one SAE result on this deck that is "
+        "causal rather than correlational."
+        if used else
+        "READ IT HONESTLY: this does NOT show the features being used. They are present and decodable (previous page), but removing "
+        "them costs no more than removing a count-matched random set. Two readings survive and this run cannot separate them: the "
+        "rule may be spread over more features than the gate selects -- the head-ablation page found exactly that redundancy -- or "
+        "these features may be a readout of a decision made elsewhere. Either way the verdict on the next page rests on the "
+        "interventions, which do not depend on this page.")
+    # Wrapped here rather than hard-wrapped in the literal: `rep` and `nodeline`
+    # are spliced into the middle of the paragraph and only exist on some runs,
+    # so any \n placed by hand lands in the wrong spot once they appear. The
+    # null branch is four lines longer than the other, which is why the plots
+    # give up height here rather than this text giving up words.
+    body = textwrap.fill(design, width=180) + "\n\n" + textwrap.fill(verdict, width=180)
+    fig.tight_layout(rect=[0, 0.40, 1, 0.97])
+    fig.text(0.5, 0.385, body, ha="center", va="top", size=MED - 6, linespacing=1.4)
+    # 4 footer lines, no more: the body above it reaches y ~ 0.13 and footer()
+    # grows upward from 0.012 at ~0.025 a line.
+    footer(fig, "Dictionaries from the 1.0000 arm, 4096 features per layer, one seed; "
+                f"{int(best.n_cases)} flippable round-0 deductions from the held-out shared pool. "
+                "A selective condition needs the case to own features for BOTH a binding and a non-binding neighbour, which is why "
+                "the paired n is below the case count. Exact McNemar, two-sided. The first run of this job hooked the wrong block "
+                "(the dictionary named layer L is trained on block L-1's output); its numbers are discarded, not shown here.",
+           width=150)
+    out.savefig(fig)
 
 
 def page_title(out, D, ex):
@@ -882,11 +1014,12 @@ def main():
     if "r0" not in D["leak-free 1.0000"]:
         raise SystemExit("arm A round-0 results missing -- job 50075339 output not found")
     S = load_sae()
+    A = load_ablation()
     ex = example_instance(rho=0.60)
     pdf_path = os.path.join(OUT, "slides.pdf")
     have_skip = any("skip" in D[l] for l, _, _, _ in ARMS)
     with PdfPages(pdf_path) as pdf:
-        o = PdfAndPng(pdf, OUT, total=11 + 2 * have_skip + bool(S))
+        o = PdfAndPng(pdf, OUT, total=11 + 2 * have_skip + bool(S) + ("interp" in A))
         page_title(o, D, ex)
         page_task(o, ex)
         page_model(o)
@@ -904,6 +1037,8 @@ def main():
         page_heads(o, D)
         if S:
             page_sae(o, S)
+        if "interp" in A:
+            page_ablation(o, A)
         page_verdict(o, D)
     print(f"wrote {pdf_path} ({os.path.getsize(pdf_path) / 1e6:.2f} MB, {o.n} pages)")
 
