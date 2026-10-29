@@ -93,6 +93,32 @@
 # there is no T-dependence left to explain. Do not submit this series before
 # reading that result.
 #
+# THE N=48 SUBMISSION (10-29 01:50): NNODES=48 NTRAIN=240000 EPOCHS=100
+# LAYERS="6 4 3". Three things fix those values and none of them are guesses:
+#
+#  * The budget is finding 23's. 240000 x 100ep is the cheap cell that tied
+#    240000 x 300ep instance-for-instance on all 1500 pool instances, so the
+#    binding constraint was instance COVERAGE, not gradient steps. EPOCHS=300
+#    would spend 3x the GPU for a measured tie.
+#  * N=24 is OUT, which is why this runs at 48 at all. Finding 23 put every
+#    rho=0.60 depth bin at the leak-free N=24 task at exactly 1.0000, so L*(T)
+#    there is 3 at every T by saturation and the pool cannot separate cells.
+#    Finding 22 says the same thing from the other side: the T-rise is visible
+#    only at a cell sitting ON the 0.90 gate.
+#  * THE LADDER IS ORDERED 6, 4, 3 FOR A REASON. At N=48 the leak-free task has
+#    never been measured, so the first question is not where the knee is but
+#    whether this budget clears the gate anywhere; L=6 is the anchor that
+#    answers it (leaked L*(48) = 4 at ff=1024, and leak-free can only be
+#    higher). 4 and 3 then bracket the knee from above and below. If L=6 misses
+#    the gate in every bin, L* is UNDEFINED rather than large and the series
+#    says nothing about T -- finding 15's error at N=96 -- so READ L=6 FIRST
+#    and do not write up 4 and 3 on their own.
+#
+# A timeout therefore costs the L=3 cell, which is the one rung that only
+# matters if 4 and 6 both clear. The three checkpoints land on disk as they
+# finish, so a timeout inside the evals is recoverable by re-running the two
+# eval commands below on the saved cells, not by retraining.
+#
 # COST, at NTRAIN=240000 / EPOCHS=300 and N=24. 49659502 trained L=12 at
 # 80000x300 in ~4.5 h, so at 3x the data a cell is roughly 1.1 h per layer:
 # L=2 ~2.3 h, L=3 ~3.4 h, L=4 ~4.5 h, L=6 ~6.8 h, L=8 ~9 h. The full ladder is
