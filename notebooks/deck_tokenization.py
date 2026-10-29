@@ -95,7 +95,7 @@ def example_instance(n_nodes=24, degree=5, n_colors=4, rho=0.3, rho_max=0.95,
 
 def page_tokenization(out, ex):
     """The vocabulary, the grammar, and the real stream segmented by section."""
-    fig = plt.figure(figsize=(13.33, 7.5))
+    fig = plt.figure(figsize=(16, 9))
     fig.text(0.06, 0.93, "What the model actually sees", size=BIG, weight="bold")
     fig.text(0.06, 0.875,
              f"Every token is one categorical id into a {ex.vocab.size}-symbol vocabulary "
@@ -130,7 +130,7 @@ def page_tokenization(out, ex):
         ax.text(0.0, 0.80 - 0.17 * i, g, size=SMALL - 1, va="top", **MONO)
     ax.text(0.0, 0.08,
             "The graph section is a neighbour table, not an image: node, then its\n"
-            "degree neighbours. THE ORDER WITHIN A ROW IS THE LEAK of finding 16.",
+            "degree neighbours. THE ORDER WITHIN A ROW IS THE LEAK.",
             size=SMALL - 2, va="top", color="0.4", style="italic")
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
 
@@ -162,7 +162,7 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
     `title` and `note` exist for decks that show this page TWICE, once per event
     order, where the subject of the run is the difference between the two pages:
     two identically titled traces would be unreadable as a comparison."""
-    fig = plt.figure(figsize=(13.33, 7.5))
+    fig = plt.figure(figsize=(16, 9))
     fig.text(0.06, 0.93, title, size=BIG, weight="bold")
     hints = sorted(ex.trace["hints"].items())
     hint_str = " ".join(f"N{n}={c}" for n, c in hints[:8]) + (" ..." if len(hints) > 8 else "")

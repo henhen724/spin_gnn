@@ -41,11 +41,15 @@ class PdfAndPng:
     needs them anyway.
     """
 
-    def __init__(self, pdf, png_dir):
+    def __init__(self, pdf, png_dir, total=None):
         self.pdf, self.png_dir, self.n = pdf, png_dir, 0
+        self.total = total
 
     def savefig(self, fig):
         self.n += 1
+        stamp = f"{self.n} / {self.total}" if self.total else str(self.n)
+        fig.text(0.985, 0.012, stamp, ha="right", va="bottom", size=SMALL - 1,
+                 color="0.45")
         self.pdf.savefig(fig)
         fig.savefig(os.path.join(self.png_dir, f"page{self.n}.png"), dpi=110)
         plt.close(fig)

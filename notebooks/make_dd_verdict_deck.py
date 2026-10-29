@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Patch
 
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style
@@ -39,11 +40,29 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sudoku_dd_verdic
 BLUE, RED, GREEN, GREY = "#1f77b4", "#d62728", "#2ca02c", "0.45"
 CHANCE = 0.25
 SITES = ["edited_hint", "graph_row_u", "graph_row_w", "predict_pos"]
+# u is a known neighbour of v that is NOT the binding one; w IS the binding
+# neighbour, the hint the intervention edits. Both graph rows are controls.
+SITE_LABELS = {"edited_hint": "edited\nhint w",
+               "graph_row_u": "row of u\n(control)",
+               "graph_row_w": "row of w\n(control)",
+               "predict_pos": "predicts\nv's colour"}
 # (label, circuits dir, chain dir, colour). Arm A is the model that actually
 # solved the task; C is the leaked twin finding 2 was measured on.
 ARMS = [("leak-free 1.0000", "A_leakfree_1000", "A_leakfree_1000", BLUE),
         ("leak-free 0.8540", "B_leakfree_0854", "B_leakfree_0854", GREEN),
         ("leaked 0.9960", "C_leaked_0996", "C_leaked_0996", RED)]
+
+
+def wilson(k, n, z=1.96):
+    """95% Wilson interval. Normal intervals are useless here -- several bins
+    sit at exactly 0 or 1, where the normal interval has zero width."""
+    if n == 0:
+        return 0.0, 1.0
+    p = k / n
+    d = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    h = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return max(0.0, c - h), min(1.0, c + h)
 
 
 def load():
@@ -105,29 +124,104 @@ def page_title(out, D, ex):
         return f"{s['corrupt_flipped']:.3f}" if s else "(running)"
 
     lines = [
-        "DD does two things at each step. A GUARD: is this node's colour forced yet?",
-        "A RULE: eliminate the colours its known neighbours already use. One-token",
-        "counterfactuals test each separately -- edit the forcing neighbour's colour,",
-        "and either DD's answer changes (rule) or the node stops being forced (guard).",
+        "DD = Direct Deduction, the classical 'naked single' solver the model is trained to",
+        "imitate. It does two things at each step. A RULE: eliminate the colours a node's known",
+        "neighbours already use. A GUARD: emit that node only when one colour is left. One-token",
+        "counterfactuals test the two separately -- edit the forcing neighbour so that DD's answer",
+        "changes (rule), or so that the node stops being determined at all (guard).",
         "",
-        "                                  RULE              RULE           GUARD",
-        "                             on given hints   on its OWN facts   withholds",
+        "    model (free-generation        RULE              RULE           GUARD",
+        "       solve_rate)           on given hints   on its OWN facts   withholds",
         "",
         f"    leak-free 1.0000             {r0:.3f}            {_c('leak-free 1.0000')}            {_g('leak-free 1.0000')}",
         f"    leak-free 0.8540             {D['leak-free 0.8540']['r0']['flip']:.3f}            "
         f"{_c('leak-free 0.8540')}            {_g('leak-free 0.8540')}",
         f"    leaked 0.9960                {leaked:.3f}            {_c('leaked 0.9960')}            {_g('leaked 0.9960')}",
         "",
-        "Chance on the rule is 0.25. Both leak-free models apply the rule and chain it;",
-        "only the one that solves the task guards reliably (paired, p = 1e-13), so its",
-        "last 0.146 of solve_rate is the GUARD. The leaked model is the mirror image.",
+        "Chance on the rule is 0.25. Both leak-free models apply the rule and chain it; only the",
+        "one that solves the task guards on every case, and its 0.854 twin fails 0.176 of them",
+        "(paired, p = 1e-13) -- the same order as that twin's 0.146 solve_rate deficit. The leaked",
+        "model is the mirror image: it guards fine, and never learned the rule at all.",
     ]
-    fig.text(0.5, 0.595, "\n".join(lines), ha="center", va="top", size=MED - 3,
+    fig.text(0.5, 0.620, "\n".join(lines), ha="center", va="top", size=MED - 4,
              family="monospace", linespacing=1.45)
     missing = [k for k, v in D.items() if "chain" not in v or "skip" not in v]
-    footer(fig, "Jobs 50075339 (round 0), 50077245 (chained) and 50082120 (withholding), leak-free "
-                "N=24, d=256 L=12 ff=1024, shuffle_adj=True. Chance = 1/n_colors = 0.25."
+    footer(fig, "Prepared 2026-10-29. One task configuration (N=24 nodes, degree 5, q=4 colours) and "
+                "one checkpoint per model -- no seed replicates, so every leak-free vs leaked contrast "
+                "is also two separate training runs. Jobs 50075339 (round 0), 50077245 (chained), "
+                "50082120 (withholding)."
                 + (f" Arms still running: {', '.join(missing)}." if missing else ""))
+    out.savefig(fig)
+
+
+def page_task(out, ex):
+    """The task, the algorithm, the model, and what 'leaked' means.
+
+    Everything a reader needs before any later page makes sense. The leak
+    numbers are finding 16's, not this job's, and are labelled as such.
+    """
+    c = ex.cfg
+    fig = plt.figure(figsize=(16, 9))
+    fig.suptitle("The task, the algorithm, and the two kinds of model", size=BIG,
+                 weight="bold")
+    left = [
+        "THE TASK",
+        "",
+        f"  Colour a random regular graph: N = {c.n_nodes} nodes, every node of",
+        f"  degree {c.degree}, using q = {c.n_colors} colours so that no edge joins two",
+        "  nodes of the same colour. Some nodes are given as HINTS",
+        f"  ({len(ex.hints)} of {c.n_nodes} here); the rest must be deduced.",
+        "",
+        "  Built from a planted colouring by removing hints one at a",
+        "  time and keeping a removal only if DD can still recover",
+        "  everything -- so every instance is solvable by DD alone,",
+        "  and instances differ only in how deep the deduction goes.",
+        "",
+        "DD, THE ALGORITHM THE MODEL IS TRAINED TO IMITATE",
+        "",
+        "  Direct Deduction, the 'naked single' rule: a node becomes",
+        f"  determined one round after its known neighbours show all",
+        f"  q-1 = {c.n_colors - 1} colours other than its own. Sweep the nodes, emit",
+        "  the determined ones, repeat. The number of rounds an",
+        "  instance needs is its reasoning depth T -- 1 to 6 at this",
+        f"  density; the example on the next two pages needs {ex.n_rounds}.",
+    ]
+    right = [
+        "THE MODEL",
+        "",
+        "  A 12-layer decoder-only transformer (d_model 256, 4 heads",
+        "  per layer, MLP 1024), trained from scratch with next-token",
+        "  cross-entropy on DD's own traces: graph, hints, then round",
+        "  by round the nodes DD determines and the colours it gives",
+        "  them. Scored by FREE GENERATION -- solve_rate is the",
+        "  fraction of 1500 held-out instances it colours completely",
+        "  and correctly, with no teacher forcing.",
+        "",
+        "THE LEAK, AND WHY THERE ARE TWO KINDS OF MODEL",
+        "",
+        "  The generator listed each node's neighbours sorted by the",
+        "  neighbour's true colour, so a neighbour's POSITION in the",
+        "  adjacency row encoded its colour and 61-67% of nodes could",
+        "  be read off with no deduction at all. Permuting the rows",
+        "  dropped the old record model from 0.9975 to 0.1450.",
+        "",
+        "   'leaked'     trained on the sorted rows. Scores 0.9960",
+        "                and needs no reasoning to do it.",
+        "   'leak-free'  trained with the rows permuted. Two of them,",
+        "                1.0000 and 0.8540, differing only by budget.",
+    ]
+    fig.text(0.05, 0.885, "\n".join(left), ha="left", va="top", size=MED - 3,
+             family="monospace", linespacing=1.4)
+    fig.text(0.52, 0.885, "\n".join(right), ha="left", va="top", size=MED - 3,
+             family="monospace", linespacing=1.4)
+    fig.text(0.5, 0.20,
+             "THE QUESTION: the leak-free 1.0000 model solves a task that cannot be done without deduction. Is it "
+             "deducing, or doing\nsomething else that works here? Every number from here on is CAUSAL: edit one input "
+             "token, ask whether the output\nfollows DD's answer to the EDITED problem.",
+             ha="center", va="top", size=MED - 2, weight="bold", linespacing=1.4)
+    footer(fig, "Why not probes: an earlier round read the model's own 'which node is next' features with a trained "
+                "probe and got 0.545 of nodes right, while a hand rule that does no deduction at all -- 'the unknown "
+                "node with the fewest unknown neighbours' -- got 0.632 on the same cases.")
     out.savefig(fig)
 
 
@@ -138,44 +232,84 @@ def page_design(out, ex):
                  size=BIG, weight="bold")
     body = [
         "DD forces node v because its known neighbours already use q-1 = 3 of the 4 colours.",
-        "Exactly one of them, w, holds colour a. So v must take the one colour left: c.",
+        "Exactly one of them, the neighbour w, holds colour a. So v must take the one colour",
+        "left over: c. Recolour w to c, and now a is the colour nobody holds, so DD says a.",
         "",
-        "   clean     ... BEGIN_ROUND  v  ->  [c]        w is coloured a, so c is the only option",
-        "   corrupt   ... BEGIN_ROUND  v  ->  [a]        recolour w to c; now a is free and DD says a",
+        "   clean     ... BEGIN_ROUND  v  ->  [c]        w holds a, so c is v's only option",
+        "   corrupt   ... BEGIN_ROUND  v  ->  [a]        w recoloured to c, so a is now free",
         "",
-        "The ONLY difference between the two prompts is w's colour token.",
-        "build_pair asserts (clean != corrupt).sum() == 1, so this is enforced, not assumed.",
+        "The ONLY difference between the two prompts is w's one colour token: build_pair",
+        "asserts (clean != corrupt).sum() == 1, so that is enforced, not assumed. Scored as",
+        "'moved to DD's new answer' -- did the prediction at v become a? Not 'is it still",
+        "accurate': the correct answer CHANGES, so a memorised output scores zero. Because the",
+        "model must pick one of q = 4 colours, chance on this test is 0.25.",
         "",
-        "ROUND 0  (job 50075339): w is a HINT, handed to the model in the prompt.",
-        "         Tests whether it applies the elimination rule to GIVEN facts.",
+        "Two versions, differing only in WHERE the edited token sits:",
         "",
-        "CHAINED  (job 50077245): w was DEDUCED by the model in an earlier round, so the",
-        "         edited token sits in the REASONING section, not the hints.",
-        "         Tests whether it eliminates against facts it produced itself = propagation.",
+        "   ROUND 0    w is a HINT, handed to the model in the prompt. Tests whether the",
+        "              model applies the elimination rule to facts it was GIVEN.",
         "",
-        "Scored as `corrupt_flipped`: did the prediction at v move to DD's NEW answer a?",
-        "Not 'is it still accurate' -- the right answer changes, so memorised output fails.",
-        "",
-        "WITHHOLD  (job 50082120): the converse. Recolour w to a colour ANOTHER neighbour",
-        "         already holds, so a is freed, only q-2 colours are used and v has TWO",
-        "         candidates left -- DD does not emit v at all. Read one token to the left,",
-        "         where the NODE identity is predicted. DD is a rule plus a guard.",
+        "   CHAINED    w was DEDUCED by the model itself in an earlier round, so the edited",
+        "              token sits in the REASONING section. Tests elimination against a fact",
+        "              the model produced -- propagation, not one rule application.",
     ]
-    fig.text(0.06, 0.80, "\n".join(body), ha="left", va="top", size=MED - 1,
-             family="monospace", linespacing=1.5)
-    footer(fig, "The chained arm's one weak direction: editing an emitted deduction makes the prefix "
-                "inconsistent, so a model that DETECTS the edit and keeps its own answer scores as "
-                "'does not chain'. reverts_to_original separates those cases; see the table.")
+    fig.text(0.06, 0.825, "\n".join(body), ha="left", va="top", size=MED - 3,
+             family="monospace", linespacing=1.4)
+    fig.text(0.06, 0.165,
+             "One weak direction, stated up front: editing an emitted deduction makes the prefix\n"
+             "inconsistent, so a model that DETECTS the edit and keeps its own answer scores as\n"
+             "'does not chain'. Those cases are counted separately, in the table's next column.",
+             ha="left", va="top", size=MED - 3, color=RED, linespacing=1.5)
+    out.savefig(fig)
+
+
+def page_guard_design(out):
+    """The converse intervention: break the forcing instead of redirecting it."""
+    fig = plt.figure(figsize=(16, 9))
+    fig.suptitle("The converse intervention: break the forcing, and v should vanish",
+                 size=BIG, weight="bold")
+    body = [
+        "Both tests on the previous page SELECT a node that DD forces and then REDIRECT the",
+        "forcing. A model that simply wrote a colour for whichever unknown node came next in",
+        "index order would pass them both. So break the forcing instead of redirecting it:",
+        "",
+        "   recolour w to a colour that ANOTHER known neighbour of v already holds.",
+        "",
+        "Now the freed colour a is held by nobody, v's known neighbours cover only q-2 = 2",
+        "colours, v has TWO candidates, and DD does not emit v in this round at all.",
+        "",
+        "The measurement moves ONE TOKEN TO THE LEFT: from the logits that predict v's",
+        "COLOUR to the logits that predict WHICH NODE comes next. Does the model stop",
+        "naming v?",
+        "",
+        "   clean      ... BEGIN_ROUND  [v]  ->  c       DD emits v, and so should the model",
+        "   broken     ... BEGIN_ROUND  [ ? ]            v is no longer determined",
+        "",
+        "PLACEBO, run on every single case: the same kind of one-token edit, but on a hint",
+        "that is NOT a neighbour of v. v stays forced and DD's round is unchanged, so the",
+        "model should still name v. That is the ceiling the broken rate is read against --",
+        "without it, a low rate would only show that edits perturb the node stream.",
+    ]
+    fig.text(0.06, 0.825, "\n".join(body), ha="left", va="top", size=MED - 3,
+             family="monospace", linespacing=1.4)
+    fig.text(0.06, 0.165,
+             "Pre-registered spoiler case: if the placebo collapses too, the test says nothing. It does\n"
+             "not collapse, but it does not reach 1.000 either (0.90-0.96 across models), so a few points\n"
+             "of every rate below are edit perturbation -- which is why all three models are read against it.",
+             ha="left", va="top", size=MED - 3, color=RED, linespacing=1.5)
     out.savefig(fig)
 
 
 def page_table(out, D):
     fig = plt.figure(figsize=(16, 9))
     fig.suptitle("Every causal measurement", size=BIG, weight="bold")
-    ax = fig.add_axes([0.03, 0.15, 0.94, 0.70]); ax.axis("off")
-    cols = ["arm", "test", "n", "clean", "moved to DD's\nnew answer", "kept its\nold answer",
-            "logit gap, or\nplacebo rate", "verdict"]
-    widths = [0.17, 0.15, 0.06, 0.09, 0.15, 0.11, 0.15, 0.12]
+    # centre of this box sets where the table sits: scale() fixes the row
+    # height, so only the centre moves it, and the bottom rows need to clear
+    # the explanatory line below
+    ax = fig.add_axes([0.03, 0.26, 0.94, 0.60]); ax.axis("off")
+    cols = ["model", "test", "n", "clean", "moved to DD's\nnew answer", "kept its\nold answer",
+            "logit gap (rule) or\nplacebo moved (guard)", "verdict"]
+    widths = [0.17, 0.15, 0.06, 0.09, 0.15, 0.11, 0.17, 0.12]
     rows = []
     for label, _, _, _ in ARMS:
         rec = D[label]
@@ -195,24 +329,30 @@ def page_table(out, D):
             # the "flipped" column stays "moved off DD's old answer" throughout
             rows.append([label, "withhold", s["n_cases"], f"{s['clean_emits_v']:.3f}",
                          f"{1 - s['corrupt_emits_v']:.3f}", f"{s['corrupt_emits_v']:.3f}",
-                         f"placebo {s['placebo_emits_v']:.3f}",
+                         f"placebo {1 - s['placebo_emits_v']:.3f}",
                          "guards" if s["corrupt_emits_v"] <= 0.20 else "names it anyway"])
     t = ax.table(cellText=rows, colLabels=cols, colWidths=widths, loc="center",
                  cellLoc="center")
     t.auto_set_font_size(False); t.set_fontsize(MED - 3); t.scale(1, 3.3)
     for j in range(len(cols)):
         t[0, j].set_facecolor("#dddddd"); t[0, j].set_text_props(weight="bold")
+    arm_colour = {label: colour for label, _, _, colour in ARMS}
     for i, r in enumerate(rows, start=1):
-        colour = BLUE if r[0].startswith("leak-free") else RED
-        t[i, 0].set_text_props(color=colour, weight="bold")
+        # the same colour each model carries in every plot, or the legend on
+        # one page silently contradicts the table on another
+        t[i, 0].set_text_props(color=arm_colour[r[0]], weight="bold")
         t[i, 4].set_text_props(weight="bold",
                                color=GREEN if float(r[4]) >= 0.60 else RED)
-    footer(fig, f"Chance = {CHANCE:.2f} on the two rule tests. 'clean' is accuracy on the unmodified "
-                "prompt, so a low 'moved' with a high 'clean' means the model is right for a reason "
-                "other than the elimination -- exactly the leaked arm's profile on rows 7-8. On the "
-                "withhold rows 'moved' means it stopped naming the node and 'kept its old answer' means "
-                "it named it anyway; the placebo rate is the matched edit that leaves the node forced, "
-                "so it is the ceiling those rows are read against, not 1.000.")
+    fig.text(0.5, 0.195,
+             "Every column is scored so that HIGH = followed DD, placebo included. A low 'moved' next to a high "
+             "'clean' means the model\nis right for some reason other than the elimination -- exactly the leaked "
+             "model's profile, on rows 7 and 8.",
+             ha="center", va="top", size=MED - 2, linespacing=1.5)
+    footer(fig, "On the withhold rows 'moved' = it stopped naming the node, 'kept its old answer' = it named it "
+                "anyway, 'placebo moved' = how often the control edit also stopped it: the measurement's noise "
+                "floor. 'clean' differs between a model's own rows because the conditions do -- the rule rows score "
+                "the colour emitted for v, the withhold rows whether v is named at all. n is 350 or 250 by when each "
+                "run was submitted, not by filtering; paired tests use the 250 shared cases.")
     out.savefig(fig)
 
 
@@ -236,9 +376,14 @@ def page_rates(out, D):
     ax1.axhline(CHANCE, color="k", ls="--", lw=2)
     ax1.text(len(labels) - 0.5, CHANCE + 0.02, f"chance {CHANCE:.2f}", ha="right", size=SMALL)
     ax1.set_xticks(x); ax1.set_xticklabels(labels, size=SMALL)
-    ax1.set_ylabel("flipped to DD's new answer"); ax1.set_ylim(0, 1.08)
-    ax1.set_title("solid = hint, hatched = deduced", size=MED)
-    ax1.legend(loc="center right", fontsize=SMALL)
+    ax1.set_ylabel("fraction that moved to DD's new answer"); ax1.set_ylim(0, 1.08)
+    ax1.set_title("solid = edited a hint, hatched = edited its own deduction", size=MED - 2)
+    # grey keys: the bars carry each model's colour, so coloured keys would
+    # read as models rather than as the two tests
+    ax1.legend(handles=[Patch(facecolor="0.7", edgecolor="k", hatch=h, label=t)
+                        for h, t in (("", "round 0 (edited a hint)"),
+                                     ("///", "chained (edited its own deduction)"))],
+               loc="center right", fontsize=SMALL)
     for xi, (a, b) in enumerate(zip(r0v, chv)):
         ax1.text(xi - 0.2, a + 0.02, f"{a:.3f}", ha="center", size=SMALL, weight="bold")
         if not np.isnan(b):
@@ -251,19 +396,27 @@ def page_rates(out, D):
         ks = sorted(int(k) for k in br)
         v = [br[str(k)]["flipped"] for k in ks]
         ns = [br[str(k)]["n"] for k in ks]
-        ax2.plot(ks, v, "o-", color=BLUE, lw=3, ms=13)
+        lo, hi = zip(*[wilson(round(y * n), n) for y, n in zip(v, ns)])
+        ax2.errorbar(ks, v, yerr=[np.array(v) - lo, np.array(hi) - v], fmt="o-",
+                     color=BLUE, lw=3, ms=13, capsize=7, elinewidth=2.5)
         ax2.axhline(CHANCE, color="k", ls="--", lw=2)
+        ax2.text(ks[-1] + 0.1, CHANCE + 0.02, f"chance {CHANCE:.2f}", ha="right", size=SMALL)
         for k, y, n in zip(ks, v, ns):
             ax2.annotate(f"{y:.3f}\nn={n}", (k, y), textcoords="offset points",
-                         xytext=(0, -42), ha="center", size=SMALL)
+                         xytext=(0, -52), ha="center", size=SMALL)
         ax2.set_xlabel("DD round the node was deduced in")
-        ax2.set_ylabel("flipped to DD's new answer")
-        ax2.set_ylim(0, 1.12); ax2.set_xticks(ks)
-        ax2.set_title("No decay with depth -- leak-free 1.0000", size=MED)
-    fig.tight_layout(rect=[0, 0.11, 1, 0.93])
-    footer(fig, "Right panel is the chaining claim: if the model chained one step but not three, "
-                "round 1 would be high and the later rounds would fall off. It does not happen. "
-                "The deepest bins are small because deep chained forcings are rare, not filtered.")
+        ax2.set_ylabel("fraction that moved to DD's new answer")
+        ax2.set_ylim(0, 1.18); ax2.set_xticks(ks)
+        ax2.set_title("No decay with depth -- leak-free 1.0000 (95% Wilson)", size=MED)
+    fig.tight_layout(rect=[0, 0.19, 1, 0.93])
+    fig.text(0.5, 0.175,
+             "If the model chained one step but not three, round 1 would be high and the later rounds would fall off. "
+             "It does not happen.",
+             ha="center", va="top", size=MED - 2)
+    footer(fig, "Right panel splits the chained test by how deep the edited deduction sat. Deep bins are small "
+                "because deep chained forcings are rare in these instances, not because anything was filtered -- "
+                "hence the intervals, wide at rounds 3-4 (n=24 and n=4) and still clear of chance. Rounds 5-6 are "
+                "absent because no case in the sample had its binding neighbour deduced that late.")
     out.savefig(fig)
 
 
@@ -288,15 +441,23 @@ def page_guard(out, D):
     ax1.bar(x + 0.26, br, 0.25, color=cols, edgecolor="k", hatch="///", alpha=0.85,
             label="forcing BROKEN")
     ax1.set_xticks(x); ax1.set_xticklabels(labels, size=SMALL)
-    ax1.set_ylabel("still names v as the next node"); ax1.set_ylim(0, 1.18)
+    ax1.set_ylabel("fraction that still names v as the next node"); ax1.set_ylim(0, 1.18)
     # legend above the axes, not inside: the 1.000 bars reach the top and any
-    # in-axes box lands on their value labels
-    ax1.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3,
-               fontsize=SMALL - 1, frameon=False)
+    # in-axes box lands on their value labels. Grey handles, not the bars' own:
+    # matplotlib takes the first colour of the list, so a blue key would read
+    # as "leak-free 1.0000" rather than "clean prompt".
+    keys = [Patch(facecolor="0.7", edgecolor="k", hatch=h, label=t)
+            for h, t in (("", "clean prompt"), ("...", "placebo edit"),
+                         ("///", "forcing BROKEN"))]
+    ax1.legend(handles=keys, loc="lower center", bbox_to_anchor=(0.5, 1.0),
+               ncol=3, fontsize=SMALL - 1, frameon=False)
     for xi in range(len(labels)):
         for dx, v in ((-0.26, cl[xi]), (0.0, pl[xi]), (0.26, br[xi])):
             ax1.text(xi + dx, v + 0.02, f"{v:.3f}", ha="center", size=SMALL - 2,
                      weight="bold")
+            if v == 0:  # a 0.000 bar draws nothing at all -- mark the baseline
+                ax1.plot([xi + dx - 0.12, xi + dx + 0.12], [0.004, 0.004],
+                         color="k", lw=3, solid_capstyle="butt")
 
     # what it names INSTEAD, for the arm that actually solved the task
     a = D["leak-free 1.0000"]
@@ -310,21 +471,26 @@ def page_guard(out, D):
         names = [f"a node that IS forced\nunder the broken hints\n(n={n_forced})",
                  f"BEGIN_ROUND\n'the round is over'\n(n={n_round})",
                  f"a node that is not\nforced (n={n_unforced})"]
-        ax2.bar(range(3), vals, color=[GREEN, BLUE, RED], edgecolor="k")
+        # greys, not the arm colours: this panel is one model's outcome
+        # categories, and reusing blue/green/red here would read as the arms
+        ax2.bar(range(3), vals, color=["0.35", "0.6", "0.82"], edgecolor="k")
         ax2.set_xticks(range(3)); ax2.set_xticklabels(names, size=SMALL - 2)
         ax2.set_ylabel(f"cases (of {len(sk)} skips)")
         ax2.set_title("What it names instead -- leak-free 1.0000", size=MED)
         for i, v in enumerate(vals):
             ax2.text(i, v + max(vals) * 0.02, f"{v / len(sk):.1%}", ha="center",
                      size=SMALL, weight="bold")
-    fig.tight_layout(rect=[0, 0.13, 1, 0.93])
-    footer(fig, "Same round-0 cases as the fire test, but w is recoloured to a colour ANOTHER neighbour "
-                "already holds, so the freed colour is held by nobody, v drops to two candidates and DD "
-                "does not emit it. The placebo recolours a hint that is not a neighbour of v, so v stays "
-                "forced -- without it a low rate would only say 'edits perturb the stream'. BEGIN_ROUND is "
-                "not an error: it is DD's own answer when nothing else in the round is determined. The "
-                "case lists are byte-identical across arms, so 0.000 vs 0.176 is paired: 0-44 discordant, "
-                "McNemar exact p = 1.1e-13.")
+    fig.tight_layout(rect=[0, 0.21, 1, 0.93])
+    fig.text(0.5, 0.195,
+             "It does not just go quiet: of the 350 cases it withholds, it names another node that IS forced under the "
+             "broken hints, or\nsays BEGIN_ROUND -- which is DD's own answer when nothing else in the round is "
+             "determined, not an error.",
+             ha="center", va="top", size=MED - 2, linespacing=1.5)
+    footer(fig, "Same round-0 cases as the rule test, and the case lists are byte-identical across models, so 0.000 "
+                "vs 0.176 is paired: 44 cases where the 0.8540 twin named v and the 1.0000 model did not, 0 the "
+                "other way, McNemar exact p = 1.1e-13. Conditioning on cases the twin gets right on the clean prompt "
+                "gives 0.188 (n=234). Its 0.176 guard gap is the same order as its 0.146 solve_rate gap -- different "
+                "measurements on different samples, so a consistency check, not a decomposition.")
     out.savefig(fig)
 
 
@@ -339,30 +505,42 @@ def page_patching(out, D):
         im = ax.imshow(m.values, aspect="auto", cmap="viridis", vmin=0, vmax=1,
                        origin="lower", rasterized=True)
         ax.set_xticks(range(len(SITES)))
-        ax.set_xticklabels([s.replace("_", "\n") for s in SITES], size=SMALL - 1)
+        ax.set_xticklabels([SITE_LABELS[s] for s in SITES], size=SMALL - 2)
         ax.set_yticks(range(len(m.index))); ax.set_yticklabels(m.index, size=SMALL - 1)
         ax.set_title(label, size=MED)
         ax.set_ylabel("layer" if ax is axes[0][0] else "")
         for i in range(m.shape[0]):
             for j in range(m.shape[1]):
                 val = m.values[i, j]
-                ax.text(j, i, f"{val:.2f}", ha="center", va="center", size=SMALL - 4,
+                # -0.00 is a rounding artefact of a tiny negative recovery and
+                # reads as a signed quantity to anyone scanning the grid
+                txt = f"{0.0 if abs(val) < 5e-3 else val:.2f}"
+                ax.text(j, i, txt, ha="center", va="center", size=SMALL - 4,
                         color="w" if val < 0.6 else "k")
     # subplots_adjust, not tight_layout -- the shared colorbar fights it
-    fig.subplots_adjust(bottom=0.22, top=0.86, left=0.07, right=0.88)
+    fig.subplots_adjust(bottom=0.30, top=0.86, left=0.07, right=0.88)
     fig.colorbar(im, ax=axes[0], fraction=0.025, label="mean recovery")
-    footer(fig, "Recovery = how much of the flip is restored by patching the clean activation at that "
-                "(layer, site). The fact is held at the EDITED HINT through L5, handed off L6-L10, and "
-                "is at the PREDICTION POSITION by L10. graph_row_u/graph_row_w are 0.00 at every layer "
-                "in all arms -- the deduction never routes through the adjacency table rows. L11 at the "
-                "prediction position is the built-in positive control and must read 1.00.")
+    fig.text(0.5, 0.215,
+             "RECOVERY = copy one activation from the clean run into the corrupted run at that (layer, position) and "
+             "measure how much of the\nflip it undoes: 1.00 = that one activation carries the whole edited fact, 0.00 "
+             "= none of it. w is the neighbour the edit recolours,\nu is another known neighbour of v; both graph rows "
+             "are controls, and 'predicts v's colour' is where the answer is read off.",
+             ha="center", va="top", size=MED - 3, linespacing=1.5)
+    footer(fig, "Read upwards: the edited colour is held AT the edited hint through L5, handed off between L6 and "
+                "L10, and has arrived at the prediction position by L10. The graph rows read 0.00 at every layer in "
+                "every model -- the deduction never routes through the adjacency table. L11 at the prediction "
+                "position is the built-in positive control and must read 1.00; it does. The 1.0000 model hands the "
+                "fact off one to two layers earlier than its 0.8540 twin.")
     out.savefig(fig)
 
 
 def page_heads(out, D):
     fig, ax = plt.subplots(figsize=(16, 9))
-    fig.suptitle("No single head carries it -- the circuit is distributed",
-                 size=BIG, weight="bold")
+    # headline from arm A's worst head, so the title cannot drift from the plot
+    keep = (D["leak-free 1.0000"]["heads"].groupby(["layer", "head"])
+            .effect_retained.mean().min())
+    fig.suptitle(f"No single head carries the rule: removing the worst one leaves "
+                 f"{keep:.0%} of it", size=BIG, weight="bold")
     for label, _, _, colour in ARMS:
         rec = D[label]
         if "heads" not in rec:
@@ -374,15 +552,23 @@ def page_heads(out, D):
                 label=f"{label}  (worst L{int(h['layer'].iloc[0]):02d}"
                       f"H{int(h['head'].iloc[0])} = {h.effect_retained.iloc[0]:.3f})")
     ax.axhline(1.0, color="k", ls="--", lw=2)
-    ax.text(1, 1.005, "1.00 = ablating this head changes nothing", size=SMALL)
+    ax.text(2, 1.02, "1.00 = ablating this head changes the effect not at all;\n"
+                     "below 1.00 = it shrinks the effect; above 1.00 = it GROWS the effect",
+            size=SMALL, va="bottom")
     ax.set_xlabel("attention heads, sorted by damage (most damaging first)")
-    ax.set_ylabel("effect retained after ablating that head")
+    ax.set_ylabel("fraction of the round-0 rule effect retained\nafter ablating that one head")
     ax.legend(loc="lower right", fontsize=SMALL)
-    fig.tight_layout(rect=[0, 0.11, 1, 0.93])
-    footer(fig, "Each point is one of the 48 heads, zeroed one at a time by writing its out_proj weight "
-                "columns (nn.MultiheadAttention takes the functional fast path, so module hooks on "
-                "out_proj never fire -- an earlier version of this analysis silently reported 1.000 for "
-                "all 7200 rows). Removing the worst single head still leaves ~84% of the effect.")
+    fig.tight_layout(rect=[0, 0.19, 1, 0.93])
+    fig.text(0.5, 0.175,
+             "The leaked model's curve only looks steeper because its effect is near chance to begin with: "
+             "a fraction of almost nothing.",
+             ha="center", va="top", size=MED - 2)
+    footer(fig, "Each point is one of the 48 heads (12 layers x 4), zeroed one at a time by writing its out_proj "
+                "weight columns -- nn.MultiheadAttention takes the functional fast path, so module hooks on out_proj "
+                "never fire, and an earlier version of this analysis silently reported 1.000 for all 7200 rows. "
+                "Averaged over the same 350 (leak-free 1.0000) or 250 (the other two) round-0 cases as the rule "
+                "test. Values above 1.00 mean ablating that head makes the model follow the edit MORE, which happens "
+                "when a head is pulling toward the pre-edit answer.")
     out.savefig(fig)
 
 
@@ -409,36 +595,34 @@ def page_verdict(out, D):
         if sk is not None else "  (measuring, job 50082120)",
         f"  placebo edit leaves it at {pl:.3f}." if sk is not None else "",
         "",
-        f"* The 0.854 twin guards only {1 - bsk:.3f}, so the" if bsk is not None else "",
-        "  last 0.146 of solve_rate is the GUARD,",
-        "  not the rule (paired, p = 1e-13).",
+        f"* Its 0.854 twin guards only {1 - bsk:.3f} -- a gap of" if bsk is not None else "",
+        f"  {bsk:.3f}, the same order as that twin's 0.146" if bsk is not None else "",
+        "  solve_rate deficit, and the first test here",
+        "  to separate the two at all (p = 1e-13).",
         "",
-        "* Localised: hint -> L5, handoff L6-L10,",
-        "  prediction position by L10.",
-        "",
-        "* Distributed over heads, not one head.",
+        "* Localised: edited hint -> L5, handoff",
+        "  L6-L10, prediction position by L10.",
     ]
     right = [
         "WHAT IT DOES NOT DO",
         "",
-        "* Choose the node ORDER by deduction.",
-        "  Events come out in ascending node index",
-        "  for 100% of rounds, and a no-deduction",
-        "  hand rule scores 0.632 where the model's",
-        "  own next_node features score 0.545.",
-        "  Ascending index is DD's own convention",
-        "  though, and the guard test shows WHICH",
-        "  nodes it emits does track determinacy.",
+        "* Choose the node ORDER by deduction. It",
+        "  emits nodes in ascending index order in",
+        "  100% of rounds. That is also DD's own",
+        "  convention, so it proves nothing either",
+        "  way -- but the guard test does show that",
+        "  WHICH nodes it emits tracks determinacy.",
         "",
         "* Route through the adjacency table: the",
         "  graph rows recover 0.000 at every layer.",
         "",
         "* The leaked twin never learned the rule",
-        f"  ({D['leaked 0.9960']['r0']['flip']:.3f}). Shown an edited deduction it",
-        f"  keeps its own answer "
-        f"{D['leaked 0.9960']['chain']['reverts_to_original']:.1%} of the time:",
-        "  it reads the adjacency-order leak, not",
-        "  the prefix. Finding 2's 'not running DD'",
+        f"  ({D['leaked 0.9960']['r0']['flip']:.3f}, chance 0.250). Shown an edited",
+        f"  deduction it keeps its own answer "
+        f"{D['leaked 0.9960']['chain']['reverts_to_original']:.1%}",
+        "  of the time: it reads the adjacency-order",
+        "  leak, not the prefix. The earlier 'not",
+        "  running DD' conclusion on this project",
         "  was always about THAT model.",
     ]
     fig.text(0.5, 0.885,
@@ -449,11 +633,15 @@ def page_verdict(out, D):
              family="monospace", linespacing=1.45, color=GREEN)
     fig.text(0.53, 0.765, "\n".join(right), ha="left", va="top", size=MED - 3,
              family="monospace", linespacing=1.45, color=RED)
-    footer(fig, "Comparison to the previous best answer on this question: finding 2 of this project "
-                "concluded 'the model is not running DD' from probes, an algorithm-ID test, a "
-                "counterfactual and an SAE. Its counterfactual is reproduced here as the leaked arm at "
-                f"{D['leaked 0.9960']['r0']['flip']:.3f}. That conclusion stands for the leaked model and is "
-                "overturned for the leak-free one -- the honest task was never measured before.")
+    fig.text(0.5, 0.115,
+             "LIMITATIONS: one checkpoint per model and no seed replicates, so every leak-free vs leaked contrast is "
+             "also two separate training\nruns; one task configuration (N=24, degree 5, q=4); and the guard gap and "
+             "the solve_rate gap are different measurements on\ndifferent samples, so their agreement is a "
+             "consistency check and not a decomposition.",
+             ha="center", va="top", size=MED - 4, color="0.15", linespacing=1.5)
+    # no footer() here: the right column's last bullet already carries the
+    # comparison to the previous answer, and a third block at the bottom
+    # collides with the limitations line
     out.savefig(fig)
 
 
@@ -465,16 +653,20 @@ def main():
         raise SystemExit("arm A round-0 results missing -- job 50075339 output not found")
     ex = example_instance(rho=0.60)
     pdf_path = os.path.join(OUT, "slides.pdf")
+    have_skip = any("skip" in D[l] for l, _, _, _ in ARMS)
     with PdfPages(pdf_path) as pdf:
-        o = PdfAndPng(pdf, OUT)
+        o = PdfAndPng(pdf, OUT, total=10 + 2 * have_skip)
         page_title(o, D, ex)
+        page_task(o, ex)
         page_tokenization(o, ex)
         page_trace(o, ex, note="The intervention edits ONE colour token in this section "
-                               "(chained arm) or in the hints (round-0 arm).")
+                               "(the chained test) or in the hints (the round-0 test).")
         page_design(o, ex)
+        if have_skip:
+            page_guard_design(o)
         page_table(o, D)
         page_rates(o, D)
-        if any("skip" in D[l] for l, _, _, _ in ARMS):
+        if have_skip:
             page_guard(o, D)
         page_patching(o, D)
         page_heads(o, D)
