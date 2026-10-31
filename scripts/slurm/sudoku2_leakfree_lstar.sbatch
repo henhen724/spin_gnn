@@ -9,6 +9,14 @@
 #
 # DOES NETWORK DEPTH TRACK REASONING DEPTH, ONCE THE SHORTCUT IS GONE?
 #
+# !! DO NOT RUN AS WRITTEN (10-31). Its env block below sources
+# !! ${SCRATCH}/spin_gnn_venv, which the 90-day purge has gutted, and puts that
+# !! tree on PYTHONPATH ahead of the modules, which removes numpy. Without the
+# !! venv on PATH bare `python` is also the system 2.7, which cannot parse
+# !! torch. Kept unedited as the provenance of jobs 50099945 and earlier; the
+# !! working version of this experiment is scripts/slurm/sudoku2_n48_deep_lstar.sbatch
+# !! (modules only, explicit python3, smoke check first).
+#
 # ===========================================================================
 # NOT READY TO SUBMIT AS WRITTEN. Three variables must be set in the
 # submitting environment, and the script aborts in the first second if they
