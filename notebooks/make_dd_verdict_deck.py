@@ -1675,6 +1675,9 @@ def page_sublayer(out, U):
     C = U.get("leaked 0.9960")
     cmlp = (C["sub"][(C["sub"].sublayer == "mlp") & (C["sub"].layer == nl)]
             .effect_retained.mean()) if C else float("nan")
+    cattn0 = (C["sub"][(C["sub"].sublayer == "attn") & (C["sub"].layer == 0)]
+              .effect_retained.mean()) if C else float("nan")
+    cmax = C["sub"].groupby(["layer", "sublayer"]).effect_retained.mean().max() if C else float("nan")
     n_safe = sum(1 for pr in (mlp, attn) for v in pr[5] if v >= 0.9)
 
     entries = [
@@ -1684,9 +1687,10 @@ def page_sublayer(out, U):
         ("(b) the load-bearing MLPs are in L6-L10", RED,
          f"FALSIFIED, flatly. Every MLP from L0 to L10 keeps {min(mlp[1][:-1]):.2f}-{max(mlp[1][:-1]):.2f} of the "
          f"effect, with the 10th-90th percentile inside about +-0.02. None of them is needed."),
-        ("(c) the LEAK-READER's profile DIFFERS", RED,
-         f"FALSIFIED. The control localises to the SAME two sublayers -- L{nl} MLP at {cmlp:.2f}, plus L0 "
-         f"attention -- only noisier. Whatever this measures, it is not what separates the two models."),
+        ("(c) the LEAK-READER's profile DIFFERS", CAVEAT,
+         f"SPLIT. The last MLP is shared (L{nl} at {cmlp:.2f} against {pm[nl]:.2f}), the READ-IN is not: L0 "
+         f"attention keeps {cattn0:.2f} there against {pa[0]:.2f} here, and some writes AMPLIFY the effect "
+         f"(to {cmax:.2f}), pulling back toward the pre-edit answer."),
         ("(d) SANITY: does the clean prediction survive?", GREEN,
          f"YES at {n_safe} of {d.layer.nunique() * 2} sublayers: the margin is unchanged at {-clean0:.1f}. It "
          f"fails at exactly the three that lose effect (red x), so their loss is confounded with plain damage."),
@@ -1835,7 +1839,7 @@ def page_verdict(out, D, O):
              "measurements on different samples: their agreement is a consistency check, not a decomposition. The\nsparse-"
              "autoencoder pages are correlational, and the ablation that would make them causal moved no answer at all, "
              "controls included -- inconclusive, not negative.\nWHERE in the network it happens is unresolved too: no "
-             "single head and no single MLP or attention write is needed for the effect -- redundancy, or a blunt test.",
+             "single head matters, and the two writes that do (L0 attention, L11 MLP) also break the clean prediction.",
              ha="center", va="top", size=MED - 5, color="0.15", linespacing=1.45)
     # no footer() here: the right column's last bullet already carries the
     # comparison to the previous answer, and a third block at the bottom
