@@ -612,7 +612,8 @@ def page_title(out, D, ex, O, S):
                  "the same one-step behaviour (last slide).", width=115),
              ha="left", va="top", size=MED - 3, color="0.15", weight="bold", linespacing=1.5)
     missing = [ROLE[k] for k, v in D.items() if "chain" not in v or "skip" not in v]
-    footer(fig, "Prepared 2026-10-29. Every number on every page is computed from the run outputs, not typed in."
+    footer(fig, "Prepared 2026-10-29, pages 16-17 corrected 2026-10-31. Every number on every page is computed "
+                "from the run outputs, not typed in."
                 + (f" Arms still running: {', '.join(missing)}." if missing else ""))
     out.savefig(fig)
 
