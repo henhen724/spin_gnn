@@ -122,8 +122,21 @@ def main():
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Two cells can share a checkpoint basename: the sweep names the directory
+    # from the architecture alone, so the same architecture retrained at a
+    # second seed collides and the two sets of rows become indistinguishable in
+    # the CSV. Disambiguate by the parent directory exactly as sudoku_agg_eval
+    # does (same expression), so the two modules label the same pair of runs
+    # identically. Absent a collision the label is unchanged, so every CSV
+    # written before this is still read the same way.
+    names = [os.path.basename(c.rstrip("/")) for c in args.checkpoint]
+    if len(set(names)) < len(names):
+        parents = [os.path.basename(os.path.dirname(os.path.abspath(c.rstrip("/"))))
+                   for c in args.checkpoint]
+        names = [f"{n} [{p}]" for n, p in zip(names, parents)]
+
     rows = []
-    for ckpt in args.checkpoint:
+    for ckpt, name in zip(args.checkpoint, names):
         model, vocab, config = load_checkpoint(ckpt, device=device)
         sudoku_cfg = SudokuReasoningConfig(
             n_nodes=config["n_nodes"], degree=config["degree"], n_colors=config["n_colors"],
@@ -138,7 +151,6 @@ def main():
                 model, vocab, device, sudoku_cfg, rho, args.n_pool, args.seed_start,
                 config["max_len"], args.min_per_bin,
             )
-            name = os.path.basename(ckpt.rstrip("/"))
             print(f"\n=== {name}  rho={rho}  ({diag['n_bins']} bins, "
                   f"{diag['n_dropped_thin_bins']} instances in bins too thin to keep) ===")
             print(f"  {'T':>3} {'n':>5} {'real_rho':>9} {'solve':>7} {'outcome':>8}")

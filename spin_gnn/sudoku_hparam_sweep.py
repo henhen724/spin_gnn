@@ -79,6 +79,14 @@ def run_one(args):
         # before 2026-10-28 changes, and a warmed-up cell can never collide
         # with the cold cell it is meant to be compared against.
         + (f"_w{args.warmup_epochs:02d}" if args.warmup_epochs else "")
+        # Same rule again, and the first case where it protects a REPLICATE
+        # rather than a variant: the seed moves the weight init and the batch
+        # order, so a second-seed cell is a different draw of the same training
+        # procedure and must not share a tag with the first. Without this,
+        # sudoku_agg_eval and sudoku_depth_eval see one basename for two models
+        # and can only tell them apart by their parent directory. Only present
+        # when non-default, so every tag written before 2026-11-01 is unchanged.
+        + (f"_s{args.seed:02d}" if args.seed else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
     save_checkpoint(
