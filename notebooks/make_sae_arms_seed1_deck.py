@@ -24,7 +24,8 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
-from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style
+from notebooks.deck_utils import (BIG, MED, SMALL, PdfAndPng, footer, set_style,
+                                  textpage)
 
 S = os.environ["SCRATCH"] + "/spin_gnn"
 RUNS = {("TWIN", 0): f"{S}/sudoku_sae_kindsplit_2026-10-27/leakfree_l0_64",        # 49744985
@@ -79,24 +80,6 @@ def gaps(D):
                 "t_arg": int(t.best_justifier_f1.idxmax()),
                 "l_arg": int(l.best_justifier_f1.idxmax())}
     return g
-
-
-def textpage(o, title, subtitle, blocks, foot, y0=0.80, gap=0.030, width=100):
-    # Advance by the height the body actually wraps to. A fixed pitch silently
-    # overprints the next heading as soon as one block wraps to an extra line.
-    body_size = MED - 4
-    line_h = body_size * 1.45 / (9 * 72)
-    fig = plt.figure(figsize=(16, 9))
-    fig.text(0.5, 0.93, title, ha="center", size=BIG, weight="bold")
-    fig.text(0.5, 0.875, subtitle, ha="center", size=MED, color="0.3")
-    y = y0
-    for head, col, body in blocks:
-        wrapped = textwrap.fill(body, width=width)
-        fig.text(0.06, y, head, size=MED, weight="bold", color=col)
-        fig.text(0.06, y - 0.035, wrapped, size=body_size, va="top", linespacing=1.45)
-        y -= 0.035 + line_h * (wrapped.count("\n") + 1) + gap
-    footer(fig, foot)
-    o.savefig(fig)
 
 
 def page_verdict(o, D):

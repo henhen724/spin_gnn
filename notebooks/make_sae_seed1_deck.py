@@ -8,6 +8,7 @@ seed-noise-against-between-arm-gap page that says what survives, and the limits.
 Run from the repo root:  python3 -m notebooks.make_sae_seed1_deck
 Every number is read from the runs' CSVs at build time, nothing is typed in.
 """
+import functools
 import json
 import os
 import textwrap
@@ -21,6 +22,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style
+from notebooks.deck_utils import textpage as _textpage
 
 S = os.environ["SCRATCH"] + "/spin_gnn"
 SEEDS = {0: f"{S}/sudoku_sae_solved_2026-10-28/leakfree1000_l0_64",        # 50075499
@@ -53,17 +55,9 @@ def load():
     return d
 
 
-def textpage(o, title, subtitle, blocks, foot, y0=0.80, pitch=0.148, width=100):
-    fig = plt.figure(figsize=(16, 9))
-    fig.text(0.5, 0.93, title, ha="center", size=BIG, weight="bold")
-    fig.text(0.5, 0.875, subtitle, ha="center", size=MED, color="0.3")
-    for i, (head, col, body) in enumerate(blocks):
-        y = y0 - i * pitch
-        fig.text(0.06, y, head, size=MED, weight="bold", color=col)
-        fig.text(0.06, y - 0.035, textwrap.fill(body, width=width), size=MED - 4,
-                 va="top", linespacing=1.45)
-    footer(fig, foot)
-    o.savefig(fig)
+# Laid out against the fixed pitch and already sent, so it keeps that advance;
+# the shared textpage checks it for overflow rather than overprinting silently.
+textpage = functools.partial(_textpage, pitch=0.148)
 
 
 def page_verdict(o, D):

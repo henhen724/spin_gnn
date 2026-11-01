@@ -5,12 +5,16 @@ carries its own copies -- it produced a deck that has already been sent, so it
 is left alone rather than re-tested for a cosmetic refactor.
 """
 import os
+import textwrap
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 BIG, MED, SMALL = 25, 17, 13
+
+_HEAD_OFF = 0.035    # heading baseline -> top of its body text
+_FOOTER_TOP = 0.09   # the footer caption starts about here
 
 
 def set_style():
@@ -31,6 +35,50 @@ def footer(fig, text, width=118):
     lines.append(cur)
     fig.text(0.5, 0.012, "\n".join(lines), ha="center", va="bottom",
              size=SMALL - 1, color="0.3")
+
+
+def textpage(o, title, subtitle, blocks, foot, y0=0.80, gap=0.030, width=100,
+             pitch=None):
+    """Title + subtitle + coloured verdict blocks.
+
+    Each block advances by the height its body actually wraps to. A fixed
+    pitch silently overprints the next heading the moment one block gains a
+    line, which is how page 8 of the arms deck came to run into its footer;
+    `pitch` survives only for the two decks laid out against it and already
+    sent, and is checked the same way. Overflow raises rather than rendering
+    an unreadable slide: a deck that cannot be built is a visible failure, an
+    overprinted one is not.
+    """
+    body_size = MED - 4
+    line_h = body_size * 1.45 / (9 * 72)   # figure fractions per wrapped line
+    wrapped = [textwrap.fill(b, width=width) for _, _, b in blocks]
+
+    tops, bottoms = [], []
+    y = y0
+    for text in wrapped:
+        n = text.count("\n") + 1
+        tops.append(y)
+        bottoms.append(y - _HEAD_OFF - n * line_h)
+        y -= pitch if pitch is not None else _HEAD_OFF + n * line_h + gap
+    for i, bottom in enumerate(bottoms):
+        limit = tops[i + 1] if i + 1 < len(tops) else _FOOTER_TOP
+        if bottom < limit:
+            raise ValueError(
+                f"textpage overflow on '{title}': block {i} "
+                f"({wrapped[i].count(chr(10)) + 1} lines) runs "
+                f"{limit - bottom:.4f} into "
+                f"{'the next heading' if i + 1 < len(tops) else 'the footer'}. "
+                f"Widen `width`, shorten the body, or lower `gap`/`y0`.")
+
+    fig = plt.figure(figsize=(16, 9))
+    fig.text(0.5, 0.93, title, ha="center", size=BIG, weight="bold")
+    fig.text(0.5, 0.875, subtitle, ha="center", size=MED, color="0.3")
+    for (head, col, _), text, y in zip(blocks, wrapped, tops):
+        fig.text(0.06, y, head, size=MED, weight="bold", color=col)
+        fig.text(0.06, y - _HEAD_OFF, text, size=body_size, va="top",
+                 linespacing=1.45)
+    footer(fig, foot)
+    o.savefig(fig)
 
 
 class PdfAndPng:
