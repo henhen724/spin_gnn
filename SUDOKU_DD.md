@@ -74,12 +74,44 @@ at N=50k they take ~60 s because failed removals cascade in the slow phase.
 | 4,5 | ≈ 0.477 (N = 8k–200k, very stable) | 50–90, grows slowly with N | ≈ 0.46 |
 | 4,7 | ≈ 0.225 | 370 (N=8k) → 1390 (N=50k), i.e. `T ~ N^0.74` | ≈ 0.27 |
 
-Interpretation / open issue:
-- **d=5: random-order greedy removal gets stuck just above rho_c**, so it cannot
-  reach the slow phase the slides show down to rho=0.3. The slides' sampler
-  must differ (non-random removal order? a different/bigger move set?). That's
-  why `sudoku_mcmc.py` exists: anneal mu < 0 to push rho below the greedy endpoint.
-- **d=7: greedy goes below rho_c into a clearly slow phase** (power-law T).
+Interpretation — **SOLVED 2026-11-02, it was the graph ensemble, not the sampler**
+(commit 5c17d3c; hshunt's diagnosis):
+- DD can only ever deduce a node whose neighbourhood shows all `q-1` other
+  colours. A node missing a colour is therefore a **permanent hint**, and greedy
+  removal halts once only such nodes are left. Under the unconstrained stub
+  split those nodes have a fixed density, by inclusion-exclusion
+  `sum_{k=1}^{q-1} (-1)^{k+1} C(q-1,k) (1-k/(q-1))^d` = **0.3827** at q=4,d=5 and
+  **0.1742** at q=4,d=7 (measured 0.371–0.383 and 0.170–0.174 over N ∈
+  {996, 4140, 17196} × 5 seeds). That is the whole of the 0.477 / 0.225 floor:
+  nothing was wrong with random removal order or the move set, and the
+  `sudoku_mcmc.py` annealing route was aimed at the wrong target.
+- **Fix: draw the planted colouring as a *fall* colouring** (Dunbar et al. 2000)
+  — every vertex adjacent to at least one vertex of every other colour,
+  equivalently a partition into independent **dominating** sets. Then no node is
+  permanently undeducible by construction. `planted_regular_graph(..., fall=True)`
+  and `SudokuReasoningConfig.fall`; `fall=False` is bit-identical to the old path.
+
+| q,d | ensemble | non-colourful frac | rho_min | T at endpoint (N=17196) |
+|---|---|---|---|---|
+| 4,5 | random | 0.379 | 0.475 | 66 |
+| 4,5 | **fall** | **0.000** | **0.309** | **873**, `T ~ N^0.727` |
+| 4,7 | random | 0.174 | 0.225 | 695 |
+| 4,7 | **fall** | **0.000** | **0.166** | **1114** |
+
+  d=5 fall gives `<m>` = 0.203–0.222 at rho_min ≈ 0.31 against the slides'
+  `<m> ≈ 0.19` at rho=0.3, and `gamma = 0.7266 / 0.7273` over the two independent
+  size intervals. **The d=5 slow phase is reproduced.**
+- **d=7: greedy goes below rho_c into a clearly slow phase** (power-law T) under
+  either ensemble; fall lowers its floor from 0.225 to 0.166 as well.
+- Consequence for every trained model before today: all N=48 runs floor at
+  rho_min = 0.469 ± 0.049, so **every depth result in this project is a
+  fast-phase result**. The fall ensemble floors at 0.332 ± 0.024 (T_end 7.9 →
+  13.8) at N=48, at essentially unchanged sequence length (mean 393 → 394, max
+  403 → 408), because a trace holds one event per deduced node — a count set by
+  rho, not by T.
+- `fall` is an **instance key**, not a hyperparameter: it is in
+  `sudoku_agg_eval.INSTANCE_KEYS`, it tags checkpoints `_fall`, and every reader
+  must take it from `config.json` rather than from a flag.
 - Partial sweep output (~64 files, d=6 N=49992) exists only on Henry's laptop;
   ignore it and rerun on Sherlock.
 
