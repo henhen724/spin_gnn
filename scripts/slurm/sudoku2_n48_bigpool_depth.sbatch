@@ -138,7 +138,12 @@ MINPERBIN=150
 DATESTAMP=2026-11-01
 
 module purge
-module load devel math python/3.12.1 py-pytorch/2.4.1_py312 py-numpy/1.26.3_py312 py-numba/0.60.0_py312
+# py-pandas is NOT optional here, unlike in the training sbatch scripts this was
+# copied from: the bin-size comparison at the end imports it. 50728837 ran the
+# whole 64-minute eval, wrote its 60 rows, and then died in that last block with
+# ModuleNotFoundError. The data survived and was analysed on the login node, but
+# the job still exits 1, so load it up front.
+module load devel math python/3.12.1 py-pytorch/2.4.1_py312 py-numpy/1.26.3_py312 py-numba/0.60.0_py312 py-pandas/2.2.1_py312
 export NUMBA_CACHE_DIR="${SCRATCH}/numba_cache"
 export PYTHONUNBUFFERED=1
 cd "${SLURM_SUBMIT_DIR}"

@@ -42,6 +42,12 @@ SOURCES = [
     ("N=48 leak-free ff=1024", [f"{S}/sudoku_n48_leakfree_lstar_2026-10-29/depth_lstar_*.csv",
                                 f"{S}/sudoku_n48_leakfree_lstar_2026-10-31/depth_lstar_*.csv",
                                 f"{S}/sudoku_n48_leakfree_L10_2026-10-31/depth_L10_*.csv"]),
+    # 50728837: the same six seed-0 checkpoints re-evaluated at n_pool 6000.
+    # Nested in the 1500-pool (verified: bin-size ratios 3.82-4.45, max |z| 2.54
+    # on solve_rate), so this supersedes the row above rather than competing
+    # with it -- same models, same instances, 4x the sample.
+    ("N=48 leak-free BIGPOOL n=6000",
+                               [f"{S}/sudoku_n48_leakfree_bigpool_2026-11-01/depth_bigpool_*.csv"]),
     ("N=96 leaked-order",      [f"{S}/sudoku_n96_layer_scan_2026-10-26/depth_by_layers_n96.csv",
                                 f"{S}/sudoku_n96_L07_2026-10-28/depth_n96_L07.csv",
                                 f"{S}/sudoku_n96_ff256_2026-10-27/depth_by_layers_n96_ff256.csv",
