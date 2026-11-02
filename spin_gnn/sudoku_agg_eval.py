@@ -66,8 +66,11 @@ from .train_sudoku_transformer import build_instances, load_checkpoint, solve_ra
 # shuffle_adj mismatch is the opposite case: it changes the prompt itself, so
 # one of the two models would be scored out of distribution.
 INSTANCE_KEYS = ("n_nodes", "degree", "n_colors", "rho", "rho_max", "hint_mode", "scratchpad",
-                 "shuffle_adj")
-INSTANCE_KEY_DEFAULTS = {"hint_mode": "removal", "scratchpad": False, "shuffle_adj": False}
+                 "shuffle_adj", "fall")
+INSTANCE_KEY_DEFAULTS = {"hint_mode": "removal", "scratchpad": False, "shuffle_adj": False,
+                         # pre-2026-11-02 checkpoints predate the flag and are
+                         # all drawn from the unconstrained ensemble
+                         "fall": False}
 
 
 def mcnemar_exact_p(b, c):

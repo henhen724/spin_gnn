@@ -223,6 +223,24 @@ class SudokuReasoningConfig:
     # so a higher val_nll in the True arm is the task changing, not the model
     # getting worse.
     shuffle_events: bool = False
+    # Draw the planted colouring as a FALL colouring: every node has at least
+    # one neighbour of every other colour (sudoku_dd.planted_regular_graph's
+    # `fall`). DD can only ever deduce a colourful node, so under the default
+    # ensemble the 0.3827 of nodes (q=4, d=5) born missing a colour are
+    # permanent hints and pin greedy removal at rho_min ~ 0.47 -- above the
+    # slides' rho_c ~ 0.46, which is why every depth result in this project
+    # so far is fast-phase (finding 34, SUDOKU_DD.md's open issue).
+    # MEASURED 2026-11-02: the floor is exactly the non-colourful fraction,
+    # and removing it drops rho_min to 0.308 at large N with T ~ N^0.727 and
+    # <m> ~ 0.21, i.e. the slides' d=5 slow branch. At the sizes we train on
+    # it roughly doubles the reachable depth (N=48: rho_min 0.469 -> 0.332,
+    # T_end 7.9 -> 13.8) and halves the seed spread in rho_min.
+    #
+    # An INSTANCE KEY for sudoku_agg_eval: it changes the graph the prompt
+    # describes, so a fall cell and a default cell must never pool. False
+    # reproduces every pre-2026-11-02 generator stream bit-for-bit (verified
+    # against HEAD over 3 sizes x 3 seeds).
+    fall: bool = False
 
 
 @dataclass

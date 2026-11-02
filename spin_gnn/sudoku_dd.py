@@ -46,7 +46,8 @@ INF = np.int64(1) << 40
 # Graph + planted coloring
 # ---------------------------------------------------------------------------
 
-def planted_regular_graph(n_nodes, degree, n_colors, rng, max_fix_iters=100_000):
+def planted_regular_graph(n_nodes, degree, n_colors, rng, max_fix_iters=100_000,
+                          fall=False):
     """Random d-regular graph with a planted balanced proper q-coloring.
 
     The coloring puts exactly N/q nodes in each class. Each class's d*N/q
@@ -57,6 +58,29 @@ def planted_regular_graph(n_nodes, degree, n_colors, rng, max_fix_iters=100_000)
     degrees and the coloring). Requires q(q-1) | d*N and q | N -- e.g. the
     slides' N values for q=4 are all multiples of 12.
 
+    With `fall=True` the planted coloring is additionally a FALL COLORING:
+    every node has at least one neighbor of every other color, equivalently
+    the color classes are independent *dominating* sets (Dunbar et al.,
+    "Fall colorings of graphs", 2000). This matters because DD deduces a
+    node only once its neighbors show all q-1 other colors, so a node whose
+    neighborhood misses a color can NEVER be deduced and must stay a hint
+    forever. Under the default (unconstrained) split that happens to a fixed
+    fraction of nodes -- 0.3827 at q=4,d=5 and 0.1742 at q=4,d=7, by
+    inclusion-exclusion over which classes a node misses -- which puts a
+    hard structural floor under rho_min and is what stalls greedy removal
+    just above it (0.475 and 0.225 measured; SUDOKU_DD.md's open issue).
+    Requires d >= q-1. Default False so the five other callers of this
+    function keep bit-identical rng streams.
+
+    The constraint is applied by reserving one mandatory stub from every
+    node to every other class and dealing only the remaining d-(q-1) at
+    random. Both margins stay exact (row sums d, each class pair still gets
+    exactly s edges), so unlike a sequential "connect to the colors you are
+    missing" pass it cannot paint itself into a corner and need restarts.
+    The multi-edge switches permute v-endpoints within a class-pair block
+    and so preserve each endpoint multiset: a node appearing at least once
+    in a block still has at least one -- now distinct -- neighbor there.
+
     Returns (adj, colors): adj is an (N, d) int32 neighbor table, colors an
     (N,) int8 array, both with node labels shuffled so color is not
     correlated with index.
@@ -64,14 +88,25 @@ def planted_regular_graph(n_nodes, degree, n_colors, rng, max_fix_iters=100_000)
     N, d, q = n_nodes, degree, n_colors
     if N % q or (d * N) % (q * (q - 1)):
         raise ValueError(f"need q | N and q(q-1) | d*N (N={N}, d={d}, q={q})")
+    if fall and d < q - 1:
+        raise ValueError(f"a fall coloring needs d >= q-1 (d={d}, q={q})")
     per_class = N // q
     s = d * N // (q * (q - 1))  # edges per class pair
     colors = np.repeat(np.arange(q, dtype=np.int8), per_class)
     # groups[a][b]: stubs of class a destined for class b
     groups = [[None] * q for _ in range(q)]
     for a in range(q):
-        stubs = rng.permutation(np.repeat(np.arange(a * per_class, (a + 1) * per_class), d))
+        ids = np.arange(a * per_class, (a + 1) * per_class)
         others = [b for b in range(q) if b != a]
+        if fall:
+            extra = d - (q - 1)         # stubs beyond the one mandatory per class
+            s_extra = s - per_class     # free stubs per class pair
+            rem = (rng.permutation(np.repeat(ids, extra)) if extra
+                   else np.empty(0, dtype=ids.dtype))
+            for i, b in enumerate(others):
+                groups[a][b] = np.concatenate([ids, rem[i * s_extra:(i + 1) * s_extra]])
+            continue
+        stubs = rng.permutation(np.repeat(ids, d))
         for i, b in enumerate(others):
             groups[a][b] = stubs[i * s:(i + 1) * s]
     edge_blocks = []

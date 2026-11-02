@@ -33,6 +33,7 @@ def run_one(args):
         n_nodes=args.n_nodes, degree=args.degree, n_colors=args.n_colors, rho=args.rho, rho_max=args.rho_max,
         seed=args.seed, scratchpad=args.scratchpad, hint_mode=args.hint_mode,
         shuffle_adj=args.shuffle_adj, shuffle_events=args.shuffle_events,
+        fall=args.fall,
     )
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
@@ -71,6 +72,12 @@ def run_one(args):
         # a different instance distribution, so a cell that trained on permuted
         # rounds must never share a tag with one that trained on sorted rounds.
         + ("_ev" if args.shuffle_events else "")
+        # Same argument again, and the strongest case of the three: the fall
+        # constraint changes the GRAPH ensemble, so a fall cell's instances
+        # are not drawn from the same distribution at all and must never pool
+        # with a default cell (it is in agg_eval's INSTANCE_KEYS for exactly
+        # that reason).
+        + ("_fall" if args.fall else "")
         # Only suffixed when non-default, so every tag written before 2026-10-25
         # stays byte-identical -- the decks and the agg_eval checkpoint paths
         # address cells by this string.
@@ -110,6 +117,7 @@ def run_one(args):
         "hint_mode": args.hint_mode,
         "shuffle_adj": args.shuffle_adj,
         "shuffle_events": args.shuffle_events,
+        "fall": args.fall,
         "max_len": result["model_max_len"],
         "evidence_row_accuracy": result["solve_metrics"].get("evidence_row_accuracy"),
         "evidence_slot_accuracy": result["solve_metrics"].get("evidence_slot_accuracy"),
@@ -162,6 +170,11 @@ if __name__ == "__main__":
                          "ascending-node-index order inside a round (see "
                          "SudokuReasoningConfig.shuffle_events); the round partition, T and "
                          "every DD predicate are unchanged, only the presentation order is")
+    ap.add_argument("--fall", action="store_true",
+                    help="draw the planted colouring as a FALL colouring -- every node has a "
+                         "neighbour of every other colour (SudokuReasoningConfig.fall). Removes "
+                         "the structural floor under rho_min (0.47 -> 0.33 at N=48) that "
+                         "otherwise keeps every run in the fast phase.")
     ap.add_argument("--hint-mode", type=str, default="removal", choices=["removal", "random"],
                     help="'random' samples hints independently so DD can fail, which is required for a "
                          "hint-density solvability transition to exist in the data at all")

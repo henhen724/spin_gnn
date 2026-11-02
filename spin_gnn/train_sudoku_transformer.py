@@ -92,6 +92,7 @@ def build_instances(sudoku_cfg: SudokuReasoningConfig, n_instances, seed_start):
             try:
                 adj, colors = planted_regular_graph(
                     sudoku_cfg.n_nodes, sudoku_cfg.degree, sudoku_cfg.n_colors, rng,
+                    fall=getattr(sudoku_cfg, "fall", False),
                 )
                 break
             except RuntimeError:
@@ -484,6 +485,14 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
         # Absent on every checkpoint before 2026-10-27, where it reads False --
         # also correct for them, they all trained on rounds in sorted node order.
         "shuffle_events": getattr(sudoku_cfg, "shuffle_events", False),
+        # Absent on every checkpoint before 2026-11-02, where it reads False --
+        # correct for them, they all trained on the unconstrained ensemble.
+        # This one is load-bearing at EVAL time in a way the two above are not:
+        # it changes the graph ensemble, so a reader that defaults it wrong
+        # builds instances from a different distribution and scores the model
+        # off-distribution without any error (sudoku_depth_eval and
+        # scripts/rho_transition_eval both take it from here).
+        "fall": getattr(sudoku_cfg, "fall", False),
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,

@@ -145,6 +145,11 @@ def main():
             scratchpad=config.get("scratchpad", False),
             shuffle_adj=config.get("shuffle_adj", False),
             shuffle_events=config.get("shuffle_events", False),
+            # Must follow the checkpoint, not a flag: the fall constraint
+            # changes the graph ensemble, so evaluating a fall-trained model
+            # on default instances (or the reverse) scores it off-distribution
+            # against a different task. Absent from pre-2026-11-02 configs.
+            fall=config.get("fall", False),
         )
         for rho in args.rho:
             records, diag = eval_solve_by_depth(
