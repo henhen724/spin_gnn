@@ -24,6 +24,8 @@ Usage, from a deck script:
     page_tokenization(out, ex)
     page_trace(out, ex)
 """
+import textwrap
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -202,9 +204,13 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
     fig.text(0.06, 0.93, title, size=BIG, weight="bold")
     hints = sorted(ex.trace["hints"].items())
     hint_str = " ".join(f"N{n}=COLOR_{c}" for n, c in hints[:6]) + (" ..." if len(hints) > 6 else "")
+    # Wrapped, not one long line: at N=96 the hint list is long enough to run
+    # off the right edge, and nothing here raises the way textpage does.
     fig.text(0.06, 0.875,
-             f"{len(hints)} hints of {ex.cfg.n_nodes} nodes, then "
-             f"{ex.n_rounds} rounds of simultaneous deduction. Hints: {hint_str}", size=SMALL)
+             textwrap.fill(f"{len(hints)} hints of {ex.cfg.n_nodes} nodes, then "
+                           f"{ex.n_rounds} rounds of simultaneous deduction. "
+                           f"Hints: {hint_str}", width=125),
+             size=SMALL, va="top")
 
     ax = fig.add_axes([0.06, 0.44, 0.52, 0.38]); ax.axis("off")
     ax.text(0, 1.0, "THE TRACE, AS EMITTED", size=SMALL, weight="bold", va="top")
@@ -283,7 +289,8 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
              size=SMALL, va="top")
     if note:
         # black bold, not red -- see the note on prose emphasis above
-        fig.text(0.06, 0.24, note, size=SMALL - 1, va="top", weight="bold")
+        fig.text(0.06, 0.24, textwrap.fill(note, width=140), size=SMALL - 1,
+                 va="top", weight="bold")
     pool = getattr(ex, "pool_depths", None)
     how = {"median": "the median", "deep": "the 90th percentile",
            "first": "the first"}.get(getattr(ex, "pick", ""), "one")

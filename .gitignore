@@ -60,3 +60,7 @@ _*_smoke/
 _*_smoke[0-9]*/
 _*_smoke[0-9]*.csv
 _*_smoke.csv
+# Deck build output: $SCRATCH/spin_gnn IS this working tree, so the deck
+# scripts' PNG-per-page output lands here. Only the PDF is kept, committed by
+# hand under notebooks/<topic>/slides.pdf the way every earlier deck was.
+decks/

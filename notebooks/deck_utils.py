@@ -37,6 +37,31 @@ def footer(fig, text, width=118):
              size=SMALL - 1, color="0.3")
 
 
+def _check_header(fig, title, subtitle, margin=0.96):
+    """Raise if the title or subtitle is wider than the slide.
+
+    `textpage` wraps and bounds-checks the body but draws the header as two
+    single centred lines, so a long title silently ran off both edges of the
+    page -- caught on the N=96 deck only by reading the rendered PNG. Measured
+    rather than estimated from character counts: the two sizes have different
+    metrics and the em dashes and digits in these titles are not average
+    characters.
+    """
+    r = fig.canvas.get_renderer()
+    w_fig = fig.get_window_extent().width
+    for what, text, size, weight in (("title", title, BIG, "bold"),
+                                     ("subtitle", subtitle, MED, "normal")):
+        probe = fig.text(0.5, 0.5, text, ha="center", size=size, weight=weight)
+        frac = probe.get_window_extent(renderer=r).width / w_fig
+        probe.remove()
+        if frac > margin:
+            over = int(len(text) * (1 - margin / frac)) + 1
+            raise ValueError(
+                f"textpage {what} overflows the slide: {frac:.3f} of the page "
+                f"width against a {margin:.2f} limit. Cut about {over} "
+                f"characters from {text!r}.")
+
+
 def textpage(o, title, subtitle, blocks, foot, y0=0.80, gap=0.030, width=100,
              pitch=None):
     """Title + subtitle + coloured verdict blocks.
@@ -71,6 +96,7 @@ def textpage(o, title, subtitle, blocks, foot, y0=0.80, gap=0.030, width=100,
                 f"Widen `width`, shorten the body, or lower `gap`/`y0`.")
 
     fig = plt.figure(figsize=(16, 9))
+    _check_header(fig, title, subtitle)
     fig.text(0.5, 0.93, title, ha="center", size=BIG, weight="bold")
     fig.text(0.5, 0.875, subtitle, ha="center", size=MED, color="0.3")
     for (head, col, _), text, y in zip(blocks, wrapped, tops):

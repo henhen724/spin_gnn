@@ -41,9 +41,11 @@ def code(src):
 md(r"""
 # N=96, fall ensemble: the transition becomes measurable, and the seed swamps the grid
 
-**Jobs.** `50860571` (array 0-4, `sud2N96FallScan`, submitted 2026-11-02 19:24:17) and
-`50903022` (array 5-5, `sud2N96FallS1L8`, submitted 2026-11-03 04:22:03), partition
-`sganguli`, one H100 80GB per cell, `sh04-02n01`/`sh04-03n01`.
+**Complete: all six cells COMPLETED exit `0:0`.** `50860571` (array 0-4,
+`sud2N96FallScan`, submitted 2026-11-02 19:24:17, last task ended 2026-11-03 10:56:23) and
+`50903022` (array 5-5, `sud2N96FallS1L8`, submitted 2026-11-03 04:22:03, ended
+2026-11-03 12:18:25), partition `sganguli`, one H100 80GB per cell,
+`sh04-02n01`/`sh04-03n01`, ~67 GPU-h in total.
 
 **Commits.** Scan script `c531a86`; the L=8 seed-1 replicate `c71146d`; the reader this
 notebook imports, `scripts/n96_fallscan_analysis.py`, committed the same morning.
@@ -182,7 +184,7 @@ md(r"""
 > rho_50 is an interpolation and not a censored bound."*
 
 This is the clause that **failed at N=48**, where every cell sat above 0.5 even at the
-floor and `rho_50` could only be reported as `<floor`. At N=96 every landed cell crosses
+floor and `rho_50` could only be reported as `<floor`. At N=96 **all six cells** cross
 inside the grid: the flags in the table above are all `ok`, and `dd_mean_T` runs from
 about 1.2 rounds at the easy end to >21 rounds at the floor, so the grid really does span
 fast phase to deep slow phase.
@@ -226,9 +228,15 @@ md(r"""
 > whole grid is one draw and only the ordering survives -- say so rather than quoting the
 > levels.**"*
 
-t0 and t4 are the **same configuration** -- L=12, 240k instances, 50 epochs, every
-hyper-parameter byte-identical -- differing only in `--seed`. The cell below measures what
-that one knob is worth.
+There are now **two** such pairs, at both ends of the depth axis the headline claim spans:
+t0/t4 at L=12 and t1/t5 at L=8. Each pair is the **same configuration** -- same depth,
+same 240k instances, same 50 epochs, every hyper-parameter byte-identical -- differing
+only in `--seed`. The cell below measures what that one knob is worth.
+
+Both fail, and the shallow pair fails *harder*: **0.138 at L=8**, against 0.115 at L=12.
+That is the opposite of the hopeful reading -- the replicate was submitted precisely in
+case the L=8 spread was small enough to rescue H2, and instead it set the yardstick. It
+also reproduces finding 41, which measured the big seed term at the shallow end at N=48.
 """)
 
 code(r"""
@@ -303,8 +311,16 @@ md(r"""
 > optimization is binding at N=96. Falsifier: if 120k beats 240k, then optimization and
 > not coverage is binding at N=96."*
 
-H3's falsifier fires *nominally* -- 120k lands below 240k -- and H2's depth gap has the
-right sign but is about a tenth of the seed yardstick. Neither survives H4.
+With L=16 in, **H2's ordering is exactly right**: `rho_50` falls monotonically
+0.691 -> 0.679 -> 0.613 as depth goes 8 -> 12 -> 16. But the clause H2 actually
+pre-registered is the *size* of the 8 -> 12 gap, and that gap is **+0.012** -- a ninth of
+the 0.138 seed yardstick. The 12 -> 16 step is larger at 0.066 and still only half the
+yardstick. So the direction is encouraging and **the magnitude is not a measurement**:
+three draws landing in one particular order happens 1 time in 6 by chance, and the gaps
+here are smaller than the noise that would produce that.
+
+H3's falsifier fires *nominally* -- 120k lands below 240k at equal gradient steps -- but
+by 0.069, also under the yardstick. Neither clause survives H4.
 """)
 
 code(r"""
@@ -357,19 +373,33 @@ plt.tight_layout(); plt.show()
 
 # ---------------------------------------------------------------- 6. val_nll
 md(r"""
-## An unexpected regularity: here, val_nll rank-orders rho_50 exactly
+## The result that actually explains the grid: rho_50 is a function of val_nll
 
 Finding 4 established that val_nll is a poor predictor of solve rate *across* models
-(r = +0.33), and findings 20 and 25 had it ranking cells backwards. Inside this grid it
-does not misbehave -- it rank-orders the cells perfectly. The cells span only ~0.02 in
-val_nll and ~0.13 in rho_50, so a very small difference in how well a run optimized maps
-to a large difference in how deep into the slow phase it solves.
+(r = +0.33 over 34 runs), and findings 20 and 25 had it ranking cells backwards. Inside
+this grid -- one N, one ensemble, one protocol, varying only depth, data and seed -- it
+does not misbehave at all. **Over all six cells the rank correlation is +0.943**, and the
+single inversion is t2 vs t3, whose `rho_50` differ by 0.003 with overlapping CIs. Six
+cells spanning 0.086 in val_nll span 0.266 in `rho_50`.
 
-That is the mechanism hypothesis for H4's failure: **the seed is not changing what the
-network can represent, it is changing how well that particular run converged.** Every
-cell is still improving when training stops (last-5-epoch val drop is negative in all of
-them, and the "overfit gap" is negative only because train_nll is averaged over the epoch
-while weights move -- finding 16).
+This is what H4's failure actually was. **Depth, data and seed are not three separate
+effects on reasoning reach -- they are three ways of moving one number, how far the run
+converged, and `rho_50` follows that number.** The decisive case is the pair that was
+added to rescue H2: t5 is L=8 at seed 1, and it both converged worst (val 1.8140, a full
+0.065 behind its own seed-0 twin) and solved worst (0.829). It is not subtly noisy, it is
+a partly-failed optimization, and nothing about its *architecture* differs from t1's.
+
+Note the sizes. The seed moves val_nll by up to 0.065 (t1 -> t5). Depth, over the whole
+8 -> 16 range, moves it by 0.0175 (t1 -> t2). **The seed outruns depth in the convergence
+channel by almost a factor of four**, which is why it outruns it in `rho_50`. Every cell
+is still descending when training stops (last-5-epoch val drop negative in all six; the
+negative "overfit gap" is finding 16's averaging artifact, not fit).
+
+**Two practical consequences.** (1) `val_nll` is a near-free proxy for `rho_50` inside a
+fixed (N, ensemble, protocol) -- the 14-point x 400-instance eval costs hours per cell and
+the ranking it produces is already visible in `history.json`. Future scans can screen on
+it. (2) Any intervention that lowers val_nll and tightens its spread should move `rho_50`
+with it, which is the premise of the follow-up run below.
 """)
 
 code(r"""
@@ -406,12 +436,15 @@ The grid's minimum `well_formed_rate` is well below the ~1.00 seen when only t1 
 landed. It is **not** spread across cells and it is **not** a depth effect: it is confined
 to a single cell, at low rho, and that cell's byte-identical twin at the other seed is
 clean everywhere. Truncation is not the cause -- these generations terminate, they just do
-not parse.
+not parse. Every cell including t4 is at `well_formed = 1.0000` above rho 0.8.
 
-Two consequences. First, it is a second observable on which one seed changed the model
+Three consequences. First, it is a second observable on which one seed changed the model
 qualitatively, which corroborates H4 rather than being an independent problem. Second,
 malformed output counts as *unsolved*, so it depresses that cell's solve rate -- the
-affected cell is the grid's best **despite** the dip, not because of it.
+affected cell is the grid's best **despite** the dip, not because of it. Third, and
+against the obvious guess: **the badly-converged cell is not the malformed one.** t5 has
+the worst val_nll in the grid by a wide margin and its grammar is clean (min 0.9925), so
+low-rho malformedness is not simply what undertrained models do here.
 """)
 
 code(r"""
@@ -453,6 +486,11 @@ The table below is the honest before/after against it on the identical eval.
 which sits essentially on top of t1 -- so almost none of the gain is depth, and almost all
 of it is the seed draw. Nothing was tuned to produce it and nothing known would reproduce
 it on a fresh seed.
+
+The completed grid makes that concrete in the least flattering way: **the seed cuts both
+ways and the downside is bigger than the upside.** Changing seed 0 -> 1 at L=12 bought
+-0.115; the same change at L=8 cost **+0.138**. Had t5 been the cell that landed first
+this morning, the "best `rho_50`" on this eval would have been reported as 0.829.
 """)
 
 code(r"""
@@ -509,31 +547,46 @@ md(r"""
 ### The design conclusion, stated plainly
 
 A depth scan at N=96 run the way this grid was run **cannot answer the depth question at
-any affordable seed budget**. Averaging is the wrong lever. The val_nll regularity says
-why and points at the right one: the cells differ by ~0.02 in val_nll, all of them are
-still descending when training stops, and the run that happened to optimize best is the
-run that solves deepest. The seed is buying *convergence*, not capacity.
+any affordable seed budget**, and the completed grid closes the one escape route it had:
+the spread is not a quirk of L=12, it is larger at L=8. Averaging is the wrong lever.
 
-So the next single change should attack convergence, not architecture: this grid trains
-at **constant lr 1e-3 with no warmup and no decay**, which is exactly the setting in which
-the end-of-training point is a lottery over where the iterate happened to be. A decay
-schedule should both lower val_nll and shrink its run-to-run spread, and if the mechanism
-hypothesis is right, `rho_50`'s spread collapses with it.
+The val_nll regularity says why and points at the right one. Six cells spanning 0.086 in
+val_nll span 0.266 in `rho_50` at rank correlation +0.943; all six are still descending
+when training stops; and the seed moves val_nll roughly four times as far as the whole
+8 -> 16 depth range does. **The seed is buying convergence, not capacity, and until
+convergence is controlled no architectural quantity at this N is measurable.**
 
-**Next experiment (one knob, two seeds, everything else byte-identical to t0/t4):** add an
-lr schedule at L=12 / 240k / 50 epochs, seeds 0 and 1, and read out two numbers --
-(1) does best `rho_50` beat 0.564, and (2) **is the seed spread below the 0.115 measured
-here?** (2) is the one that matters, because without it no depth scan is worth running.
-That is a direct test, a two-cell cost, and it is pre-registered by this paragraph.
+So the next single change attacks convergence, not architecture. This grid trains at
+**constant lr 1e-3, no warmup, no decay**, which is exactly the setting in which the
+end-of-training point is a lottery over where the iterate happened to be sitting. A decay
+schedule should lower val_nll and tighten its run-to-run spread, and if the mechanism
+above is right, `rho_50`'s spread follows it down.
+
+**The follow-up is running as `50933500`** (`scripts/slurm/sudoku2_n96_cosine_2026-11-03.sbatch`,
+submitted before t2 and t5 landed): one knob, `--lr-schedule cosine`, at L=12 / 240k /
+50 epochs, seeds 0 and 1, everything else byte-identical to t0/t4, same eval, new dated
+directory. Pre-registered there: **P1, the test, is whether the seed spread falls below
+0.115**; P2 is val_nll below 1.7283; P3, beating `rho_50` 0.564, is explicitly *not* the
+test, because 0.564 is itself a lucky draw. Falsifier: spread >= 0.115 **and** no val_nll
+gain, in which case the seed term is intrinsic at N=96 and that is the finding.
+
+One thing the completed grid changes about reading it: P1's bar was set against the L=12
+spread of 0.115 because that was all that existed at submission. The yardstick is now
+**0.138**, so clearing 0.115 is the stricter of the two tests and P1 stands as written.
 
 ### Still open
 
-- t2 (L=16) and t5 (L=8 seed 1) had not landed when this was written. t5 is the one that
-  says whether `sigma_hat` is a property of L=12 or of the protocol; if the L=8 spread is
-  much smaller, the yardstick above is too conservative and H2 may be partly readable.
 - The dip's mechanism -- what the malformed generations at low rho actually emit -- is
-  uninspected. It is confined to one cell and does not affect the controls, but it has not
-  been explained.
+  uninspected. It is confined to t4, does not affect the controls, is absent above
+  rho 0.8, and is *not* explained by undertraining (t5 is far worse converged and clean),
+  so it has no account at all yet.
+- Whether the val_nll proxy survives an intervention. It holds across depth, data and
+  seed at fixed schedule; `50933500` changes the schedule, which is exactly the kind of
+  change that could break the relation rather than ride it.
+- H2 itself. The ordering 8 > 12 > 16 is right and the 12 -> 16 step (0.066) is the
+  largest architectural effect in the grid. If `50933500` tightens the spread, the
+  cheapest real test of depth is **L=12 vs L=16 under the schedule**, not a rerun of the
+  8 -> 12 gap that failed here.
 """)
 
 nb = {"cells": CELLS,
