@@ -41,7 +41,7 @@ import json
 import numpy as np
 import torch
 
-from spin_gnn.config import SudokuReasoningConfig
+from spin_gnn.ensemble_args import FIELDS, add_ensemble_args, ensemble_config
 from spin_gnn.sudoku_activations import dd_state_labels
 from spin_gnn.sudoku_probes import auroc, average_precision, fit_linear_probe
 from spin_gnn.train_sudoku_transformer import build_instances, build_vocab
@@ -71,13 +71,16 @@ def gather(cfg, vocab, n_instances, seed_start):
 
 def main():
     ap = argparse.ArgumentParser()
+    # The baseline is a property of the TASK, so it has to be recomputed for
+    # every ensemble a probe run is read against; it was pinned to N=24 here.
+    add_ensemble_args(ap)
     ap.add_argument("--n-train", type=int, default=250)
     ap.add_argument("--n-test", type=int, default=150)
     ap.add_argument("--probe-epochs", type=int, default=300)
     ap.add_argument("--out-json", default="")
     args = ap.parse_args()
 
-    cfg = SudokuReasoningConfig(n_nodes=24, degree=5, n_colors=4)
+    cfg = ensemble_config(args)
     vocab = build_vocab(cfg)
     f_tr, k_tr, nb_tr = gather(cfg, vocab, args.n_train, 500_000_000)
     f_te, k_te, nb_te = gather(cfg, vocab, args.n_test, 900_000_000)
@@ -124,6 +127,9 @@ def main():
     print("     needed before any of these can be compared on auroc.")
 
     if args.out_json:
+        # Carry the ensemble: this number is a property of the task, so an
+        # N=96 fall baseline and the N=24 one are not interchangeable.
+        res["ensemble"] = {f: getattr(cfg, f) for f in FIELDS}
         with open(args.out_json, "w") as fh:
             json.dump(res, fh, indent=2)
         print(f"\nwrote {args.out_json}")

@@ -226,6 +226,8 @@ def collect_dataset(model, instances, vocab, device, max_positions_per_instance=
     present at all."""
     rng = rng or np.random.default_rng(0)
     per_layer, label_chunks = [], []
+    model_max_len = model.pos_embed.shape[0]
+    n_too_long = 0
     with ResidualCapture(model) as cap:
         for adj, _colors, _hints, trace in instances:
             positions, lab = dd_state_labels(adj, trace, vocab)
@@ -234,13 +236,23 @@ def collect_dataset(model, instances, vocab, device, max_positions_per_instance=
             idx = np.arange(len(positions))
             if max_positions_per_instance and len(idx) > max_positions_per_instance:
                 idx = np.sort(rng.choice(idx, size=max_positions_per_instance, replace=False))
-            tokens = torch.as_tensor(
-                encode_instance(adj, trace, vocab)[None, :], dtype=torch.long, device=device,
-            )
+            token_ids = encode_instance(adj, trace, vocab)
+            # The model raises on a sequence longer than its positional table.
+            # Harmless at N=24, where nothing came close, but at N=96 the
+            # training runs themselves truncated up to 0.75% of instances
+            # (finding 45's control), so a long draw here would abort the whole
+            # probe rather than cost one instance.
+            if len(token_ids) > model_max_len:
+                n_too_long += 1
+                continue
+            tokens = torch.as_tensor(token_ids[None, :], dtype=torch.long, device=device)
             acts = cap.run(tokens)  # (L+1, 1, T, d)
             pos = np.array([positions[i]["pos"] for i in idx], dtype=np.int64)
             per_layer.append(acts[:, 0, pos, :].cpu())
             label_chunks.append({k: v[idx] for k, v in lab.items()})
+    if n_too_long:
+        print(f"  collect_dataset: skipped {n_too_long}/{len(instances)} instances "
+              f"longer than the model's max_len={model_max_len}")
     if not per_layer:
         raise ValueError("no labelled positions found across the given instances")
     acts = torch.cat(per_layer, dim=1)
