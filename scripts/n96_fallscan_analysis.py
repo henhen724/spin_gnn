@@ -54,6 +54,10 @@ TASKS = {
     "t2 L=16 240k s0": (16, 1024, 240000, 0),
     "t3 L=12 120k s0 (data axis)": (12, 1024, 120000, 0),
     "t4 L=12 240k s1 (seed)": (12, 1024, 240000, 1),
+    # Added 11-03 as job 50903022, a replicate rather than a new condition:
+    # H2's bar is the 8->12 gap and without this the shallow end of it is a
+    # single draw (finding 41 measured the seed at 0.1627 at L=8 at N=48).
+    "t5 L=8  240k s1 (seed @ L=8)": (8, 1024, 240000, 1),
 }
 
 _HIST = {}
@@ -180,7 +184,7 @@ def main():
     present = {lab: k for lab, k in TASKS.items() if k in cells}
     missing = {lab: k for lab, k in TASKS.items() if k not in cells}
     print(f"{len(rows)} rows / {len(cells)} cells under {args.scan_dir}")
-    print(f"present: {len(present)}/5   missing: "
+    print(f"present: {len(present)}/{len(TASKS)}   missing: "
           + (", ".join(sorted(missing)) if missing else "none") + "\n")
 
     r50, ci = {}, {}
@@ -240,21 +244,31 @@ def main():
     print()
 
     # ------------------------------------------------------- the H4 yardstick
-    s_seed = None
     k0, k4 = TASKS["t0 L=12 240k s0 (headline)"], TASKS["t4 L=12 240k s1 (seed)"]
-    print("=== H4: the seed yardstick (t0 vs t4, identical config, seeds 0 and 1) ===")
-    if k0 in cells and k4 in cells:
-        a = {r["rho"]: r["solve_rate"] for r in cells[k0]}
-        b = {r["rho"]: r["solve_rate"] for r in cells[k4]}
+    k1, k5 = TASKS["t1 L=8  240k s0"], TASKS["t5 L=8  240k s1 (seed @ L=8)"]
+    print("=== H4: the seed yardstick (identical config, seeds 0 and 1) ===")
+    seed_term = {}
+    for depth, ka, kb in ((12, k0, k4), (8, k1, k5)):
+        if ka not in cells or kb not in cells:
+            print(f"  L={depth:2d}: pending")
+            continue
+        a = {r["rho"]: r["solve_rate"] for r in cells[ka]}
+        b = {r["rho"]: r["solve_rate"] for r in cells[kb]}
         d = {q: abs(a[q] - b[q]) for q in grid}
-        s_seed = abs(r50[k0][0] - r50[k4][0])
-        print("  |dsolve| " + " ".join(f"{d[q]:5.3f}" for q in grid)
+        seed_term[depth] = abs(r50[ka][0] - r50[kb][0])
+        print(f"  L={depth:2d} |dsolve| " + " ".join(f"{d[q]:5.3f}" for q in grid)
               + f"   max {max(d.values()):.3f}  mean {sum(d.values())/len(d):.3f}")
-        print(f"  seed spread in rho_50 itself = {s_seed:.3f}  (bar <= 0.05)  "
-              f"{'PASS' if s_seed <= 0.05 else 'FAIL'}")
-        print("  >>> every gap below must clear this to be a measurement of architecture")
+        print(f"  L={depth:2d} seed spread in rho_50 = {seed_term[depth]:.3f}  (bar <= 0.05)  "
+              f"{'PASS' if seed_term[depth] <= 0.05 else 'FAIL'}")
+    # The gap is read against the LARGER of the two ends it spans: a depth
+    # claim is only as sharp as the noisier rung it is measured from.
+    s_seed = max(seed_term.values()) if seed_term else None
+    if s_seed is None:
+        print("  >>> pending -- until one lands, NO H2/H3 gap below is "
+              "interpretable (finding 41)")
     else:
-        print("  pending -- until it lands, NO H2/H3 gap below is interpretable (finding 41)")
+        print(f"  >>> yardstick in force = {s_seed:.3f} (max over measured rungs); "
+              f"every gap below must clear it to be a measurement of architecture")
     print()
 
     # ------------------------------------------------------------------- H2
