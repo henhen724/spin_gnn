@@ -68,18 +68,29 @@ assert cfg_json["max_len_margin"] == 2 * N + 2, cfg_json["max_len_margin"]
 assert cfg_json["max_len"] == expected
 print(f"[4] config.json records max_len={cfg_json['max_len']} margin={cfg_json['max_len_margin']}")
 
-# (5) The behavioural claim. Prompt both models with the same held-out instance
-# and let them generate freely; only the margined table can emit past
-# `longest`. Both models are barely trained, so they babble to their cap --
-# which is exactly the condition the margin exists for.
+# (5) The behavioural claim: the table size, and nothing else, is what stops a
+# run-on generation. Held fixed by extending ONE model's pos_embed rather than
+# comparing the margin-0 and auto models -- they are separate inits that babble
+# differently, and the first version of this check failed on exactly that (the
+# auto model happened to emit a terminal token at 92, under both caps, so the
+# comparison was vacuous). Same weights, same prompt, only the cap moves.
 inst = build_instances(sudoku_cfg, 1, 999_000)[0]
 toks = encode_instance(inst[0], inst[3], r0["vocab"])
 begin = int(np.flatnonzero(toks == r0["vocab"].BEGIN_REASONING)[0])
 prompt = toks[: begin + 1]
-len0 = len(generate(r0["model"], prompt, r0["vocab"], 10_000, device="cpu"))
-lena = len(generate(r_auto["model"], prompt, r_auto["vocab"], 10_000, device="cpu"))
-print(f"[5] free generation: margin 0 stops at {len0} (cap {longest}), "
-      f"auto reaches {lena} (cap {expected})")
-assert len0 <= longest and lena <= expected
-assert lena > longest, "margined model never used the headroom -- check the cap is what bound it"
+
+m = r0["model"]
+len0 = len(generate(m, prompt, r0["vocab"], 10_000, device="cpu"))
+assert len0 == longest, f"need a generation that RUNS ON to test the cap, got {len0} < {longest}"
+
+import torch
+
+old = m.pos_embed.data
+m.pos_embed = torch.nn.Parameter(
+    torch.cat([old, 0.02 * torch.randn(2 * N + 2, old.shape[1], dtype=old.dtype)], dim=0)
+)
+len_ext = len(generate(m, prompt, r0["vocab"], 10_000, device="cpu"))
+print(f"[5] same weights, free generation: cap {longest} stops at {len0}; "
+      f"cap {longest + 2 * N + 2} reaches {len_ext}")
+assert len_ext > longest, "the table was extended and generation still stopped at the old cap"
 print("ALL CHECKS PASSED")
