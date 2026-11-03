@@ -70,6 +70,9 @@ def transition_curve(ckpt_dir, rho_grid, n_per_bin, seed_start, device):
         # adjacency it was trained to ignore.
         shuffle_adj=bool(config.get("shuffle_adj", False)),
         shuffle_events=bool(config.get("shuffle_events", False)),
+        # Instance key, not a hyperparameter (finding 43): fall changes the GRAPH
+        # ensemble, so without it a _fall checkpoint is analysed off-distribution.
+        fall=bool(config.get("fall", False)),
     )
     with torch.no_grad():
         records = eval_solve_by_rho(

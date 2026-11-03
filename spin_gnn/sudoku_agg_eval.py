@@ -158,6 +158,16 @@ def main():
         # No shuffle_events: it is not an instance key here (see INSTANCE_KEYS),
         # and the pool's trace order cannot reach the prompt anyway.
         shuffle_adj=bool(sig["shuffle_adj"]),
+        # `fall` has been in INSTANCE_KEYS since 5c17d3c, so a mismatch BETWEEN
+        # checkpoints was already caught -- but the agreed value was then
+        # dropped on the floor here and every pool was built from the
+        # unconstrained ensemble. A set of fall-trained checkpoints agrees with
+        # itself, passes check_comparable, and gets scored on instances its
+        # models were never trained on, with no error and a plausible-looking
+        # number. Same defect finding 43 found in save_checkpoint, one layer
+        # further out and in the metric of record. Pre-2026-11-02 checkpoints
+        # default to False, so no pool already quoted in STATUS moves.
+        fall=bool(sig["fall"]),
     )
     print(f"shared pool: {args.n_instances} instances, rho in "
           f"[{cfg.rho}, {cfg.rho_max}], seed_start {args.seed_start}")

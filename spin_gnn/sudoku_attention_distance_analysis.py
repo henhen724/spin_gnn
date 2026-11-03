@@ -45,6 +45,9 @@ def main():
         scratchpad=bool(config.get("scratchpad", False)),
         shuffle_adj=bool(config.get("shuffle_adj", False)),
         shuffle_events=bool(config.get("shuffle_events", False)),
+        # Instance key, not a hyperparameter (finding 43): fall changes the GRAPH
+        # ensemble, so without it a _fall checkpoint is analysed off-distribution.
+        fall=bool(config.get("fall", False)),
     )
     instances = build_instances(cfg, n_instances=args.n_instances, seed_start=args.seed_start)
 

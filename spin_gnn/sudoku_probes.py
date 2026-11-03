@@ -178,6 +178,9 @@ def probe_checkpoint(ckpt_dir, n_train_instances, n_test_instances, max_pos, dev
         # adjacency it was trained to ignore, i.e. the wrong distribution.
         shuffle_adj=bool(config.get("shuffle_adj", False)),
         shuffle_events=bool(config.get("shuffle_events", False)),
+        # Instance key, not a hyperparameter (finding 43): fall changes the GRAPH
+        # ensemble, so without it a _fall checkpoint is analysed off-distribution.
+        fall=bool(config.get("fall", False)),
     )
     # Disjoint instance pools: a probe must generalize across instances, not
     # just across positions within instances it has already seen.
