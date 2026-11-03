@@ -20,21 +20,15 @@ import os
 
 import torch
 
-from .config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
+from .config import SudokuReasoningModelConfig, SudokuReasoningTrainConfig
+from .ensemble_args import add_ensemble_args, ensemble_config
 from .sat_transformer2 import SATReasoningTransformer
 from .train_sudoku_transformer import build_instances, save_checkpoint, solve_rate, train_sudoku_model
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n-nodes", type=int, default=24)
-    ap.add_argument("--degree", type=int, default=5)
-    ap.add_argument("--n-colors", type=int, default=4)
-    ap.add_argument("--rho", type=float, default=0.3)
-    ap.add_argument("--rho-max", type=float, default=0.95)
-    ap.add_argument("--hint-mode", type=str, default="removal", choices=["removal", "random"])
-    ap.add_argument("--scratchpad", action="store_true")
-    ap.add_argument("--seed", type=int, default=0)
+    add_ensemble_args(ap)
     ap.add_argument("--d-model", type=int, default=128)
     ap.add_argument("--nhead", type=int, default=4)
     ap.add_argument("--num-layers", type=int, default=12)
@@ -55,10 +49,7 @@ def main():
 
     checkpoint_epochs = sorted({int(e) for e in args.checkpoint_epochs.split(",") if int(e) <= args.epochs})
 
-    sudoku_cfg = SudokuReasoningConfig(
-        n_nodes=args.n_nodes, degree=args.degree, n_colors=args.n_colors, rho=args.rho, rho_max=args.rho_max,
-        seed=args.seed, hint_mode=args.hint_mode, scratchpad=args.scratchpad,
-    )
+    sudoku_cfg = ensemble_config(args)
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead,
         dim_feedforward=args.dim_feedforward, norm_first=not args.no_norm_first,

@@ -24,19 +24,15 @@ Usage: python -m spin_gnn.sudoku_transition_sweep --out-csv $SCRATCH/....csv
 import argparse
 import csv
 
-from .config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
+from .config import SudokuReasoningModelConfig, SudokuReasoningTrainConfig
+from .ensemble_args import add_ensemble_args, ensemble_config
 from .sat_transformer2 import SATReasoningTransformer
 from .train_sudoku_transformer import eval_solve_by_rho, train_sudoku_model
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n-nodes", type=int, default=24)
-    ap.add_argument("--degree", type=int, default=5)
-    ap.add_argument("--n-colors", type=int, default=4)
-    ap.add_argument("--rho", type=float, default=0.3)
-    ap.add_argument("--rho-max", type=float, default=0.95)
-    ap.add_argument("--seed", type=int, default=0)
+    add_ensemble_args(ap)
     ap.add_argument("--d-model", type=int, default=64)
     ap.add_argument("--num-layers", type=int, default=2)
     ap.add_argument("--nhead", type=int, default=1)
@@ -51,21 +47,13 @@ def main():
     ap.add_argument("--rho-grid", type=str, default="0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.95")
     ap.add_argument("--n-per-bin", type=int, default=50)
     ap.add_argument("--eval-seed-start", type=int, default=10_000_000_000)
-    ap.add_argument("--hint-mode", type=str, default="removal", choices=["removal", "random"],
-                    help="'random' samples hints independently so DD can fail; required for a "
-                         "hint-density solvability transition to exist in the data at all")
-    ap.add_argument("--scratchpad", action="store_true",
-                    help="restate each deduction's evidence before it (sudoku_tokens scratchpad grammar)")
     ap.add_argument("--out-csv", type=str, required=True)
     args = ap.parse_args()
 
     checkpoint_epochs = [int(e) for e in args.checkpoint_epochs.split(",")]
     rho_grid = [float(r) for r in args.rho_grid.split(",")]
 
-    sudoku_cfg = SudokuReasoningConfig(
-        n_nodes=args.n_nodes, degree=args.degree, n_colors=args.n_colors, rho=args.rho, rho_max=args.rho_max,
-        seed=args.seed, hint_mode=args.hint_mode, scratchpad=args.scratchpad,
-    )
+    sudoku_cfg = ensemble_config(args)
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
         norm_first=not args.no_norm_first,

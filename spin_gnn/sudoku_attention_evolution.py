@@ -20,7 +20,8 @@ import os
 import numpy as np
 import torch
 
-from spin_gnn.config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
+from spin_gnn.config import SudokuReasoningModelConfig, SudokuReasoningTrainConfig
+from spin_gnn.ensemble_args import add_ensemble_args, ensemble_config
 from spin_gnn.sat_transformer2 import SATReasoningTransformer
 from spin_gnn.sudoku_attention_distance import (
     attention_weight_by_distance, forward_capture_attention, required_distances,
@@ -86,6 +87,9 @@ def enrichment_at_checkpoint(model, vocab, instances, config_dict, n_colors, max
 
 def main():
     p = argparse.ArgumentParser()
+    # This script had no instance flags at all, so it was pinned to the N=24
+    # default ensemble and could not be pointed at the N=96 fall cells.
+    add_ensemble_args(p)
     p.add_argument("--d-model", type=int, default=64)
     p.add_argument("--nhead", type=int, default=4)
     p.add_argument("--num-layers", type=int, default=12)
@@ -101,7 +105,7 @@ def main():
     args = p.parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
 
-    sudoku_cfg = SudokuReasoningConfig()
+    sudoku_cfg = ensemble_config(args)
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
     )
