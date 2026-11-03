@@ -5,9 +5,27 @@ every attempted removal along a random path, the maintained deduction times
 must equal a from-scratch DD run (`dd_times`) on the current hint set, and a
 removal must be accepted exactly when from-scratch DD still recovers the
 whole coloring.
+
+Sherlock's only pytest is py-pytest/7.1.3_py39 and this project is py312, so
+until now this file could not be collected on the cluster at all and these
+checks had never run here. tests/_pytest_shim.py supplies the `parametrize`
+they are built on; real pytest is still preferred where it exists. Run it with
+
+    python3 tests/test_sudoku_dd.py
 """
+import os
+import sys
+
 import numpy as np
-import pytest
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:
+    import _pytest_shim as pytest
 
 from spin_gnn.sudoku_dd import (
     INF, dd_times, make_workspace, planted_regular_graph, remove_hint, removal_path,
@@ -80,3 +98,9 @@ def test_mcmc_moves_keep_times_exact(N, d, q, seed):
             mcmc_steps(rng.integers(N, size=N // 4), rng.random(N // 4), mu,
                        adj, colors, q, t, is_hint, ws, heap2)
             np.testing.assert_array_equal(t, dd_times(adj, colors, is_hint, q))
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))
