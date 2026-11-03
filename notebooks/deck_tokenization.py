@@ -68,18 +68,25 @@ class Example:
 
 
 def example_instance(n_nodes=24, degree=5, n_colors=4, rho=0.3, rho_max=0.95,
-                     shuffle_adj=True, shuffle_events=False,
+                     shuffle_adj=True, shuffle_events=False, fall=False,
                      seed=50_000_000_000, pick="median"):
     """One instance from the eval generator. `pick` selects among 40 draws:
     "median" takes the median number of DD rounds, so the deck shows a typical
     instance rather than a cherry-picked shallow one; "deep" takes the 90th
     percentile, for decks whose subject IS reasoning depth (a T=3 trace does
     not illustrate a depth cost). Either way the depth and the pool it came
-    from are printed on the page, so the choice is visible."""
+    from are printed on the page, so the choice is visible.
+
+    `fall` is an instance key, not a hyperparameter (SUDOKU_DD.md): it selects
+    the fall-colouring graph ensemble, whose removal paths reach rho = 0.33
+    instead of 0.47 and whose traces are therefore deeper at the same N. Pass
+    the checkpoint's `config["fall"]`, exactly as for shuffle_adj -- a deck
+    that defaults it to False while reporting fall-trained cells illustrates
+    the wrong distribution."""
     cfg = SudokuReasoningConfig(n_nodes=n_nodes, degree=degree, n_colors=n_colors,
                                 rho=rho, rho_max=rho_max, hint_mode="removal",
                                 scratchpad=False, shuffle_adj=shuffle_adj,
-                                shuffle_events=shuffle_events)
+                                shuffle_events=shuffle_events, fall=fall)
     insts = build_instances(cfg, 40, seed_start=seed)
     depths = [len(t["rounds"]) for _, _, _, t in insts]
     order = np.argsort(depths)
@@ -177,7 +184,10 @@ def page_tokenization(out, ex):
 
     footer(fig, "DD is single-candidate elimination -- sudoku's 'naked single' rule transplanted to graph "
                 "colouring, which is where the code's sudoku names come from; the task itself is the graph, "
-                f"not a 9x9 grid. Instance shown: seed {ex.seed}."
+                f"not a 9x9 grid. Instance shown: seed {ex.seed}, "
+                + ("FALL-colouring ensemble (every node sees all q-1 other colours, so no node is "
+                   "permanently undeducible)." if getattr(ex.cfg, "fall", False)
+                   else "unconstrained ensemble.")
                 + ("" if ex.cfg.shuffle_adj else " These rows are the LEAKED (colour-sorted) order."))
     out.savefig(fig)
 

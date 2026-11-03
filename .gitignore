@@ -56,3 +56,7 @@ _smoke_*/
 # in the repo root. Layout smoke tests render pages from fabricated summaries
 # and must never be mistaken for a run.
 _*_smoke/
+# ...and their numbered reruns, plus the one-off eval CSVs the smoke tests emit.
+_*_smoke[0-9]*/
+_*_smoke[0-9]*.csv
+_*_smoke.csv
