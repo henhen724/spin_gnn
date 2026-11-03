@@ -265,6 +265,17 @@ class SudokuReasoningTrainConfig:
     epochs: int = 50
     device: str = "cuda"
     max_len: int = 0  # 0 = no cap
+    # Generation headroom, in tokens, added to the positional table on top of
+    # the longest TRAINING sequence. `generate` hard-stops at
+    # pos_embed.shape[0], so with no margin a model that emits one event more
+    # than the longest trace it ever saw is guillotined mid-sequence and scored
+    # as a failure. Finding 44 measured exactly that: at N=48 max_len came out
+    # 414 against a longest true fall trace of 408, and the two L=12 cells
+    # truncated in up to 0.0275 of the deepest-density bins. Sized in the trace
+    # grammar's own units -- a deduction costs 2 tokens and a round marker 1 --
+    # so the auto value is room to re-emit every node once more, plus a round
+    # marker and the terminal SOLVED. 0 reproduces every run before 2026-11-02.
+    max_len_margin: int = -1  # -1 = auto: 2 * n_nodes + 2
     # "constant" reproduces every run before 2026-10-25, which held lr fixed for
     # the whole budget. "cosine" decays lr -> lr*lr_min_factor across epochs,
     # stepped once per epoch. Default stays "constant" so no earlier comparison

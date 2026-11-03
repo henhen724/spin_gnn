@@ -43,7 +43,7 @@ def run_one(args):
         n_train_instances=args.n_train_instances, n_val_instances=args.n_val_instances,
         batch_size=args.batch_size, lr=args.lr, epochs=args.epochs,
         lr_schedule=args.lr_schedule, lr_min_factor=args.lr_min_factor,
-        warmup_epochs=args.warmup_epochs,
+        warmup_epochs=args.warmup_epochs, max_len_margin=args.max_len_margin,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
 
@@ -195,6 +195,9 @@ if __name__ == "__main__":
     ap.add_argument("--n-val-instances", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--epochs", type=int, default=150)
+    ap.add_argument("--max-len-margin", type=int, default=-1,
+                    help="generation headroom above the longest training sequence; "
+                         "-1 = auto (2*n_nodes+2), 0 = pre-2026-11-02 behaviour")
     ap.add_argument("--n-per-bin", type=int, default=100)
     ap.add_argument("--eval-seed-start", type=int, default=20_000_000_000)
     ap.add_argument("--out-dir", type=str, required=True)

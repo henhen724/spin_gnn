@@ -388,6 +388,19 @@ def _build_lr_schedule(opt, train_cfg: SudokuReasoningTrainConfig):
     return torch.optim.lr_scheduler.SequentialLR(opt, [warm, _main()], milestones=[warmup])
 
 
+def resolve_max_len_margin(train_cfg, sudoku_cfg):
+    """Tokens of generation headroom above the longest training sequence.
+
+    One place, because both the trainer (which sizes pos_embed) and
+    save_checkpoint (which records what was used) need the same answer, and a
+    checkpoint whose recorded margin disagreed with its table would be worse
+    than no record at all."""
+    margin = getattr(train_cfg, "max_len_margin", 0)
+    if margin < 0:
+        margin = 2 * sudoku_cfg.n_nodes + 2
+    return margin
+
+
 def train_sudoku_model(
     sudoku_cfg: SudokuReasoningConfig, model_cfg: SudokuReasoningModelConfig, train_cfg: SudokuReasoningTrainConfig,
     checkpoint_epochs=(),
@@ -407,7 +420,17 @@ def train_sudoku_model(
     val_dataset = SATTokenDataset(val_tokens, max_len=max_len)
     if len(train_dataset) == 0 or len(val_dataset) == 0:
         raise ValueError(f"empty dataset: train={len(train_dataset)}, val={len(val_dataset)}")
-    model_max_len = max(seq.shape[0] for seq in train_dataset.sequences + val_dataset.sequences)
+    longest_train_seq = max(seq.shape[0] for seq in train_dataset.sequences + val_dataset.sequences)
+    # The positional table is what bounds free generation (generate() breaks at
+    # pos_embed.shape[0]), so it gets headroom over the longest training
+    # sequence rather than being sized flush to it -- see max_len_margin in
+    # SudokuReasoningTrainConfig. The extra rows are never trained, which is
+    # the price: they are only reached by a generation that has already run
+    # past every trace in the training set, and the alternative there is a
+    # guaranteed truncation rather than a chance to finish.
+    margin = resolve_max_len_margin(train_cfg, sudoku_cfg)
+    model_max_len = longest_train_seq + margin
+    print(f"longest training sequence {longest_train_seq}, +{margin} margin -> max_len={model_max_len}")
 
     baseline_acc = baseline_accuracy(val_dataset, vocab.size)
     print(f"vocab_size={vocab.size} majority-class baseline accuracy (val): {baseline_acc:.4f}")
@@ -511,6 +534,12 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
             "lr_schedule": getattr(train_cfg, "lr_schedule", "constant"),
             "lr_min_factor": getattr(train_cfg, "lr_min_factor", None),
             "warmup_epochs": getattr(train_cfg, "warmup_epochs", 0),
+            # Absent on every checkpoint before 2026-11-02, where it reads 0 --
+            # correct for them, their max_len IS the longest training sequence.
+            # Recorded because that is otherwise unrecoverable: without it a
+            # max_len of 414 could be a flush sample max or a margined one, and
+            # the two are not comparable as "how much room did it have".
+            "max_len_margin": resolve_max_len_margin(train_cfg, sudoku_cfg),
         })
     with open(os.path.join(out_dir, "config.json"), "w") as f:
         json.dump(config, f, indent=2)
@@ -555,6 +584,9 @@ if __name__ == "__main__":
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--epochs", type=int, default=50)
+    ap.add_argument("--max-len-margin", type=int, default=-1,
+                    help="generation headroom above the longest training sequence; "
+                         "-1 = auto (2*n_nodes+2), 0 = pre-2026-11-02 behaviour")
     ap.add_argument("--out-dir", type=str, default=None)
     args = ap.parse_args()
 
@@ -569,6 +601,7 @@ if __name__ == "__main__":
     train_cfg = SudokuReasoningTrainConfig(
         n_train_instances=args.n_train_instances, n_val_instances=args.n_val_instances,
         batch_size=args.batch_size, lr=args.lr, epochs=args.epochs,
+        max_len_margin=args.max_len_margin,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
     if args.out_dir:
