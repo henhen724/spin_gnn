@@ -99,12 +99,19 @@ def average_precision(scores, labels):
     return float(precision[y].sum() / n_pos)
 
 
-def fit_linear_probe(x_tr, y_tr, x_te, y_te, kind, epochs=300, lr=0.05, weight_decay=1e-4, device="cpu"):
+def fit_linear_probe(x_tr, y_tr, x_te, y_te, kind, epochs=300, lr=0.05, weight_decay=1e-4, device="cpu",
+                     return_probe=False):
     """Returns a dict of held-out metrics. For multilabel targets the headline
     is balanced accuracy, because frontier_mask is sparse (a round's frontier
     is a handful of the n_nodes nodes) and plain accuracy is dominated by the
     all-zeros prediction. balanced_accuracy is a threshold-dependent FLOOR,
-    though (see auroc); quote `auroc`/`average_precision` instead."""
+    though (see auroc); quote `auroc`/`average_precision` instead.
+
+    With return_probe, the dict also carries "probe": {weight, bias, mu, sigma}
+    as numpy arrays. The probe reads STANDARDIZED activations, so a direction
+    in the raw residual stream is a row of `weight / sigma`, not of `weight`;
+    sudoku_direction_ablate does that division and nothing else should
+    hand-roll it."""
     x_tr = x_tr.to(device).float()
     x_te = x_te.to(device).float()
     mu, sigma = x_tr.mean(0, keepdim=True), x_tr.std(0, keepdim=True).clamp_min(1e-6)
@@ -129,6 +136,16 @@ def fit_linear_probe(x_tr, y_tr, x_te, y_te, kind, epochs=300, lr=0.05, weight_d
         loss.backward()
         opt.step()
 
+    def finish(metrics):
+        if return_probe:
+            metrics["probe"] = {
+                "weight": probe.weight.detach().double().cpu().numpy(),
+                "bias": probe.bias.detach().double().cpu().numpy(),
+                "mu": mu.detach().double().cpu().numpy().ravel(),
+                "sigma": sigma.detach().double().cpu().numpy().ravel(),
+            }
+        return metrics
+
     with torch.no_grad():
         logits = probe(x_te)
         if kind == "multilabel":
@@ -143,7 +160,7 @@ def fit_linear_probe(x_tr, y_tr, x_te, y_te, kind, epochs=300, lr=0.05, weight_d
             # Pooled over every (position, node) bit, like the rates above.
             s = logits.flatten().double().cpu().numpy()
             y = y_te_t.flatten().double().cpu().numpy()
-            return {
+            return finish({
                 "accuracy": float((pred == y_te_t).float().mean()),
                 "balanced_accuracy": 0.5 * (tpr + tnr),
                 "auroc": auroc(s, y),
@@ -152,10 +169,10 @@ def fit_linear_probe(x_tr, y_tr, x_te, y_te, kind, epochs=300, lr=0.05, weight_d
                 "positive_rate": base,
                 # Always-predict-majority on a sparse target.
                 "majority_accuracy": max(base, 1 - base),
-            }
+            })
         pred = logits.argmax(dim=-1)
         counts = np.bincount(y_te, minlength=out_dim)
-        return {
+        return finish({
             "accuracy": float((pred == y_te_t).float().mean()),
             "balanced_accuracy": float((pred == y_te_t).float().mean()),
             # Undefined for a k-way choice; top-1 accuracy is already the
@@ -165,7 +182,7 @@ def fit_linear_probe(x_tr, y_tr, x_te, y_te, kind, epochs=300, lr=0.05, weight_d
             "f1": float("nan"),
             "positive_rate": float("nan"),
             "majority_accuracy": float(counts.max() / max(1, counts.sum())),
-        }
+        })
 
 
 def probe_checkpoint(ckpt_dir, n_train_instances, n_test_instances, max_pos, device, epochs, seed=0):
