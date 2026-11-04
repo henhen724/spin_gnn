@@ -74,7 +74,13 @@ from scripts.n96_fallscan_analysis import rho_50, rho50_ci
 _SCR = os.environ.get("SCRATCH", "/scratch/users/hshunt")
 SCAN_DEFAULT = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_2026-11-04")
 SCAN_L6 = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_L6_2026-11-04")
-SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6]
+# Stage C (51114734): the width and schedule axes at L=6. Its rungs carry a
+# non-default d_model, dim_feedforward or warmup_epochs, so rung_key() below
+# gives them their own keys and all_rungs() does not name them -- they show up
+# in main()'s "NOT in the registered grid" list on purpose, which is also what
+# keeps them out of the bar that stage A and B were scored against.
+SCAN_C = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_C_2026-11-04")
+SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C]
 
 SEEDS = (0, 1, 2)
 # (L, nhead, arch_mode) -> label. At each arch depth the hub L/h4/full is a rung
