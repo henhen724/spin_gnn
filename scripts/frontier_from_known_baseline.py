@@ -23,6 +23,21 @@ labels, so it measures a property of the TASK, not of any network:
               needs the graph but not the forcing rule
   shuffled    known_mask shuffled across positions, the chance control
 
+Those three are the FREE scores: bookkeeping, and a count that needs the
+graph but not the forcing rule. Two more rows bracket the other end, and they
+are a CEILING rather than a free score, because they are handed the quantity
+DD actually thresholds. n_known_nbrs is not that quantity: a node is
+deducible exactly when its known neighbours cover q-1 DISTINCT colours, and
+at degree 5 with q=4 the known neighbours usually repeat, so a node can have
+four known neighbours and still not be forced.
+
+  color_aug       a probe given known_mask plus n_known_colors
+  rule_on_visible DD's rule computed, not fitted: unknown and n_known_colors
+                  >= q-1. It lands near 0.83 rather than 1.0, and the reason
+                  is worth more than the number -- see the comment at the
+                  call site. frontier_mask is the ROUND's set; the visible
+                  state has already moved on within the round.
+
 Scoring is pooled over all (position, node) bits with the same tpr/tnr
 definition fit_linear_probe uses, so the numbers are directly comparable to
 the balanced_accuracy column in probes.csv / series_probes.csv.
@@ -58,15 +73,15 @@ def balanced_accuracy(pred, y):
 
 
 def gather(cfg, vocab, n_instances, seed_start):
-    frontier, known, nbrs = [], [], []
+    keys = ("frontier_mask", "known_mask", "n_known_nbrs", "n_known_colors")
+    out = {k: [] for k in keys}
     for adj, _colors, hints, trace in build_instances(cfg, n_instances, seed_start=seed_start):
         _pos, lab = dd_state_labels(adj, trace, vocab)
-        frontier.append(lab["frontier_mask"])
-        known.append(lab["known_mask"])
-        nbrs.append(lab["n_known_nbrs"])
-    return (np.concatenate(frontier).astype(np.int8),
-            np.concatenate(known).astype(np.int8),
-            np.concatenate(nbrs).astype(np.float32))
+        for k in keys:
+            out[k].append(lab[k])
+    cast = {"frontier_mask": np.int8, "known_mask": np.int8,
+            "n_known_nbrs": np.float32, "n_known_colors": np.float32}
+    return {k: np.concatenate(v).astype(cast[k]) for k, v in out.items()}
 
 
 def main():
@@ -77,13 +92,23 @@ def main():
     ap.add_argument("--n-train", type=int, default=250)
     ap.add_argument("--n-test", type=int, default=150)
     ap.add_argument("--probe-epochs", type=int, default=300)
+    # The model probes are run at three seeds and quoted with their spread, so
+    # a point estimate on the other side of the comparison is the weaker half.
+    # This shifts both instance pools, which is the only randomness here.
+    ap.add_argument("--pool-offset", type=int, default=0,
+                    help="shift both instance pools; repeat the run to get a spread")
     ap.add_argument("--out-json", default="")
     args = ap.parse_args()
 
     cfg = ensemble_config(args)
     vocab = build_vocab(cfg)
-    f_tr, k_tr, nb_tr = gather(cfg, vocab, args.n_train, 500_000_000)
-    f_te, k_te, nb_te = gather(cfg, vocab, args.n_test, 900_000_000)
+    off = args.pool_offset * 10_000_000
+    tr = gather(cfg, vocab, args.n_train, 500_000_000 + off)
+    te = gather(cfg, vocab, args.n_test, 900_000_000 + off)
+    f_tr, k_tr, nb_tr, nc_tr = (tr["frontier_mask"], tr["known_mask"],
+                                tr["n_known_nbrs"], tr["n_known_colors"])
+    f_te, k_te, nb_te, nc_te = (te["frontier_mask"], te["known_mask"],
+                                te["n_known_nbrs"], te["n_known_colors"])
     print(f"{f_tr.shape[0]} train / {f_te.shape[0]} test positions, {f_tr.shape[1]} nodes")
     print(f"frontier positive rate: {f_te.mean():.4f}   known positive rate: {k_te.mean():.4f}")
 
@@ -107,6 +132,29 @@ def main():
     }
     res["known_probe"] = probe_on(k_tr, k_te)
     res["degree_aug"] = probe_on(np.hstack([k_tr, nb_tr]), np.hstack([k_te, nb_te]))
+    res["color_aug"] = probe_on(np.hstack([k_tr, nc_tr]), np.hstack([k_te, nc_te]))
+
+    # DD's forcing rule, computed rather than fitted: v is deducible when it is
+    # unknown and its known neighbours already show q-1 distinct colours (a
+    # proper colouring makes q-1 the maximum, so this is a threshold, not an
+    # equality test in disguise).
+    #
+    # This does NOT reproduce frontier_mask, and the gap is the point. It was
+    # written with an assert at 0.999 and the assert fired at 0.832: the label
+    # is the ROUND's set -- every node round r emits, fixed at the round
+    # boundary -- while n_known_colors is the state VISIBLE at this position,
+    # which already includes the deductions this round has written out. So a
+    # node emitted earlier in the round is in the label and `known` by now, and
+    # a node this round's own emissions have just unlocked is deducible now but
+    # belongs to round r+1. A perfect DD reasoner scoring the visible state
+    # therefore lands near 0.83, not 1.0, and that -- not 1.0 -- is the ceiling
+    # a model probe should be read against.
+    rule = ((nc_te >= cfg.n_colors - 1) & (k_te == 0)).astype(np.int8)
+    res["rule_on_visible"] = {
+        "balanced_accuracy": balanced_accuracy(rule, f_te),
+        "auroc": auroc(rule.ravel().astype(np.float32), f_te.ravel()),
+        "average_precision": average_precision(rule.ravel().astype(np.float32), f_te.ravel()),
+    }
 
     rng = np.random.default_rng(0)
     res["shuffled"] = probe_on(k_tr[rng.permutation(len(k_tr))], k_te[rng.permutation(len(k_te))])
@@ -114,22 +162,31 @@ def main():
                             "average_precision": float(f_te.mean())}
 
     print("\nfrontier_mask predictability from label information only:")
-    print(f"  {'':>12}  {'bal_acc':>8} {'auroc':>8} {'avg_prec':>9}")
-    for name in ("positive_rate", "shuffled", "not_known", "known_probe", "degree_aug"):
+    print(f"  {'':>13}  {'bal_acc':>8} {'auroc':>8} {'avg_prec':>9}")
+    for name in ("positive_rate", "shuffled", "not_known", "known_probe", "degree_aug",
+                 "color_aug", "rule_on_visible"):
         r = res[name]
-        print(f"  {name:>12}: {r['balanced_accuracy']:8.4f} {r['auroc']:8.4f} "
+        print(f"  {name:>13}: {r['balanced_accuracy']:8.4f} {r['auroc']:8.4f} "
               f"{r['average_precision']:9.4f}")
     print("  (`positive_rate` is the chance row: AP's chance level is the base rate,")
     print("   not 0.5, so AP must be read against it.)")
-    print("\nfor comparison, the measured model probe (48580216, d0128 @900ep):")
-    print("  frontier_mask peak 0.679   known_mask peak 0.919   layer-0 control 0.571")
-    print("  -- balanced accuracy, which is why the re-probe with --seed 0 1 2 is")
-    print("     needed before any of these can be compared on auroc.")
+    print("  THE FREE SCORE a model probe must beat is the best of not_known /")
+    print("  known_probe / degree_aug -- bookkeeping, and a count that needs the graph")
+    print("  but not the forcing rule. color_aug and rule_on_visible are the other end:")
+    print("  they are handed n_known_colors, which IS DD's computation, so they are the")
+    print("  CEILING, not a free score -- and rule_on_visible shows that ceiling is well")
+    print("  short of 1.0, because frontier_mask is the ROUND's set and the visible")
+    print("  state has already moved on within the round.")
 
     if args.out_json:
         # Carry the ensemble: this number is a property of the task, so an
         # N=96 fall baseline and the N=24 one are not interchangeable.
         res["ensemble"] = {f: getattr(cfg, f) for f in FIELDS}
+        res["run"] = {"n_train": args.n_train, "n_test": args.n_test,
+                      "probe_epochs": args.probe_epochs,
+                      "pool_offset": args.pool_offset,
+                      "n_test_positions": int(f_te.shape[0]),
+                      "positive_rate": float(f_te.mean())}
         with open(args.out_json, "w") as fh:
             json.dump(res, fh, indent=2)
         print(f"\nwrote {args.out_json}")
