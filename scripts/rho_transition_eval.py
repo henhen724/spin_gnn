@@ -93,6 +93,7 @@ def main():
         n_params = sum(p.numel() for p in model.parameters())
         print(f"\n=== {name} ===")
         print(f"  L={config['num_layers']} d_model={config['d_model']} "
+              f"nhead={config.get('nhead')} arch={config.get('arch_mode', 'full')} "
               f"ff={config.get('dim_feedforward')} params={n_params} "
               f"n_train={config.get('n_train_instances')} seed={config.get('seed')} "
               f"fall={sudoku_cfg.fall} shuffle_adj={sudoku_cfg.shuffle_adj}")
@@ -108,8 +109,17 @@ def main():
             rows.append({
                 "checkpoint": name, "path": ckpt,
                 "num_layers": config["num_layers"], "d_model": config["d_model"],
+                "nhead": config.get("nhead"),
                 "dim_feedforward": config.get("dim_feedforward"),
+                # The minimal-architecture grid varies these two, and without
+                # them in the row a curve cannot be told apart from the full
+                # cell at the same (L, d_model, ff) -- the same argument that
+                # put fall and shuffle_adj here. New columns, appended by
+                # DictWriter from the first row, so every existing reader
+                # (DictReader everywhere) is unaffected.
+                "arch_mode": config.get("arch_mode", "full"),
                 "n_params": n_params,
+                "n_trainable_params": config.get("n_trainable_params", n_params),
                 "n_train_instances": config.get("n_train_instances"),
                 "epochs": config.get("epochs"), "seed": config.get("seed", 0),
                 "n_nodes": config["n_nodes"], "degree": config["degree"],
