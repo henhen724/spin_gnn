@@ -439,8 +439,17 @@ def train_sudoku_model(
         vocab.size, d_model=model_cfg.d_model, num_layers=model_cfg.num_layers,
         nhead=model_cfg.nhead, max_len=model_max_len,
         dim_feedforward=model_cfg.dim_feedforward or None, norm_first=model_cfg.norm_first,
+        arch_mode=getattr(model_cfg, "arch_mode", "full"),
     ).to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=train_cfg.lr)
+    n_all = sum(p.numel() for p in model.parameters())
+    n_trainable = model.trainable_parameter_count()
+    print(f"arch_mode={model.arch_mode}  parameters {n_all:,} total, {n_trainable:,} trainable "
+          f"({n_trainable / n_all:.3f})")
+    # Filtered rather than model.parameters() so a frozen tensor never gets an
+    # Adam state slot. For arch_mode="full"/"linear" every parameter requires
+    # grad, so this is the same list in the same order as before and no run
+    # that predates arch_mode changes.
+    opt = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=train_cfg.lr)
     sched = _build_lr_schedule(opt, train_cfg)
     rng = np.random.default_rng(sudoku_cfg.seed)
 
@@ -518,6 +527,13 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
         "fall": getattr(sudoku_cfg, "fall", False),
         "d_model": model_cfg.d_model, "num_layers": model_cfg.num_layers, "nhead": model_cfg.nhead,
         "dim_feedforward": model.encoder.layers[0].linear1.out_features, "norm_first": model.norm_first,
+        # Absent on every checkpoint before 2026-11-04, where it reads "full" --
+        # correct for them, they all trained a full ReLU MLP. Load-bearing at
+        # EVAL time the way `fall` is: without it load_checkpoint rebuilds a
+        # "linear" cell with a ReLU, or an "no_mlp" cell with a live MLP, and
+        # reports a plausible number with no error at all.
+        "arch_mode": getattr(model, "arch_mode", "full"),
+        "n_trainable_params": model.trainable_parameter_count(),
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,
         # Provenance: before 2026-10-25 none of the training settings were saved
         # with the checkpoint, so a results notebook had to recover seed, epochs
@@ -558,6 +574,7 @@ def load_checkpoint(out_dir, device="cpu"):
         vocab.size, d_model=config["d_model"], num_layers=config["num_layers"],
         nhead=config["nhead"], max_len=config["max_len"], dim_feedforward=config.get("dim_feedforward"),
         norm_first=config.get("norm_first", True),
+        arch_mode=config.get("arch_mode", "full"),
     ).to(device)
     model.load_state_dict(torch.load(os.path.join(out_dir, "model.pt"), map_location=device, weights_only=True))
     model.eval()

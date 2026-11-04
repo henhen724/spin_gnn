@@ -254,6 +254,29 @@ class SudokuReasoningModelConfig:
     # at num_layers in {12,16}) and pre-norm is the standard fix -- applying
     # that lesson from the start here rather than waiting to rediscover it.
     norm_first: bool = True
+    # How much MACHINERY the block keeps. "full" reproduces every run before
+    # 2026-11-04 (a trained ReLU MLP in every block); the other four take
+    # something away, one kind at a time, for the minimal-architecture
+    # question -- how little does learning DD actually require?
+    #   "linear"  identity activation, so each block's MLP collapses to a
+    #             single linear map and the attention softmax is the only
+    #             nonlinearity left in the network.
+    #   "rf_mlp"  random features, literal reading: linear1 (d_model -> ff) is
+    #             frozen at its initialization in every block and linear2
+    #             trains. Attention and the readout still train, so the
+    #             training problem is NOT convex.
+    #   "rf_all"  random features, convex reading: everything is frozen at
+    #             initialization except the final readout. Softmax
+    #             cross-entropy on fixed features is convex in those weights,
+    #             so this is the one cell that can be written down and
+    #             analyzed rather than only measured.
+    #   "no_mlp"  attention only: the MLP write is zeroed and frozen, leaving
+    #             x = x + attn(norm1(x)) exactly. The floor of the axis.
+    # Load-bearing at EVAL time in the same way `fall` is (finding 43): a
+    # reader that defaults this wrong runs a ReLU where the model was trained
+    # linear, with no error and a plausible number, so it is written into
+    # config.json and read back by load_checkpoint.
+    arch_mode: str = "full"
 
 
 @dataclass

@@ -25,7 +25,11 @@ import csv
 import os
 
 from .config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
+from .sat_transformer2 import ARCH_MODES
 from .train_sudoku_transformer import eval_solve_by_rho, save_checkpoint, train_sudoku_model
+
+ARCH_TAG = {"full": "", "linear": "_lin", "rf_mlp": "_rfm", "rf_all": "_rfa", "no_mlp": "_noff"}
+assert set(ARCH_TAG) == set(ARCH_MODES), "every arch_mode needs a tag segment"
 
 
 def run_one(args):
@@ -37,7 +41,7 @@ def run_one(args):
     )
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
-        norm_first=not args.no_norm_first,
+        norm_first=not args.no_norm_first, arch_mode=args.arch_mode,
     )
     train_cfg = SudokuReasoningTrainConfig(
         n_train_instances=args.n_train_instances, n_val_instances=args.n_val_instances,
@@ -78,6 +82,13 @@ def run_one(args):
         # with a default cell (it is in agg_eval's INSTANCE_KEYS for exactly
         # that reason).
         + ("_fall" if args.fall else "")
+        # The one segment here that is about the MODEL rather than the
+        # instances, and it has to be in the tag for the same reason: a cell
+        # whose MLP is linear, frozen or absent is a different architecture at
+        # identical (d_model, nhead, L, ff) and must never share a directory
+        # name with the full one. Only present when non-default, so every tag
+        # written before 2026-11-04 is unchanged.
+        + ARCH_TAG[args.arch_mode]
         # Only suffixed when non-default, so every tag written before 2026-10-25
         # stays byte-identical -- the decks and the agg_eval checkpoint paths
         # address cells by this string.
@@ -106,6 +117,8 @@ def run_one(args):
         "dim_feedforward": resolved_ff, "norm_first": model_cfg.norm_first, "lr": args.lr,
         "n_train_instances": args.n_train_instances, "n_val_instances": args.n_val_instances,
         "epochs": args.epochs, "n_params": sum(p.numel() for p in result["model"].parameters()),
+        "arch_mode": args.arch_mode,
+        "n_trainable_params": result["model"].trainable_parameter_count(),
         "baseline_accuracy": result["baseline_accuracy"],
         "final_val_accuracy": result["history"][-1]["accuracy"],
         "final_val_nll": result["history"][-1]["nll"],
@@ -183,6 +196,12 @@ if __name__ == "__main__":
     ap.add_argument("--num-layers", type=int, default=2)
     ap.add_argument("--dim-feedforward", type=int, default=0)
     ap.add_argument("--no-norm-first", action="store_true")
+    ap.add_argument("--arch-mode", type=str, default="full", choices=list(ARCH_MODES),
+                    help="how much machinery each block keeps: full (trained ReLU MLP, the "
+                         "default and every run before 2026-11-04), linear (identity "
+                         "activation), rf_mlp (linear1 frozen at init, linear2 trains), "
+                         "rf_all (everything frozen except the readout -- convex), no_mlp "
+                         "(attention only). See SudokuReasoningModelConfig.arch_mode.")
     ap.add_argument("--lr", type=float, default=1e-3)
     # "constant" is what every run before 2026-10-25 used; keep it the default so
     # re-running an old cell reproduces it.

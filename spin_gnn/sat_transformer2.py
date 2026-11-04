@@ -13,13 +13,31 @@ from torch import nn
 
 from .ksat2_tokens import decode
 
+# See SudokuReasoningModelConfig.arch_mode for what each one removes.
+ARCH_MODES = ("full", "linear", "rf_mlp", "rf_all", "no_mlp")
+
+
+def _identity(x):
+    """MLP activation for arch_mode='linear'.
+
+    A plain function rather than nn.Identity so that
+    nn.TransformerEncoderLayer's `activation is F.relu` / `is F.gelu` checks
+    both fail and it sets activation_relu_or_gelu=0, i.e. takes its ordinary
+    Python forward path instead of a fused kernel that would apply a ReLU we
+    asked it not to apply.
+    """
+    return x
+
 
 class SATReasoningTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=64, num_layers=2, nhead=1, max_len=1024, dim_feedforward=None,
-                 norm_first=False):
+                 norm_first=False, arch_mode="full"):
         super().__init__()
+        if arch_mode not in ARCH_MODES:
+            raise ValueError(f"arch_mode must be one of {ARCH_MODES}, got {arch_mode!r}")
         self.vocab_size = vocab_size
         self.norm_first = norm_first
+        self.arch_mode = arch_mode
         self.token_embed = nn.Embedding(vocab_size, d_model)
         self.pos_embed = nn.Parameter(0.02 * torch.randn(max_len, d_model))
         resolved_ff = dim_feedforward or 4 * d_model
@@ -34,6 +52,9 @@ class SATReasoningTransformer(nn.Module):
         # this reason.
         layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, dim_feedforward=resolved_ff, batch_first=True, norm_first=norm_first,
+            # F.relu is nn.TransformerEncoderLayer's own default, so passing it
+            # explicitly leaves every arch_mode="full" run byte-identical.
+            activation=_identity if arch_mode == "linear" else F.relu,
         )
         # Pre-norm stacks conventionally add one final LayerNorm after the
         # last block, since otherwise the (deliberately un-normalized)
@@ -43,6 +64,45 @@ class SATReasoningTransformer(nn.Module):
         final_norm = nn.LayerNorm(d_model) if norm_first else None
         self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers, norm=final_norm)
         self.readout = nn.Linear(d_model, vocab_size)
+        self._apply_arch_mode()
+
+    def _apply_arch_mode(self):
+        """Freeze or zero whatever `arch_mode` takes away.
+
+        Applied AFTER construction on purpose, so that at a given seed every
+        mode starts from exactly the same initialization as "full": the frozen
+        weights of a random-feature cell are precisely the weights the trained
+        cell started from, which is what makes the comparison a statement about
+        training the weights rather than about drawing different ones.
+        """
+        if self.arch_mode in ("full", "linear"):
+            return
+        if self.arch_mode == "rf_mlp":
+            for blk in self.encoder.layers:
+                blk.linear1.weight.requires_grad_(False)
+                blk.linear1.bias.requires_grad_(False)
+        elif self.arch_mode == "rf_all":
+            for p in self.parameters():
+                p.requires_grad_(False)
+            for p in self.readout.parameters():
+                p.requires_grad_(True)
+        elif self.arch_mode == "no_mlp":
+            # Zeroing and freezing the SECOND MLP linear makes the feedforward
+            # write identically zero for every input (dropout of zero is zero)
+            # without patching nn.TransformerEncoderLayer.forward or deleting
+            # modules that other code reads -- save_checkpoint takes
+            # dim_feedforward off linear1.out_features, and load_state_dict
+            # expects both linears to still be there.
+            for blk in self.encoder.layers:
+                with torch.no_grad():
+                    blk.linear2.weight.zero_()
+                    blk.linear2.bias.zero_()
+                for p in (blk.linear1.weight, blk.linear1.bias,
+                          blk.linear2.weight, blk.linear2.bias):
+                    p.requires_grad_(False)
+
+    def trainable_parameter_count(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
     def forward(self, x, valid_mask=None):
         """x: (B, L) long token ids. valid_mask: (B, L) bool, True = real
