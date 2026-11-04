@@ -335,9 +335,14 @@ def main():
     if (4, 4, "linear") in rung_med and hub and \
             abs(rung_med[(4, 4, "linear")]["mean_solve"] - hub["mean_solve"]) <= yard_ms:
         print("      >>> linear TIES full. This is the pre-registered headline, not a null: "
-              "with an identity MLP activation the only nonlinearity left in the network is "
-              "the attention softmax, so the blocks compose into one input-dependent linear "
-              "operator and the model is analyzable in closed form. FOLLOW UP IMMEDIATELY.")
+              "with an identity MLP activation there is no ELEMENTWISE nonlinearity left "
+              "anywhere in the stack. What remains is the attention softmax and LayerNorm "
+              "(pre-norm, so 2L+1 of them), and both act as input-dependent SCALARS on "
+              "otherwise linear maps -- softmax sets the mixing coefficients, LayerNorm "
+              "removes a mean (linear) and divides by an RMS (one scalar per token). The "
+              "whole network is therefore an input-dependent linear operator on the embedded "
+              "sequence, which is a far more tractable object than a ReLU stack even though "
+              "it is NOT yet closed form. FOLLOW UP IMMEDIATELY.")
     compare("M4 rf_mlp (linear1 frozen)      ", rung_med.get((4, 4, "rf_mlp")), hub,
             yard_ms, "mean_solve", True)
     compare("M6 no_mlp (attention only)      ", rung_med.get((4, 4, "no_mlp")), hub,
