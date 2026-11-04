@@ -196,6 +196,26 @@ def median(vals):
     return s[len(s) // 2] if len(s) % 2 else 0.5 * (s[len(s) // 2 - 1] + s[len(s) // 2])
 
 
+def _bound_median(pairs):
+    """Median of rho_50 when some seeds are censored at the top of the grid.
+
+    `pairs` is [(rho50, crossed)]. A censored seed is known only as ">0.95",
+    but that is enough to ORDER it above every seed that did cross, so the
+    median is well defined whenever the middle rank is one of the finite
+    values. Returns the median and whether it is readable; an unreadable one
+    (two of three censored) stays censored and is reported as such.
+    """
+    ranked = sorted(pairs, key=lambda p: (not p[1], p[0] if p[1] else 0.0))
+    mid = ranked[len(ranked) // 2]
+    even = len(ranked) % 2 == 0
+    if even:
+        lo = ranked[len(ranked) // 2 - 1]
+        ok = lo[1] and mid[1]
+        return {"rho50_bm": 0.5 * (lo[0] + mid[0]) if ok else float("nan"),
+                "bm_readable": ok}
+    return {"rho50_bm": mid[0] if mid[1] else float("nan"), "bm_readable": mid[1]}
+
+
 def compare(name, a, b, yard, metric, higher_is_better):
     """One cross-rung comparison, scored against the yardstick and nothing else."""
     if a is None or b is None:
@@ -304,6 +324,15 @@ def main():
             # censored removal is merely noisy or genuinely above threshold.
             "n_cross": len(ok),
             "rho50_ok": sorted(ok),
+            # Censoring only destroys the MEDIAN when a censored value lands on
+            # the middle rank. With 3 seeds and one censored at the top, the
+            # median is an ordinary number and the rung is fully readable -- so
+            # "censored" is too blunt a verdict and throws away a real
+            # measurement. Rank the censored seeds above every finite one (they
+            # are >0.95 and the grid stops at 0.95, so the ordering is known)
+            # and take the median; mark it readable only if the middle rank is
+            # a finite value.
+            **_bound_median([(m["rho50"], m["flag"] == "ok") for m in ms]),
         }
         rung_spread[(L, h, a)] = {"rho50": spread(ok) if len(ok) == len(ms) else float("nan"),
                                   "mean_solve": spread(msolve)}
@@ -442,12 +471,18 @@ def main():
         if klin in rung_med and not hub["censored"]:
             lin, free_at = rung_med[klin], hub["rho50"] + yard_r50
             if lin["censored"]:
+                extra = ("" if not lin["bm_readable"] else
+                         f" And the cost is not merely a censoring artefact: only the LARGEST "
+                         f"seed is censored, so the median is still a value, and it is "
+                         f"{lin['rho50_bm']:.3f} against the hub's {hub['rho50']:.3f} -- "
+                         f"{lin['rho50_bm'] - hub['rho50']:+.3f}, which clears s* = "
+                         f"{yard_r50:.4f} on its own.")
                 print(f"      >>> N1/M3 FALSIFIED by its own registered falsifier: `linear` is "
                       f"CENSORED at L={depth} ({lin['n_cross']}/{lin['n_seeds']} seeds cross 0.5), "
                       f"and the falsifier reads 'gap > s* OR any seed censored'. The readable "
                       f"seeds are not a rescue either -- every one of them sits ABOVE the free "
-                      f"threshold {free_at:.3f}. Removing the elementwise nonlinearity at a depth "
-                      f"where full still solves COSTS rho_50; it does not tie.")
+                      f"threshold {free_at:.3f}.{extra} Removing the elementwise nonlinearity at "
+                      f"a depth where full still solves COSTS rho_50; it does not tie.")
             elif lin["rho50"] - hub["rho50"] <= yard_r50:
                 print("      >>> linear TIES full at a depth where full still solves, on rho_50 "
                       "and with all three seeds crossing. This is the pre-registered headline, "
@@ -532,12 +567,23 @@ def main():
                 # censored row is still a measurement.
                 free_at = base["rho50"] + yard_r50
                 seen = "/".join(f"{v:.3f}" for v in m["rho50_ok"]) or "none"
-                where = ("ALL above the free line" if m["rho50_ok"]
-                         and min(m["rho50_ok"]) > free_at else
-                         "some below the free line" if m["rho50_ok"] else "no seed crossed")
-                print(f"  AFTER   {nm:38s} rho_50 CENSORED ({m['n_cross']}/{len(ks)} cross, at "
-                      f"{seen}; {where})  mean_solve {m['mean_solve']:.4f}  trainable {tr:,}"
-                      f"  -> NOT free")
+                if m["bm_readable"]:
+                    # The median survived the censoring, so this row gets a
+                    # real delta instead of a bare "censored".
+                    d = m["rho50_bm"] - base["rho50"]
+                    verdict = ("COSTS rho_50, resolvably" if d > yard_r50
+                               else "within s*, but one seed never crossed -> NOT free")
+                    print(f"  AFTER   {nm:38s} rho_50 {m['rho50_bm']:.3f} ({d:+.3f}) "
+                          f"[{m['n_cross']}/{len(ks)} cross, at {seen}; median survives the "
+                          f"censoring]  mean_solve {m['mean_solve']:.4f}  trainable {tr:,}"
+                          f"  -> {verdict}")
+                else:
+                    where = ("ALL above the free line" if m["rho50_ok"]
+                             and min(m["rho50_ok"]) > free_at else
+                             "some below the free line" if m["rho50_ok"] else "no seed crossed")
+                    print(f"  AFTER   {nm:38s} rho_50 CENSORED ({m['n_cross']}/{len(ks)} cross, "
+                          f"at {seen}; {where})  mean_solve {m['mean_solve']:.4f}  "
+                          f"trainable {tr:,}  -> NOT free")
             else:
                 d = m["rho50"] - base["rho50"]
                 free = "FREE (within s*)" if d <= yard_r50 else "COSTS rho_50"

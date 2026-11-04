@@ -106,9 +106,23 @@ def page_verdict(o, rung, s, n_cells):
     base = rung_stat(rung, HUB6, "rho50")
     base_ok = (HUB6 in rung and all(m["flag"] == "ok" for _, m in rung[HUB6]))
 
-    if B is not None:
+    # B is the first rung walking down with a failing seed. It is only a
+    # breaking POINT if everything below also fails; with the full ladder in,
+    # L=3 crosses on all three seeds while L=4 crosses on two, so quoting a
+    # knee at L=4 would promote one unlucky seed into a structural claim.
+    revived = [L for L in DEPTH_LADDER
+               if B is not None and L < B and (L, 4, "full") in rung
+               and all(m["flag"] == "ok" for _, m in rung[(L, 4, "full")])]
+    if B is not None and revived:
+        head = (f"There is no knee. One seed at L={B} never crosses 50%, but L={max(revived)} "
+                f"crosses on all three and ties L={B} on mean solve rate "
+                f"({rung_stat(rung, (max(revived), 4, 'full'), 'mean_solve'):.4f} vs "
+                f"{rung_stat(rung, (B, 4, 'full'), 'mean_solve'):.4f}) — so the censoring at "
+                f"L={B} is the seed term, not {B} layers. Deduction degrades GRADUALLY with "
+                f"depth and is gone by L=1.")
+    elif B is not None:
         head = (f"Deduction breaks between L={B} and L={B + 1}: at L={B} at least one seed never "
-                f"reaches a 50% solve rate anywhere in the grid.")
+                f"reaches a 50% solve rate anywhere in the grid, and no shallower rung recovers.")
     elif depth_have:
         head = (f"Every depth measured so far still solves it — the ladder has been walked down to "
                 f"L={min(depth_have)} without finding the breaking point.")
@@ -125,7 +139,15 @@ def page_verdict(o, rung, s, n_cells):
             if not v:
                 pend.append(nm)
             elif any(m["flag"] != "ok" for _, m in v):
-                costs.append(f"{nm} (censored)")
+                # "Censored" alone hides whether the survivors sat near the
+                # free line or well above it. With only the LARGEST seed
+                # censored the median is still a value, so quote the delta.
+                pts = sorted(((m["rho50"], m["flag"] == "ok") for _, m in v),
+                             key=lambda p: (not p[1], p[0] if p[1] else 0.0))
+                mid = pts[len(pts) // 2]
+                nc = sum(1 for _, ok in pts if not ok)
+                costs.append(f"{nm} ({mid[0] - base:+.3f}, {nc} of {len(pts)} seeds censored)"
+                             if mid[1] else f"{nm} (censored {nc}/{len(pts)})")
             else:
                 d = median([m["rho50"] for _, m in v]) - base
                 (free if d <= s["rho50"] else costs).append(f"{nm} ({d:+.3f})")
@@ -135,43 +157,61 @@ def page_verdict(o, rung, s, n_cells):
                    + (", ".join(costs) if costs else "nothing")
                    + (".  Still running: " + ", ".join(pend) if pend else ".")))
 
+    # How much DEPTH is each removal worth? Match each stripped L=6 cell to the
+    # depth rung it scores like. Computed, not asserted: for each removal, find
+    # the full-MLP rung whose median mean_solve is closest, and report the gap.
+    xrate = []
+    for (L, h, a) in [(6, 4, "linear"), (6, 4, "rf_mlp"), (6, 4, "no_mlp"), (6, 1, "full")]:
+        if (L, h, a) not in rung:
+            continue
+        ms = rung_stat(rung, (L, h, a), "mean_solve")
+        cand = [(abs(ms - rung_stat(rung, (D, 4, "full"), "mean_solve")), D)
+                for D in DEPTH_LADDER if (D, 4, "full") in rung]
+        if not cand:
+            continue
+        gap, D = min(cand)
+        xrate.append(f"{'nhead=1' if h == 1 else a} scores like L={D} ({ms:.4f} vs "
+                     f"{rung_stat(rung, (D, 4, 'full'), 'mean_solve'):.4f}, {gap:.4f} apart)")
+
     blocks = [
         ("THE QUESTION", "#1a5fb4",
          "Not how well the model solves direct deduction — it already does, leak-free — but how "
-         "little machinery that takes. Every cell here is the L=12/ff=1024 model with something "
-         "REMOVED: layers, heads, the MLP's nonlinearity, the MLP's training, or the MLP write "
-         "itself. The breaking point is the result, not the failure."),
+         "little machinery that takes. Every cell is the L=12/ff=1024 model with something "
+         "REMOVED: layers, heads, the MLP's nonlinearity, its training, or the MLP write itself."),
         ("THE HEADLINE", "#613583", head),
         ("BEFORE AND AFTER, at the shallowest depth that still deduces", "#26a269",
          ("L=6 full has not landed yet." if not base_ok else
           f"BEFORE: L=6, 4 heads, trained ReLU MLP — rho_50 = {base:.3f}. ") + strip),
-        ("WHAT WAS TAKEN AWAY", "#26a269",
-         "Depth: L = " + ", ".join(str(L) for L in depth_have) + ".  "
-         + ".  ".join(f"Architecture at L={d}: "
-                      + (", ".join(arch_have[d]) if arch_have[d] else "none landed yet")
-                      + "; heads " + ("4 -> 1 measured" if (d, 1, "full") in rung else "pending")
-                      for d in ARCH_DEPTHS)
-         + ".  Three seeds on every rung, because at this scale a seed is worth more than a layer "
-           "(finding 41: spread 0.1627 at N=48; finding 47: it is not a schedule artifact)."),
+        ("WHAT EACH REMOVAL COSTS, IN LAYERS", "#26a269",
+         ("Nothing stripped at L=6 has landed yet." if not xrate else
+          "Each removal at L=6 is worth a number of LAYERS, which is the cheapest way to read it: "
+          + "; ".join(xrate)
+          + ". Both of the removals measured so far take a 6-layer network down to the score of a "
+            "3-layer one, so the MLP's nonlinearity — and, separately, TRAINING its first matrix "
+            "— is worth about half the depth. That is a cost, not a tie.")),
         ("HOW TO READ EVERY NUMBER", "#c64600",
-         f"rho_50 is the hint density at which the solve rate crosses 50% — LOWER IS BETTER, it "
-         f"means the model needs fewer hints. It censors when a cell never crosses, so "
-         f"mean solve rate over the 14-point grid is quoted beside it. The yardstick s* is the "
-         f"largest across-seed spread on any complete rung in EITHER job — pooled, so moving the "
-         f"arch axis from L=4 to L=6 cannot buy a smaller bar: "
-         f"{s['rho50']:.3f} in rho_50, {s['mean_solve']:.3f} in mean solve. "
-         f"Nothing smaller than s* is called a difference."),
+         f"rho_50 is the hint density where the solve rate crosses 50% — LOWER IS BETTER. It "
+         f"censors when a cell never crosses, so mean solve rate over the 14-point grid is quoted "
+         f"beside it. s* is the largest across-seed spread on any complete rung in EITHER job — "
+         f"pooled, so moving the arch axis cannot buy a smaller bar: {s['rho50']:.3f} in rho_50, "
+         f"{s['mean_solve']:.3f} in mean solve."),
     ]
     textpage(o, "How little does learning direct deduction actually require?",
              (f"All {N_CELLS_TOTAL} cells" if done
               else f"PARTIAL — {n_cells} of {N_CELLS_TOTAL} cells have landed")
              + " · N=48, degree 5, 4 colours, fall ensemble, leak-free (--shuffle-adj)",
              blocks,
-             "Every cell: d_model 256, ff 1024, pre-norm, constant lr 1e-3, batch 32, 240k "
-             "instances x 50 epochs = 375k gradient steps — finding 44's budget and optimizer, "
-             "unchanged on purpose. Evaluated on the same 14-point x 400-instance grid and the "
-             "same instances as the 11-02 scan, so the curves are paired point by point.",
-             y0=0.80, gap=0.028, width=118)
+             "Taken away — depth: L = " + ", ".join(str(L) for L in depth_have) + ".  "
+             + ".  ".join(f"Architecture at L={d}: "
+                          + (", ".join(arch_have[d]) if arch_have[d] else "none landed yet")
+                          + "; heads " + ("4->1 measured" if (d, 1, "full") in rung else "pending")
+                          for d in ARCH_DEPTHS)
+             + ".  Three seeds on every rung. Every cell: d_model 256, ff 1024, pre-norm, "
+               "constant lr 1e-3, batch 32, 240k instances x 50 epochs = 375k gradient steps — "
+               "finding 44's budget and optimizer, unchanged on purpose. Same 14-point x "
+               "400-instance grid and the same instances as the 11-02 scan, so the curves are "
+               "paired point by point.",
+             y0=0.83, gap=0.020, width=122)
 
 
 def page_ladder(o, rung, cells, s):
@@ -410,10 +450,22 @@ def page_before(o, rung, prev):
                     zorder=3)
             pts = _r50_points(rung[(L, 4, "full")])
             ax.plot([i + w / 2] * len(pts), pts, "o", ms=8, mfc="white", color="0.1", zorder=3)
+        # A bar sitting at CENSOR is not a measured 0.95-ish rho_50, it is a
+        # cell that never crossed 50% anywhere on the grid. Pages 4 and 5 say
+        # so; this one must too, or the tallest bars here read as real values.
+        for i, L in enumerate(Ls):
+            for x, pts in ((i - w / 2, prev[L]),
+                           (i + w / 2, _r50_points(rung[(L, 4, "full")]))):
+                if any(p >= CENSOR for p in pts):
+                    ax.annotate(f"{sum(p >= CENSOR for p in pts)} censored",
+                                (x, CENSOR), textcoords="offset points", xytext=(0, 7),
+                                ha="center", size=SMALL - 2, color="#a51d2d")
+        ax.axhline(CENSOR, color="0.5", ls="--", lw=1)
         ax.set_xticks(range(len(Ls)))
         ax.set_xticklabels([f"L={L}\n{len(prev[L])} vs {len(rung[(L, 4, 'full')])} seeds"
                             for L in Ls])
         ax.set_xlim(-0.7, len(Ls) - 0.3)
+        ax.set_ylim(0, CENSOR + 0.10)
         ax.set_ylabel("rho_50   (lower is better)")
         ax.axhline(0.333, color="#a51d2d", ls=":", lw=2)
         ax.legend(fontsize=SMALL)
@@ -437,6 +489,22 @@ def page_controls(o, rows, rung, n_cells):
     keys = {(r["shuffle_adj"], r["fall"]) for r in rows}
     no_escape = [k for k, v in rung.items()
                  if not any(history(m["path"])[1] < PLATEAU for _, m in v)]
+    # A rung where only SOME seeds escaped is the more dangerous case: it is
+    # not on the no_escape list, so it looks trained, yet its censored seed
+    # may be censored because it never trained rather than because the
+    # architecture is weaker. Name those seeds explicitly.
+    partial = []
+    for k, v in sorted(rung.items()):
+        if k in no_escape:
+            continue
+        stuck = [(sd, history(m["path"])[1]) for sd, m in v
+                 if history(m["path"])[1] >= PLATEAU]
+        if stuck:
+            cens = {sd for sd, m in v if m["flag"] != "ok"}
+            partial.append(f"L={k[0]}/h{k[1]}/{k[2]} seed(s) "
+                           + ", ".join(f"{sd} at {nll:.3f}"
+                                       + (" — and it is the censored one" if sd in cens else "")
+                                       for sd, nll in stuck))
     blocks = [
         ("LEAK — the control that matters most in exactly this regime", "#1a5fb4",
          f"Every cell trains AND evaluates with --shuffle-adj, read back out of each written "
@@ -461,7 +529,11 @@ def page_controls(o, rows, rung, n_cells):
           + ", ".join(f"L={L}/h{h}/{a}" for (L, h, a) in sorted(no_escape))
           + ". They are reported as 'did not train at 375k steps', NOT as 'cannot represent "
             "deduction'. Separating the two needs more steps or a better optimizer, neither of "
-            "which is in this job.")),
+            "which is in this job.")
+         + (("  PARTIAL, and it matters more: " + "; ".join(partial)
+             + ". Where the stuck seed is also the censored one, part of that rung's cost is "
+               "trainability, not representational power, and the quoted gap is the cost on the "
+               "seeds that did train.") if partial else "")),
         ("WHAT THIS DECK CANNOT CARRY", "#a51d2d",
          f"{n_cells} of {N_CELLS_TOTAL} cells. Three seeds is enough to put a spread on a rung "
          f"and not enough "
@@ -478,7 +550,7 @@ def page_controls(o, rows, rung, n_cells):
              "a cell whose arch_mode, shuffle_adj, fall, shape or max_len margin is not what was "
              "asked for fails loudly instead of producing a plausible number — finding 43's "
              "failure mode, on a knob that is exactly as silent.",
-             y0=0.80, gap=0.026, width=120)
+             y0=0.84, gap=0.020, width=132)
 
 
 def main():
