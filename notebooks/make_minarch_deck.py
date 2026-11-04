@@ -1,15 +1,21 @@
-"""Slide deck for the minimal-architecture grid (51032450).
+"""Slide deck for the minimal-architecture grid: stage A (51032450) + B (51072446).
 
 The question this deck answers is not "how well does it solve DD" but "how
 little machinery does solving DD need", so every page is a subtraction: a rung
 of the depth ladder, a block with its nonlinearity removed, a block whose MLP
 is frozen at initialization, a block with no MLP write at all.
 
-Runs on a PARTIAL grid on purpose -- 36 cells land over ~11 h and the deck is
-how the intermediate state gets looked at. Pages say how many cells they are
-drawn from and the title says PARTIAL until all 36 are in.
+Stage A walked the depth ladder and ran the arch axis at L=4; its ladder then
+showed L=4 IS the breaking depth, where the hub's own across-seed spread is as
+large as its score, so no arch contrast there can be resolved. Stage B re-runs
+the arch and head axes at L=6, the shallowest rung that still solves at all
+three seeds. Both are drawn here against the SAME pooled s*.
 
-    python3 notebooks/make_minarch_deck.py [--scan-dir DIR] [--out DIR]
+Runs on a PARTIAL grid on purpose -- 51 cells land over ~18 h and the deck is
+how the intermediate state gets looked at. Pages say how many cells they are
+drawn from and the title says PARTIAL until all 51 are in.
+
+    python3 notebooks/make_minarch_deck.py [--scan-dir DIR [DIR ...]] [--out DIR]
 """
 import argparse
 import os
@@ -21,10 +27,13 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style, textpage
-from scripts.minarch_analysis import (ARCH_AXIS, DEPTH_LADDER, PLATEAU, SCAN_DEFAULT,
-                                      cell_metrics, history, load, median, spread)
+from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DIRS,
+                                      all_rungs, cell_metrics, history, load, load_all, median,
+                                      spread)
 
-HUB = (4, 4, "full")
+N_CELLS_TOTAL = 51  # 36 in stage A, 15 in stage B
+HUB4 = (4, 4, "full")   # stage A's arch hub, which turned out to be the breaking depth
+HUB6 = (6, 4, "full")   # stage B's arch hub, the shallowest rung that still solves
 # The previous best on this exact eval: finding 44's N=48 fall cells at the
 # same 375k steps and the same 14-point grid, seed 0 only.
 PREV = os.path.join(os.environ.get("SCRATCH", "/scratch/users/hshunt"),
@@ -39,8 +48,8 @@ ARCH_NAME = {
 CENSOR = 1.02  # where a censored rho_50 is drawn, above the top of the grid
 
 
-def collect(scan_dir, boot):
-    rows = load(scan_dir)
+def collect(scan_dirs, boot):
+    rows = load_all([scan_dirs] if isinstance(scan_dirs, str) else scan_dirs)
     cells = {}
     for r in rows:
         cells.setdefault((r["num_layers"], r["nhead"], r["arch_mode"], r["seed"]), []).append(r)
@@ -84,7 +93,7 @@ def _r50_points(v):
 
 # --------------------------------------------------------------------- pages
 def page_verdict(o, rung, s, n_cells):
-    done = n_cells == 36
+    done = n_cells == N_CELLS_TOTAL
     depth_have = [L for L in DEPTH_LADDER if (L, 4, "full") in rung]
     B = None
     for L in DEPTH_LADDER:
@@ -92,8 +101,10 @@ def page_verdict(o, rung, s, n_cells):
         if v and any(m["flag"] != "ok" for _, m in v):
             B = L
             break
-    arch_have = [a for a in ARCH_AXIS if a != "full" and (4, 4, a) in rung]
-    hub = rung_stat(rung, HUB, "mean_solve")
+    arch_have = {d: [a for a in ARCH_AXIS if a != "full" and (d, 4, a) in rung]
+                 for d in ARCH_DEPTHS}
+    base = rung_stat(rung, HUB6, "rho50")
+    base_ok = (HUB6 in rung and all(m["flag"] == "ok" for _, m in rung[HUB6]))
 
     if B is not None:
         head = (f"Deduction breaks between L={B} and L={B + 1}: at L={B} at least one seed never "
@@ -104,6 +115,26 @@ def page_verdict(o, rung, s, n_cells):
     else:
         head = "No depth rung has landed yet."
 
+    # What can be stripped at L=6 without raising rho_50 by more than s*.
+    free, costs, pend = [], [], []
+    if base_ok:
+        for (L, h, a) in [(6, 4, "linear"), (6, 4, "rf_mlp"), (6, 4, "no_mlp"),
+                          (6, 1, "full"), (6, 4, "rf_all")]:
+            nm = "nhead=1" if h == 1 else a
+            v = rung.get((L, h, a))
+            if not v:
+                pend.append(nm)
+            elif any(m["flag"] != "ok" for _, m in v):
+                costs.append(f"{nm} (censored)")
+            else:
+                d = median([m["rho50"] for _, m in v]) - base
+                (free if d <= s["rho50"] else costs).append(f"{nm} ({d:+.3f})")
+    strip = ("The L=6 arch axis has not landed yet." if not base_ok or (not free and not costs)
+             else ("Removable for free at L=6 (rho_50 rises by less than s*): "
+                   + (", ".join(free) if free else "nothing") + ".  Not removable: "
+                   + (", ".join(costs) if costs else "nothing")
+                   + (".  Still running: " + ", ".join(pend) if pend else ".")))
+
     blocks = [
         ("THE QUESTION", "#1a5fb4",
          "Not how well the model solves direct deduction — it already does, leak-free — but how "
@@ -111,25 +142,29 @@ def page_verdict(o, rung, s, n_cells):
          "REMOVED: layers, heads, the MLP's nonlinearity, the MLP's training, or the MLP write "
          "itself. The breaking point is the result, not the failure."),
         ("THE HEADLINE", "#613583", head),
+        ("BEFORE AND AFTER, at the shallowest depth that still deduces", "#26a269",
+         ("L=6 full has not landed yet." if not base_ok else
+          f"BEFORE: L=6, 4 heads, trained ReLU MLP — rho_50 = {base:.3f}. ") + strip),
         ("WHAT WAS TAKEN AWAY", "#26a269",
          "Depth: L = " + ", ".join(str(L) for L in depth_have) + ".  "
-         "Architecture at L=4: " + (", ".join(arch_have) if arch_have else "none landed yet")
-         + ".  Heads: " + ("4 -> 1 measured" if (4, 1, "full") in rung else "pending")
+         + ".  ".join(f"Architecture at L={d}: "
+                      + (", ".join(arch_have[d]) if arch_have[d] else "none landed yet")
+                      + "; heads " + ("4 -> 1 measured" if (d, 1, "full") in rung else "pending")
+                      for d in ARCH_DEPTHS)
          + ".  Three seeds on every rung, because at this scale a seed is worth more than a layer "
            "(finding 41: spread 0.1627 at N=48; finding 47: it is not a schedule artifact)."),
         ("HOW TO READ EVERY NUMBER", "#c64600",
          f"rho_50 is the hint density at which the solve rate crosses 50% — LOWER IS BETTER, it "
          f"means the model needs fewer hints. It censors when a cell never crosses, so "
          f"mean solve rate over the 14-point grid is quoted beside it. The yardstick s* is the "
-         f"largest across-seed spread on any rung in this job: "
+         f"largest across-seed spread on any complete rung in EITHER job — pooled, so moving the "
+         f"arch axis from L=4 to L=6 cannot buy a smaller bar: "
          f"{s['rho50']:.3f} in rho_50, {s['mean_solve']:.3f} in mean solve. "
-         f"Nothing smaller than s* is called a difference."
-         + ("" if hub is None else
-            f" The L=4 full-MLP hub, which every architecture cell is compared against, sits at "
-            f"mean solve {hub:.3f}.")),
+         f"Nothing smaller than s* is called a difference."),
     ]
     textpage(o, "How little does learning direct deduction actually require?",
-             ("All 36 cells" if done else f"PARTIAL — {n_cells} of 36 cells have landed")
+             (f"All {N_CELLS_TOTAL} cells" if done
+              else f"PARTIAL — {n_cells} of {N_CELLS_TOTAL} cells have landed")
              + " · N=48, degree 5, 4 colours, fall ensemble, leak-free (--shuffle-adj)",
              blocks,
              "Every cell: d_model 256, ff 1024, pre-norm, constant lr 1e-3, batch 32, 240k "
@@ -204,58 +239,111 @@ def page_ladder(o, rung, cells, s):
     o.savefig(fig)
 
 
+def _arch_keys(rung, depth):
+    """(L, nhead, arch) for every arch/head cell measured at this depth, hub first."""
+    ks = [(depth, 4, a) for a in ARCH_AXIS if (depth, 4, a) in rung]
+    if (depth, 1, "full") in rung:
+        ks.append((depth, 1, "full"))
+    return ks
+
+
+def _arch_tick(key):
+    L, h, a = key
+    return "nhead=1\n(one head, not four)" if h == 1 else ARCH_NAME[a]
+
+
 def page_arch(o, rung, cells, s):
     fig = plt.figure(figsize=(16, 9))
-    fig.text(0.5, 0.945, "Taking the MLP apart, at fixed depth L=4", ha="center", size=BIG,
-             weight="bold")
-    fig.text(0.5, 0.897,
+    fig.text(0.5, 0.955, "Stripping the machinery: rho_50 before and after, at L=6",
+             ha="center", size=BIG, weight="bold")
+    fig.text(0.5, 0.912,
              "same 375k steps, same seeds, same initialization — only what is trainable changes",
              ha="center", size=SMALL + 1, color="0.3")
-    ax = fig.add_axes([0.17, 0.19, 0.41, 0.67])
-    axc = fig.add_axes([0.70, 0.19, 0.27, 0.67])
+    ax = fig.add_axes([0.16, 0.20, 0.40, 0.66])
+    axd = fig.add_axes([0.665, 0.585, 0.305, 0.275])
+    axc = fig.add_axes([0.665, 0.205, 0.305, 0.275])
 
-    modes = [a for a in ARCH_AXIS if (4, 4, a) in rung]
-    ys = list(range(len(modes)))[::-1]
-    hub = rung_stat(rung, HUB, "mean_solve")
-    for y, a in zip(ys, modes):
-        v = rung[(4, 4, a)]
-        vals = [m["mean_solve"] for _, m in v]
-        col = "#1a5fb4" if a == "full" else ("#26a269" if median(vals) > (hub or 0) - s["mean_solve"]
-                                             else "#c64600")
-        ax.barh(y, median(vals), height=0.55, color=col, alpha=0.85)
-        ax.plot(vals, [y] * len(vals), "o", ms=8, color="0.15", mfc="white", zorder=3)
-        tp = v[0][1]["n_trainable"] / 1e6
-        ax.text(0.005, y - 0.33, f"{tp:.2f}M trainable of {v[0][1]['n_params']/1e6:.2f}M",
-                size=SMALL - 2, color="0.25")
-    if hub is not None and s["mean_solve"] == s["mean_solve"]:
-        ax.axvspan(hub - s["mean_solve"], hub + s["mean_solve"], color="0.75", alpha=0.35, zorder=0)
-        ax.axvline(hub, color="#1a5fb4", lw=2, ls="--")
+    # ---- left: the before/after, on the metric of record, at the live depth
+    keys = _arch_keys(rung, 6)
+    base = rung_stat(rung, HUB6, "rho50") if HUB6 in rung and \
+        all(m["flag"] == "ok" for _, m in rung[HUB6]) else None
+    ys = list(range(len(keys)))[::-1]
+    for y, k in zip(ys, keys):
+        v = rung[k]
+        pts = _r50_points(v)
+        med = median(pts)
+        cens = any(m["flag"] != "ok" for _, m in v)
+        if k == HUB6:
+            col, hatch = "#1a5fb4", None
+        elif cens:
+            col, hatch = "#a51d2d", "//"
+        elif base is not None and med - base <= s["rho50"]:
+            col, hatch = "#26a269", None
+        else:
+            col, hatch = "#c64600", None
+        ax.barh(y, med, height=0.55, color=col, alpha=0.85, hatch=hatch, edgecolor="white")
+        ax.plot(pts, [y] * len(pts), "o", ms=8, color="0.15", mfc="white", zorder=3)
+        tag = "BEFORE" if k == HUB6 else ("censored — never crosses 50%" if cens
+                                          else f"{med - base:+.3f}" if base is not None else "")
+        ax.text(med + 0.012, y, tag, va="center", size=SMALL - 1, color="0.2")
+        ax.text(0.345, y - 0.345, f"{v[0][1]['n_trainable']/1e6:.2f}M trainable "
+                                  f"of {v[0][1]['n_params']/1e6:.2f}M", size=SMALL - 2,
+                color="0.25")
+    if base is not None:
+        ax.axvspan(base, base + s["rho50"], color="0.75", alpha=0.35, zorder=0)
+        ax.axvline(base, color="#1a5fb4", lw=2, ls="--")
+    ax.axvline(0.333, color="#a51d2d", ls=":", lw=2)
     ax.set_yticks(ys)
-    ax.set_yticklabels([ARCH_NAME[a] for a in modes], size=SMALL)
-    ax.set_xlabel("mean solve rate over the 14-point grid (median of 3 seeds)")
-    ax.set_xlim(0, 1.0)
+    ax.set_yticklabels([_arch_tick(k) for k in keys], size=SMALL)
+    ax.set_xlabel("rho_50 at L=6   (lower is better; 1.02 = censored)")
+    ax.set_xlim(0.30, CENSOR + 0.06)
+    ax.set_ylim(-0.7, len(keys) - 0.3)
     ax.grid(axis="x", alpha=0.25)
 
+    # ---- top right: the same axis at L=4, and why it could not answer this
+    k4 = _arch_keys(rung, 4)
+    y4 = list(range(len(k4)))[::-1]
+    hub4 = rung_stat(rung, HUB4, "mean_solve")
+    for y, k in zip(y4, k4):
+        vals = [m["mean_solve"] for _, m in rung[k]]
+        axd.barh(y, median(vals), height=0.6,
+                 color="#1a5fb4" if k == HUB4 else "0.55", alpha=0.85)
+        axd.plot(vals, [y] * len(vals), "o", ms=5, color="0.15", mfc="white", zorder=3)
+    if hub4 is not None and s["mean_solve"] == s["mean_solve"]:
+        axd.axvspan(max(hub4 - s["mean_solve"], 0), hub4 + s["mean_solve"], color="#a51d2d",
+                    alpha=0.18, zorder=0)
+        axd.axvline(hub4, color="#1a5fb4", lw=1.6, ls="--")
+    axd.set_yticks(y4)
+    axd.set_yticklabels([(k[2] if k[1] == 4 else "nhead=1") for k in k4], size=SMALL - 2)
+    axd.set_xlim(0, 1.0)
+    axd.set_ylim(-0.7, len(k4) - 0.3)
+    axd.set_xlabel("mean solve rate", size=SMALL - 1)
+    axd.set_title("the same axis at L=4, the BREAKING depth", size=SMALL + 1)
+    axd.grid(axis="x", alpha=0.25)
+
+    # ---- bottom right: the curves the left panel summarises
     cmap = plt.get_cmap("viridis")
-    for i, a in enumerate(modes):
-        sd0 = rung[(4, 4, a)][0][0]
-        rs = sorted(cells[(4, 4, a, sd0)], key=lambda r: r["realized_rho"])
-        axc.plot([r["realized_rho"] for r in rs], [r["solve_rate"] for r in rs], "-o", ms=4,
-                 color=cmap(i / max(len(ARCH_AXIS) - 1, 1)), label=a)
+    for i, k in enumerate(keys):
+        sd0 = rung[k][0][0]
+        rs = sorted(cells[(k[0], k[1], k[2], sd0)], key=lambda r: r["realized_rho"])
+        axc.plot([r["realized_rho"] for r in rs], [r["solve_rate"] for r in rs], "-o", ms=3,
+                 color=cmap(i / max(len(keys) - 1, 1)),
+                 label=(k[2] if k[1] == 4 else "nhead=1"))
     axc.axhline(0.5, color="0.5", ls=":")
-    axc.set_xlabel("realized hint density rho")
-    axc.set_ylabel("solve rate")
+    axc.set_xlabel("realized hint density rho", size=SMALL - 1)
+    axc.set_ylabel("solve rate", size=SMALL - 1)
     axc.set_ylim(-0.02, 1.02)
-    axc.set_title("transition curves (seed 0)", size=SMALL + 2)
+    axc.set_title("L=6 transition curves (seed 0)", size=SMALL + 1)
     axc.grid(alpha=0.25)
-    if modes:
-        axc.legend(fontsize=SMALL - 1, loc="lower right")
-    footer(fig, "The dashed line is the full-MLP hub and the grey band is +/- s*, this job's own "
-                "largest across-seed spread; a bar ending inside the band is NOT separable from "
-                "the full model. White dots are the individual seeds. Every mode starts from the "
-                "same initialization at a given seed, so a frozen cell's weights are exactly the "
-                "weights the trained cell started from — the contrast is about training them, not "
-                "about drawing them.")
+    if keys:
+        axc.legend(fontsize=SMALL - 3, loc="lower right")
+    footer(fig, "The dashed line is the unmodified L=6 model and the grey band is the pooled s*, "
+                "the largest across-seed spread on any complete rung in either job; a bar ending "
+                "inside it costs nothing readable. The arch axis MOVED from L=4 to L=6 because "
+                "L=4 is where deduction breaks: in the small panel the red band (s*) is as wide "
+                "as the hub's whole score, so every bar there ties with every other and with a "
+                "model that learned nothing. s* is pooled over both depths, so the move buys no "
+                "slack. Every mode starts from the same initialization at a given seed.")
     o.savefig(fig)
 
 
@@ -270,9 +358,7 @@ def page_table(o, rung, s, commit):
            f"{'rho_50 per seed':>26} {'median':>8} {'spread':>7}  "
            f"{'mean solve':>11} {'spread':>7} {'floor':>6}  {'train NLL':>10} {'escape':>7}")
     lines = [hdr, "-" * len(hdr)]
-    order = [(L, 4, "full") for L in DEPTH_LADDER] \
-        + [(4, 4, a) for a in ARCH_AXIS if a != "full"] + [(4, 1, "full")]
-    for key in order:
+    for key in all_rungs():
         if key not in rung:
             continue
         L, h, a = key
@@ -290,8 +376,9 @@ def page_table(o, rung, s, commit):
             f"{median(ms):>11.4f} {spread(ms) if len(ms) > 1 else float('nan'):>7.4f} "
             f"{median([m['solve_at_floor'] for _, m in v]):>6.3f}  "
             f"{median(tr):>10.3f} {esc:>4}/{len(v)}")
-    lines += ["", f"yardstick s* = {s['rho50']:.4f} in rho_50, {s['mean_solve']:.4f} in mean "
-                  f"solve — the largest across-seed spread on any complete rung above"]
+    lines += ["", f"pooled yardstick s* = {s['rho50']:.4f} in rho_50, {s['mean_solve']:.4f} in "
+                  f"mean solve — the largest across-seed spread on any complete rung above, "
+                  f"taken over BOTH jobs"]
     ax.text(0.5, 1.0, "\n".join(lines), family="monospace", size=11.6, ha="center", va="top",
             linespacing=1.42)
     footer(fig, "'escape' counts the seeds whose final training NLL got below 1.64, where finding "
@@ -376,7 +463,8 @@ def page_controls(o, rows, rung, n_cells):
             "deduction'. Separating the two needs more steps or a better optimizer, neither of "
             "which is in this job.")),
         ("WHAT THIS DECK CANNOT CARRY", "#a51d2d",
-         f"{n_cells} of 36 cells. Three seeds is enough to put a spread on a rung and not enough "
+         f"{n_cells} of {N_CELLS_TOTAL} cells. Three seeds is enough to put a spread on a rung "
+         f"and not enough "
          f"for a confidence interval on the spread itself. rho_50 is one number summarising 14 "
          f"binomial bins at n=400, and it censors; where it does, the mean solve rate carries the "
          f"comparison and the page says so. Nothing here is causal — a small model that solves "
@@ -395,7 +483,7 @@ def page_controls(o, rows, rung, n_cells):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scan-dir", default=SCAN_DEFAULT)
+    ap.add_argument("--scan-dir", nargs="+", default=SCAN_DIRS)
     ap.add_argument("--out", default=os.path.join(
         os.environ.get("SCRATCH", "/scratch/users/hshunt"), "spin_gnn", "decks",
         "minarch_2026-11-04"))
