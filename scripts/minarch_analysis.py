@@ -89,8 +89,40 @@ ARCH_DEPTHS = (4, 6)
 PLATEAU = 1.64  # finding 44's L=4/ff=1024/240k train NLL, never escaped
 
 
-def rung_label(L, nhead, arch):
-    return f"L={L:<2d} h={nhead} {arch}"
+# Stage A and B held the width and the schedule fixed, so d_model, ff and
+# warmup were not in the cell key -- which means a narrower or warmed-up cell
+# at the same (L, nhead, arch_mode) would have MERGED into the existing rung
+# and quietly moved its median. That is finding 43's failure mode on three more
+# silent knobs, and stage C varies all three. The key therefore carries them,
+# but ONLY as a block and ONLY when at least one is non-default, so every key
+# written for stage A and B is unchanged and every number this script printed
+# before stays identical.
+#
+# All three go in together, as ints, so a key is either a bare 3-tuple or a
+# 6-tuple and position means the same thing in both: appending them one at a
+# time would make (L, h, a, 128) ambiguous between d_model and warmup, and
+# would put a seed at a position another key uses for a knob.
+D_DEFAULT, FF_DEFAULT, W_DEFAULT = 256, 1024, 0
+VARIANT_DEFAULT = (D_DEFAULT, FF_DEFAULT, W_DEFAULT)
+
+
+def rung_key(r):
+    """(L, nhead, arch), plus (d_model, ff, warmup) when any is non-default."""
+    base = (r["num_layers"], r["nhead"], r["arch_mode"])
+    v = (int(r["d_model"]), int(r["dim_feedforward"]), int(r.get("warmup_epochs") or 0))
+    return base if v == VARIANT_DEFAULT else base + v
+
+
+def cell_key(r):
+    """A rung plus its seed. The SEED IS LAST, so the rung is always key[:-1]."""
+    return rung_key(r) + (r["seed"],)
+
+
+def rung_label(L, nhead, arch, d_model=D_DEFAULT, ff=FF_DEFAULT, warmup=W_DEFAULT):
+    v = "".join((f" d{d_model}" if d_model != D_DEFAULT else "",
+                 f" ff{ff}" if ff != FF_DEFAULT else "",
+                 f" w{warmup:02d}" if warmup != W_DEFAULT else ""))
+    return f"L={L:<2d} h={nhead} {arch}{v}"
 
 
 def all_rungs(arch_depths=ARCH_DEPTHS):
@@ -120,7 +152,22 @@ def load(scan_dir):
                     cfg = _config(r["path"])
                     r["arch_mode"] = r.get("arch_mode") or cfg.get("arch_mode", "full")
                     r["nhead"] = r.get("nhead") or cfg.get("nhead")
-                r["nhead"] = int(r["nhead"])
+                # d_model, dim_feedforward and warmup_epochs are part of the
+                # cell key from stage C on, so they get the same treatment as
+                # nhead: read the checkpoint's own config rather than
+                # defaulting, because a wrong default here merges a narrow or
+                # warmed-up cell into the rung it is meant to be compared
+                # against. warmup is not a CSV column at all, so it always
+                # comes from the config -- and a MISSING config would then read
+                # as warmup 0, which is why the controls below count the cells
+                # whose config could not be read instead of trusting the zero.
+                if not r.get("d_model") or not r.get("dim_feedforward"):
+                    cfg = _config(r["path"])
+                    r["d_model"] = r.get("d_model") or cfg.get("d_model")
+                    r["dim_feedforward"] = r.get("dim_feedforward") or cfg.get("dim_feedforward")
+                r["warmup_epochs"] = _config(r["path"]).get("warmup_epochs", 0) or 0
+                for k in ("nhead", "d_model", "dim_feedforward", "warmup_epochs"):
+                    r[k] = int(r[k])
                 r["_scan"] = os.path.basename(scan_dir.rstrip("/"))
                 rows.append(r)
     return rows
@@ -242,14 +289,25 @@ def main():
         return
     cells = defaultdict(list)
     for r in rows:
-        cells[(r["num_layers"], r["nhead"], r["arch_mode"], r["seed"])].append(r)
+        cells[cell_key(r)].append(r)
 
-    want = [(L, h, a, s) for (L, h, a) in all_rungs() for s in SEEDS]
-    have = [k for k in want if k in cells]
+    want = [rk + (s,) for rk in all_rungs() for s in SEEDS]
+    # Anything in the data that the registered grid does not name -- a width
+    # cell from stage C, say. These used to collide with the default-width rung
+    # of the same (L, nhead, arch); now they get their own key and are listed
+    # here so a new cell ANNOUNCES itself instead of moving someone else's
+    # median.
+    extra = sorted({k[:-1] for k in cells} - set(all_rungs()), key=lambda t: (len(t), t))
+    have = [k for k in want if k in cells] + [k for k in sorted(cells) if k[:-1] in set(extra)]
     for d in args.scan_dir:
         n = len([r for r in rows if r["_scan"] == os.path.basename(d.rstrip("/"))])
         print(f"{n:5d} rows  {os.path.basename(d.rstrip('/'))}")
-    print(f"{len(rows)} rows / {len(cells)} cells; present: {len(have)}/{len(want)}")
+    print(f"{len(rows)} rows / {len(cells)} cells; present: "
+          f"{sum(1 for k in want if k in cells)}/{len(want)} of the registered grid")
+    if extra:
+        print(f"  + {len(extra)} rung(s) NOT in the registered grid, read on their own key so "
+              f"they cannot merge into a default-width rung: "
+              + "; ".join(rung_label(*k).strip() for k in extra))
     # The cell key does not include the scan directory, so a cell run twice in
     # two jobs would silently merge. Stage B deliberately does NOT re-run stage
     # A's L=6/h4/full control, so this should always be empty.
@@ -267,14 +325,21 @@ def main():
     leaky = {(r["shuffle_adj"], r["fall"]) for r in rows}
     print(f"  (shuffle_adj, fall) over every row: {leaky}  "
           f"{'OK -- leak-free fall ensemble throughout' if leaky == {('True', 'True')} else '<-- CHECK'}")
-    # The cell key is (L, nhead, arch_mode, seed) and deliberately does NOT
-    # include the training budget, because this grid holds it fixed at 375k
-    # steps. Pointed at a directory that varies it, two cells would silently
-    # merge into one, so say so rather than averaging over the difference.
+    # The cell key carries (L, nhead, arch_mode, width, seed) and deliberately
+    # does NOT include the training budget, because this grid holds it fixed at
+    # 375k steps. Pointed at a directory that varies it, two cells would
+    # silently merge into one, so say so rather than averaging the difference.
     budgets = {(r.get("n_train_instances"), r.get("epochs")) for r in rows}
     print(f"  training budgets present: {sorted(budgets)}"
           + ("" if len(budgets) == 1 else "  <-- MORE THAN ONE: cells with the same "
                                           "(L, nhead, arch, seed) have been merged, re-key before reading anything below"))
+    # warmup_epochs has no CSV column, so it is read from each checkpoint's
+    # config.json. An unreadable config reads as warmup 0, which would merge a
+    # warmed-up cell into the cold rung it exists to be compared against.
+    noconf = sorted({r["path"] for r in rows if not _config(r["path"])})
+    print(f"  cells whose config.json could not be read: {len(noconf)}"
+          + ("" if not noconf else f"  <-- warmup_epochs read as 0 for these, so a warmed-up "
+                                   f"cell could be merging into a cold rung: {noconf[:2]}"))
     by_req = defaultdict(set)
     for r in rows:
         by_req[r["rho"]].add(round(r["realized_rho"], 6))
@@ -297,13 +362,13 @@ def main():
 
     # ---------------------------------------------------------- the per-rung
     print("=== every rung: 3 seeds, median and spread ===")
-    print("  rung             params/trainable    rho_50 (per seed)        "
+    print("  rung                     params/trainable    rho_50 (per seed)        "
           "median  spread | mean_solve med [spread] | floor | escapes")
     rung_med, rung_spread = {}, {}
-    for (L, h, a) in all_rungs():
-        ks = [(L, h, a, s) for s in SEEDS if (L, h, a, s) in met]
+    for key in list(all_rungs()) + extra:
+        ks = [key + (s,) for s in SEEDS if key + (s,) in met]
         if not ks:
-            print(f"  {rung_label(L, h, a):16s} (not started)")
+            print(f"  {rung_label(*key):24s} (not started)")
             continue
         ms = [met[k] for k in ks]
         r50s = [fmt_rho50(m) for m in ms]
@@ -312,7 +377,7 @@ def main():
         sp_r50 = f"{spread(ok):.3f}" if len(ok) == len(ms) and len(ok) > 1 else "--"
         msolve = [m["mean_solve"] for m in ms]
         esc = sum(1 for m in ms if history(m["path"])[1] < PLATEAU)
-        rung_med[(L, h, a)] = {
+        rung_med[key] = {
             "rho50": median(ok) if len(ok) == len(ms) else float("nan"),
             "censored": len(ok) < len(ms),
             "mean_solve": median(msolve),
@@ -334,9 +399,9 @@ def main():
             # a finite value.
             **_bound_median([(m["rho50"], m["flag"] == "ok") for m in ms]),
         }
-        rung_spread[(L, h, a)] = {"rho50": spread(ok) if len(ok) == len(ms) else float("nan"),
-                                  "mean_solve": spread(msolve)}
-        print(f"  {rung_label(L, h, a):16s} {ms[0]['n_params']:>9,}/{ms[0]['n_trainable']:<9,} "
+        rung_spread[key] = {"rho50": spread(ok) if len(ok) == len(ms) else float("nan"),
+                            "mean_solve": spread(msolve)}
+        print(f"  {rung_label(*key):24s} {ms[0]['n_params']:>9,}/{ms[0]['n_trainable']:<9,} "
               f" {'/'.join(r50s):24s} {med_r50:>8s} {sp_r50:>7s} | "
               f"{median(msolve):.4f} [{spread(msolve):.4f}] | "
               f"{median([m['solve_at_floor'] for m in ms]):.3f} | {esc}/{len(ms)}"
@@ -365,6 +430,26 @@ def main():
               f"choice of arch depth from buying a smaller bar")
     print(f"  (finding 41/42 measured 0.1627 in rho_50 at N=48; finding 47 showed it is not a "
           f"schedule artifact)")
+    # Pooling over EVERY complete rung means a noisy new rung raises s* for
+    # everyone -- including verdicts that were registered and scored before it
+    # existed. That is how a later job could silently turn an earlier "COSTS
+    # rho_50" into "free" without a single earlier number changing. So quote
+    # the bar the registered grid sets on its own, and say when they differ.
+    if extra:
+        reg = set(all_rungs())
+        reg_r50 = [v["rho50"] for k, v in rung_spread.items() if k in reg
+                   and not math.isnan(v["rho50"]) and rung_med[k]["n_seeds"] > 1]
+        reg_ms = [v["mean_solve"] for k, v in rung_spread.items() if k in reg
+                  and not math.isnan(v["mean_solve"]) and rung_med[k]["n_seeds"] > 1]
+        r50_reg = max(reg_r50) if reg_r50 else float("nan")
+        ms_reg = max(reg_ms) if reg_ms else float("nan")
+        print(f"  over the REGISTERED grid alone (no width rungs):  rho_50 {r50_reg:.4f}"
+              f"   mean_solve {ms_reg:.4f}")
+        if yard_r50 > r50_reg or yard_ms > ms_reg:
+            print(f"  >>> A LATER RUNG WIDENED THE BAR: stage A and B verdicts were registered "
+                  f"against rho_50 {r50_reg:.4f} / mean_solve {ms_reg:.4f} and must keep being "
+                  f"quoted against those. Score the new rungs against the pooled bar; do NOT "
+                  f"let the pooled bar reopen a verdict that was already scored.")
     if math.isnan(yard_ms):
         print("  >>> no complete rung yet -- NO comparison below is interpretable")
     # Pooling protects against choosing a quiet rung to be judged against. It

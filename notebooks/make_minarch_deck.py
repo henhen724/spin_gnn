@@ -28,8 +28,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style, textpage
 from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DIRS,
-                                      all_rungs, cell_metrics, history, load, load_all, median,
-                                      spread)
+                                      all_rungs, cell_key, cell_metrics, history, load, load_all,
+                                      median, spread)
 
 N_CELLS_TOTAL = 51  # 36 in stage A, 15 in stage B
 HUB4 = (4, 4, "full")   # stage A's arch hub, which turned out to be the breaking depth
@@ -52,11 +52,14 @@ def collect(scan_dirs, boot):
     rows = load_all([scan_dirs] if isinstance(scan_dirs, str) else scan_dirs)
     cells = {}
     for r in rows:
-        cells.setdefault((r["num_layers"], r["nhead"], r["arch_mode"], r["seed"]), []).append(r)
+        cells.setdefault(cell_key(r), []).append(r)
     met = {k: cell_metrics(v, boot) for k, v in cells.items()}
     rung = {}
     for k, m in met.items():
-        rung.setdefault(k[:3], []).append((k[3], m))
+        # The seed is the LAST element of the key and the rung is everything
+        # before it, however long the key is: a non-default width adds
+        # (d_model, ff) in the middle rather than displacing the seed.
+        rung.setdefault(k[:-1], []).append((k[-1], m))
     for v in rung.values():
         v.sort()
     return rows, cells, met, rung
@@ -160,7 +163,7 @@ def page_verdict(o, rung, s, n_cells):
     # How much DEPTH is each removal worth? Match each stripped L=6 cell to the
     # depth rung it scores like. Computed, not asserted: for each removal, find
     # the full-MLP rung whose median mean_solve is closest, and report the gap.
-    xrate = []
+    xrate, matched, ms_of, sp_of = [], {}, {}, {}
     for (L, h, a) in [(6, 4, "linear"), (6, 4, "rf_mlp"), (6, 4, "no_mlp"), (6, 1, "full")]:
         if (L, h, a) not in rung:
             continue
@@ -170,8 +173,54 @@ def page_verdict(o, rung, s, n_cells):
         if not cand:
             continue
         gap, D = min(cand)
-        xrate.append(f"{'nhead=1' if h == 1 else a} scores like L={D} ({ms:.4f} vs "
-                     f"{rung_stat(rung, (D, 4, 'full'), 'mean_solve'):.4f}, {gap:.4f} apart)")
+        nm = "nhead=1" if h == 1 else a
+        matched[nm], ms_of[nm] = D, ms
+        sp_of[nm] = spread([m["mean_solve"] for _, m in rung[(L, h, a)]])
+        xrate.append(f"{nm} ~ L={D} ({ms:.4f} vs "
+                     f"{rung_stat(rung, (D, 4, 'full'), 'mean_solve'):.4f})")
+
+    # The three MLP cuts remove three DIFFERENT amounts -- the nonlinearity
+    # only, the training of the first matrix only, the whole MLP write. Whether
+    # they cost the SAME is the interesting question, and it must be asked of
+    # the three cuts against each other, NOT of which depth rung each is
+    # nearest: L=3 and L=4 are themselves tied on mean solve, so the nearest
+    # rung flips between them on a 0.002 difference and would read as
+    # disagreement that is not there.
+    #
+    # The bar is the L=6 HUB's own across-seed spread: three seeds of the same
+    # architecture, all of which trained. Not the pooled s* in mean solve, and
+    # not the cuts' own spreads either -- one of the cut rungs has a seed that
+    # never escaped the plateau, so its spread IS the pooled s* (0.29), and
+    # judging the cuts against a bar one of them set is the circularity the
+    # analysis script warns about. Comparing a spread of MEDIANS against a
+    # spread of single seeds is conservative in the right direction.
+    cuts = [k for k in ("linear", "rf_mlp", "no_mlp") if k in ms_of]
+    hub_sp = (spread([m["mean_solve"] for _, m in rung[HUB6]])
+              if HUB6 in rung and len(rung[HUB6]) > 1 else float("nan"))
+    if len(cuts) == 3 and hub_sp == hub_sp:
+        vals = [ms_of[k] for k in cuts]
+        local = hub_sp
+        ds = sorted({matched[k] for k in cuts})
+        where = ("L=" + str(ds[0]) if len(ds) == 1 else
+                 "L=" + "/".join(str(d) for d in ds) + ", two rungs the ladder itself cannot "
+                 "separate")
+        if spread(vals) <= local:
+            mlp_line = (f"THE THREE MLP CUTS COST THE SAME: mean solve "
+                        + " / ".join(f"{v:.4f}" for v in vals)
+                        + f", a spread of {spread(vals):.4f} against the L=6 hub's own across-seed "
+                        f"spread of {local:.4f}. Deleting the MLP entirely costs what "
+                        f"removing only its nonlinearity costs, and what freezing only its first "
+                        f"matrix costs — the MLP is ALL-OR-NOTHING, only its LEARNED "
+                        f"nonlinearity buys anything, and it is worth about half the depth "
+                        f"({where}).")
+        else:
+            mlp_line = (f"The three MLP cuts do NOT cost the same: mean solve "
+                        + " / ".join(f"{k} {ms_of[k]:.4f}" for k in cuts)
+                        + f", a spread of {spread(vals):.4f} against the L=6 hub's across-seed spread "
+                        f"of {local:.4f}, so they separate and each cut has its own price.")
+    else:
+        mlp_line = (f"Only {len(cuts)} of the 3 MLP cuts have landed (or the L=6 hub has no "
+                    f"seed spread to judge them against); no all-or-nothing read yet.")
 
     blocks = [
         ("THE QUESTION", "#1a5fb4",
@@ -184,11 +233,8 @@ def page_verdict(o, rung, s, n_cells):
           f"BEFORE: L=6, 4 heads, trained ReLU MLP — rho_50 = {base:.3f}. ") + strip),
         ("WHAT EACH REMOVAL COSTS, IN LAYERS", "#26a269",
          ("Nothing stripped at L=6 has landed yet." if not xrate else
-          "Each removal at L=6 is worth a number of LAYERS, which is the cheapest way to read it: "
-          + "; ".join(xrate)
-          + ". Both of the removals measured so far take a 6-layer network down to the score of a "
-            "3-layer one, so the MLP's nonlinearity — and, separately, TRAINING its first matrix "
-            "— is worth about half the depth. That is a cost, not a tie.")),
+          "Each stripped L=6 cell, matched to the depth rung it scores like: "
+          + "; ".join(xrate) + ". " + mlp_line)),
         ("HOW TO READ EVERY NUMBER", "#c64600",
          f"rho_50 is the hint density where the solve rate crosses 50% — LOWER IS BETTER. It "
          f"censors when a cell never crosses, so mean solve rate over the 14-point grid is quoted "
@@ -211,7 +257,7 @@ def page_verdict(o, rung, s, n_cells):
                "finding 44's budget and optimizer, unchanged on purpose. Same 14-point x "
                "400-instance grid and the same instances as the 11-02 scan, so the curves are "
                "paired point by point.",
-             y0=0.83, gap=0.020, width=122)
+             y0=0.83, gap=0.020, width=132)
 
 
 def page_ladder(o, rung, cells, s):
