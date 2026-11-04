@@ -298,6 +298,12 @@ def main():
             "mean_solve": median(msolve),
             "solve_at_floor": median([m["solve_at_floor"] for m in ms]),
             "n_seeds": len(ms),
+            # the seeds that DID cross, kept so a censored rung can still be
+            # read: "2 of 3 crossed, and both at 0.76" is a far more useful
+            # statement than "censored", and it is what decides whether a
+            # censored removal is merely noisy or genuinely above threshold.
+            "n_cross": len(ok),
+            "rho50_ok": sorted(ok),
         }
         rung_spread[(L, h, a)] = {"rho50": spread(ok) if len(ok) == len(ms) else float("nan"),
                                   "mean_solve": spread(msolve)}
@@ -332,6 +338,17 @@ def main():
           f"schedule artifact)")
     if math.isnan(yard_ms):
         print("  >>> no complete rung yet -- NO comparison below is interpretable")
+    # Pooling protects against choosing a quiet rung to be judged against. It
+    # does NOT protect against the opposite failure: a rung whose own seeds
+    # disagree wildly RAISES s*, and is then compared against the bar it just
+    # raised. That is circular, and when it happens "not separable" means "this
+    # cell is too noisy to say anything about", not "the removal was free".
+    if worst_ms[1] is not None and worst_ms[1] != (6, 4, "full"):
+        print(f"  >>> CIRCULARITY WARNING: s* in mean_solve is set by "
+              f"{rung_label(*worst_ms[1]).strip()}, which is itself one of the cells under test. "
+              f"Any 'not separable' verdict involving that cell means IT IS TOO NOISY TO READ, "
+              f"not that the removal was free. Read those rows on rho_50 and on the per-seed "
+              f"numbers in the rung table, never on the mean_solve verdict alone.")
     print()
 
     # ------------------------------------------------------------------- M1
@@ -351,6 +368,23 @@ def main():
     if B is not None:
         print(f"  >>> B = {B} (predicted 2).  "
               + ("PASS" if B == 2 else "the prediction was B=2; this is the measured number"))
+        # B is defined as the first rung walking DOWN at which a seed fails. It
+        # is only a "breaking point" if everything below it also fails. Check,
+        # because a single unlucky seed at one rung would otherwise be promoted
+        # into a structural claim about the architecture.
+        below = [(L, rung_med[(L, 4, "full")]) for L in DEPTH_LADDER
+                 if L < B and (L, 4, "full") in rung_med]
+        revived = [(L, m) for L, m in below if not m["censored"]]
+        if revived:
+            Ls = ", ".join(f"L={L} ({m['n_cross']}/{m['n_seeds']} cross, rho_50 "
+                           f"{m['rho50']:.3f}, mean_solve {m['mean_solve']:.4f})"
+                           for L, m in revived)
+            print(f"  >>> THE LADDER IS NON-MONOTONE, so read B as a seed result and not a "
+                  f"structural one: below B there are rungs that cross on EVERY seed -- {Ls}. "
+                  f"L={B} has one seed that never crosses while a SHALLOWER rung has none, and "
+                  f"the two are tied on mean_solve, so the censoring at L={B} is the seed term "
+                  f"(findings 41/42/47) and not a property of {B} layers. The honest reading of "
+                  f"this ladder is a GRADUAL collapse, not a knee: quote the mean_solve column.")
     else:
         print("  >>> no rung yet has a seed that fails to cross -- B is below the measured range "
               "or the ladder is incomplete")
@@ -397,19 +431,38 @@ def main():
         n3, n4, n6, n7 = (("M3", "M4", "M6", "M7") if depth == 4 else ("N1", "N2", "N4", "N5"))
         compare(f"{n3} linear (nonlinearity removed)", rung_med.get((depth, 4, "linear")), hub,
                 yard_ms, "mean_solve", True)
+        # The headline clause is scored on rho_50, the metric of record, against
+        # the pre-registered falsifier -- "gap > s* OR ANY SEED CENSORED". An
+        # earlier version gated only on the HUB being uncensored and compared
+        # mean_solve, so it declared a tie for a removal whose own rho_50 was
+        # censored on one seed; the BEFORE/AFTER section then printed "NOT free"
+        # for the same cell. Two sections disagreeing on one number is the bug;
+        # the falsifier decides, and it decides on rho_50.
         klin = (depth, 4, "linear")
-        if klin in rung_med and not hub["censored"] and \
-                abs(rung_med[klin]["mean_solve"] - hub["mean_solve"]) <= yard_ms:
-            print("      >>> linear TIES full at a depth where full still solves. This is the "
-                  "pre-registered headline, not a null: with an identity MLP activation there "
-                  "is no ELEMENTWISE nonlinearity left anywhere in the stack. What remains is "
-                  "the attention softmax and LayerNorm (pre-norm, so 2L+1 of them), and both "
-                  "act as input-dependent SCALARS on otherwise linear maps -- softmax sets the "
-                  "mixing coefficients, LayerNorm removes a mean (linear) and divides by an RMS "
-                  "(one scalar per token). The whole network is therefore an input-dependent "
-                  "linear operator on the embedded sequence, which is a far more tractable "
-                  "object than a ReLU stack even though it is NOT yet closed form. "
-                  "FOLLOW UP IMMEDIATELY.")
+        if klin in rung_med and not hub["censored"]:
+            lin, free_at = rung_med[klin], hub["rho50"] + yard_r50
+            if lin["censored"]:
+                print(f"      >>> N1/M3 FALSIFIED by its own registered falsifier: `linear` is "
+                      f"CENSORED at L={depth} ({lin['n_cross']}/{lin['n_seeds']} seeds cross 0.5), "
+                      f"and the falsifier reads 'gap > s* OR any seed censored'. The readable "
+                      f"seeds are not a rescue either -- every one of them sits ABOVE the free "
+                      f"threshold {free_at:.3f}. Removing the elementwise nonlinearity at a depth "
+                      f"where full still solves COSTS rho_50; it does not tie.")
+            elif lin["rho50"] - hub["rho50"] <= yard_r50:
+                print("      >>> linear TIES full at a depth where full still solves, on rho_50 "
+                      "and with all three seeds crossing. This is the pre-registered headline, "
+                      "not a null: with an identity MLP activation there is no ELEMENTWISE "
+                      "nonlinearity left anywhere in the stack. What remains is the attention "
+                      "softmax and LayerNorm (pre-norm, so 2L+1 of them), and both act as "
+                      "input-dependent SCALARS on otherwise linear maps -- softmax sets the "
+                      "mixing coefficients, LayerNorm removes a mean (linear) and divides by an "
+                      "RMS (one scalar per token). The whole network is therefore an "
+                      "input-dependent linear operator on the embedded sequence, which is a far "
+                      "more tractable object than a ReLU stack even though it is NOT yet closed "
+                      "form. FOLLOW UP IMMEDIATELY.")
+            else:
+                print(f"      >>> N1/M3 FALSIFIED: rho_50 {lin['rho50']:.3f} against the free "
+                      f"threshold {free_at:.3f}. The nonlinearity is load-bearing at L={depth}.")
         compare(f"{n4} rf_mlp (linear1 frozen)      ", rung_med.get((depth, 4, "rf_mlp")), hub,
                 yard_ms, "mean_solve", True)
         compare(f"{n6} no_mlp (attention only)      ", rung_med.get((depth, 4, "no_mlp")), hub,
@@ -473,9 +526,18 @@ def main():
             ks = [(L, h, a, s) for s in SEEDS if (L, h, a, s) in met]
             tr = met[ks[0]]["n_trainable"]
             if m["censored"]:
-                nx = sum(1 for k in ks if met[k]["flag"] == "ok")
-                print(f"  AFTER   {nm:38s} rho_50 CENSORED ({nx}/{len(ks)} seeds cross)  "
-                      f"mean_solve {m['mean_solve']:.4f}  trainable {tr:,}  -> NOT free")
+                # "Censored" on its own is weak: it does not say whether the
+                # crossing seeds were near the threshold or far above it. Quote
+                # them, and say which side of the free line they fell on, so a
+                # censored row is still a measurement.
+                free_at = base["rho50"] + yard_r50
+                seen = "/".join(f"{v:.3f}" for v in m["rho50_ok"]) or "none"
+                where = ("ALL above the free line" if m["rho50_ok"]
+                         and min(m["rho50_ok"]) > free_at else
+                         "some below the free line" if m["rho50_ok"] else "no seed crossed")
+                print(f"  AFTER   {nm:38s} rho_50 CENSORED ({m['n_cross']}/{len(ks)} cross, at "
+                      f"{seen}; {where})  mean_solve {m['mean_solve']:.4f}  trainable {tr:,}"
+                      f"  -> NOT free")
             else:
                 d = m["rho50"] - base["rho50"]
                 free = "FREE (within s*)" if d <= yard_r50 else "COSTS rho_50"
