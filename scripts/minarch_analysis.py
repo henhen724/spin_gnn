@@ -1,19 +1,33 @@
-"""Score M1-M7 of the minimal-architecture grid (51032450).
+"""Score the minimal-architecture grid: stage A (51032450) + stage B (51072446).
 
-The pre-registration is the header of
-scripts/slurm/sudoku2_n48_minarch_2026-11-04.sbatch; this file computes the
-expressions it names and nothing else (finding 39's lesson: compute the
-expression, do not re-derive it from a sentence).
+The pre-registrations are the headers of
+scripts/slurm/sudoku2_n48_minarch_2026-11-04.sbatch (M1-M7, arch axis at L=4)
+and scripts/slurm/sudoku2_n48_minarch_L6_2026-11-04.sbatch (N1-N5, the same
+arch axis re-run at L=6); this file computes the expressions they name and
+nothing else (finding 39's lesson: compute the expression, do not re-derive it
+from a sentence).
 
     M1  there is a breaking depth B inside L in {1,2,3,4,6,8,12}, predicted 2
     M2  rho_50(L=2) - rho_50(L=4) >= 2 s*, the precondition for reading M1 as
         anything finer than a yes/no
-    M3  linear is resolvably worse than full at L=4 (and a TIE is the headline
-        of the project, not a null)
-    M4  rf_mlp ties full at L=4 within s*
+    M3  linear is resolvably worse than full (and a TIE is the headline of the
+        project, not a null)
+    M4  rf_mlp ties full within s*
     M5  rf_all's rho_50 is censored and its mean_solve_rate < 0.10
     M6  no_mlp: no registered prediction, it brackets M3/M4 from below
-    M7  nhead 4 -> 1 at L=4 ties within s*
+    M7  nhead 4 -> 1 ties within s*
+
+STAGE B EXISTS BECAUSE STAGE A PINNED THE ARCH AXIS AT THE BREAKING DEPTH.
+Stage A's own ladder measured B = 4: at L=4 one seed of the hub stops crossing
+0.5 at all, and the hub's across-seed spread in mean_solve there (0.2784) is as
+large as its own score (0.3084), so no arch contrast at L=4 can be resolved
+against the seed term. L=6 is the shallowest rung where all three seeds still
+solve (rho_50 median 0.592, spread 0.012), so stage B re-runs the whole arch
+axis and the head axis there. N1-N5 are M3,M4,M5,M6,M7 asked at L=6.
+
+Both depths are scored below against the SAME POOLED s*, the largest
+across-seed spread on any complete rung in EITHER job, so moving the arch axis
+to a quieter rung does not buy a smaller yardstick.
 
 THREE METRICS, BECAUSE rho_50 CENSORS. This grid deliberately walks every axis
 until it breaks, so most of its cells are EXPECTED not to cross solve 0.5
@@ -42,10 +56,10 @@ finding 44's train-NLL plateau of 1.64. A rung with 0/3 escapes is reported as
 separable only by more steps or a better optimizer, neither of which is in this
 job.
 
-Partial runs are expected: 36 cells finish over ~11 h, so this reports whatever
+Partial runs are expected: 51 cells finish over ~18 h, so this reports whatever
 is on disk and names what is missing. Run it again when the rest land.
 
-Usage:  python3 scripts/minarch_analysis.py [--scan-dir DIR] [--boot N]
+Usage:  python3 scripts/minarch_analysis.py [--scan-dir DIR [DIR ...]] [--boot N]
 """
 import argparse
 import csv
@@ -57,15 +71,21 @@ from collections import defaultdict
 
 from scripts.n96_fallscan_analysis import rho_50, rho50_ci
 
-SCAN_DEFAULT = os.path.join(
-    os.environ.get("SCRATCH", "/scratch/users/hshunt"),
-    "spin_gnn", "sudoku_n48_minarch_2026-11-04")
+_SCR = os.environ.get("SCRATCH", "/scratch/users/hshunt")
+SCAN_DEFAULT = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_2026-11-04")
+SCAN_L6 = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_L6_2026-11-04")
+SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6]
 
 SEEDS = (0, 1, 2)
-# (L, nhead, arch_mode) -> label. The hub L=4/h4/full appears in all three
-# axes and is measured once.
+# (L, nhead, arch_mode) -> label. At each arch depth the hub L/h4/full is a rung
+# of the depth ladder AND the control for the arch axis AND for the head axis,
+# so it is measured once and compared against three ways.
 DEPTH_LADDER = [12, 8, 6, 4, 3, 2, 1]
 ARCH_AXIS = ["full", "linear", "rf_mlp", "rf_all", "no_mlp"]
+# Depths at which the arch and head axes were run: 4 in stage A (which turned
+# out to be the breaking depth) and 6 in stage B (the shallowest rung that
+# still solves at all three seeds).
+ARCH_DEPTHS = (4, 6)
 PLATEAU = 1.64  # finding 44's L=4/ff=1024/240k train NLL, never escaped
 
 
@@ -73,10 +93,11 @@ def rung_label(L, nhead, arch):
     return f"L={L:<2d} h={nhead} {arch}"
 
 
-def all_rungs():
+def all_rungs(arch_depths=ARCH_DEPTHS):
     rungs = [(L, 4, "full") for L in DEPTH_LADDER]
-    rungs += [(4, 4, a) for a in ARCH_AXIS if a != "full"]
-    rungs += [(4, 1, "full")]
+    for d in arch_depths:
+        rungs += [(d, 4, a) for a in ARCH_AXIS if a != "full"]
+        rungs += [(d, 1, "full")]
     return rungs
 
 
@@ -100,7 +121,16 @@ def load(scan_dir):
                     r["arch_mode"] = r.get("arch_mode") or cfg.get("arch_mode", "full")
                     r["nhead"] = r.get("nhead") or cfg.get("nhead")
                 r["nhead"] = int(r["nhead"])
+                r["_scan"] = os.path.basename(scan_dir.rstrip("/"))
                 rows.append(r)
+    return rows
+
+
+def load_all(scan_dirs):
+    """Rows from several scan directories, tagged with which one they came from."""
+    rows = []
+    for d in scan_dirs:
+        rows += load(d)
     return rows
 
 
@@ -182,13 +212,13 @@ def compare(name, a, b, yard, metric, higher_is_better):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scan-dir", default=SCAN_DEFAULT)
+    ap.add_argument("--scan-dir", nargs="+", default=SCAN_DIRS)
     ap.add_argument("--boot", type=int, default=2000)
     args = ap.parse_args()
 
-    rows = load(args.scan_dir)
+    rows = load_all(args.scan_dir)
     if not rows:
-        print(f"no rho_curve_t*.csv under {args.scan_dir} yet")
+        print("no rho_curve_t*.csv under " + " or ".join(args.scan_dir) + " yet")
         return
     cells = defaultdict(list)
     for r in rows:
@@ -196,8 +226,19 @@ def main():
 
     want = [(L, h, a, s) for (L, h, a) in all_rungs() for s in SEEDS]
     have = [k for k in want if k in cells]
-    print(f"{len(rows)} rows / {len(cells)} cells under {args.scan_dir}")
-    print(f"cells present: {len(have)}/{len(want)}\n")
+    for d in args.scan_dir:
+        n = len([r for r in rows if r["_scan"] == os.path.basename(d.rstrip("/"))])
+        print(f"{n:5d} rows  {os.path.basename(d.rstrip('/'))}")
+    print(f"{len(rows)} rows / {len(cells)} cells; present: {len(have)}/{len(want)}")
+    # The cell key does not include the scan directory, so a cell run twice in
+    # two jobs would silently merge. Stage B deliberately does NOT re-run stage
+    # A's L=6/h4/full control, so this should always be empty.
+    dup = {k: sorted({r["_scan"] for r in v}) for k, v in cells.items()
+           if len({r["_scan"] for r in v}) > 1}
+    if dup:
+        print(f"  <-- {len(dup)} cell(s) appear in MORE THAN ONE scan dir and have been "
+              f"merged: {sorted(dup)[:4]} ... re-key before reading anything below")
+    print()
 
     met = {k: cell_metrics(cells[k], args.boot) for k in have}
 
@@ -274,9 +315,19 @@ def main():
             if not math.isnan(v["mean_solve"]) and rung_med[k]["n_seeds"] > 1]
     yard_r50 = max(s_r50) if s_r50 else float("nan")
     yard_ms = max(s_ms) if s_ms else float("nan")
-    print("=== the yardstick s*, read off this job's own replicates ===")
-    print(f"  largest spread on any complete rung:  rho_50 {yard_r50:.4f}"
+    print("=== the yardstick s*, POOLED over every complete rung in both jobs ===")
+    print(f"  largest across-seed spread anywhere:  rho_50 {yard_r50:.4f}"
           f"   mean_solve {yard_ms:.4f}")
+    worst_r50 = max(((v["rho50"], k) for k, v in rung_spread.items()
+                     if not math.isnan(v["rho50"]) and rung_med[k]["n_seeds"] > 1),
+                    default=(float("nan"), None))
+    worst_ms = max(((v["mean_solve"], k) for k, v in rung_spread.items()
+                    if not math.isnan(v["mean_solve"]) and rung_med[k]["n_seeds"] > 1),
+                   default=(float("nan"), None))
+    if worst_r50[1]:
+        print(f"  set by: rho_50 at {rung_label(*worst_r50[1]).strip()}, "
+              f"mean_solve at {rung_label(*worst_ms[1]).strip()}  -- pooling is what stops the "
+              f"choice of arch depth from buying a smaller bar")
     print(f"  (finding 41/42 measured 0.1627 in rho_50 at N=48; finding 47 showed it is not a "
           f"schedule artifact)")
     if math.isnan(yard_ms):
@@ -326,52 +377,110 @@ def main():
     print()
 
     # ---------------------------------------------------------------- M3-M7
-    hub = rung_med.get((4, 4, "full"))
-    print("=== M3-M7: what each removal costs, all against the L=4/h4/full hub ===")
-    print("  (verdicts on mean_solve, which never censors; rho_50 medians are in the rung "
-          "table above)")
-    compare("M3 linear (nonlinearity removed)", rung_med.get((4, 4, "linear")), hub,
-            yard_ms, "mean_solve", True)
-    if (4, 4, "linear") in rung_med and hub and \
-            abs(rung_med[(4, 4, "linear")]["mean_solve"] - hub["mean_solve"]) <= yard_ms:
-        print("      >>> linear TIES full. This is the pre-registered headline, not a null: "
-              "with an identity MLP activation there is no ELEMENTWISE nonlinearity left "
-              "anywhere in the stack. What remains is the attention softmax and LayerNorm "
-              "(pre-norm, so 2L+1 of them), and both act as input-dependent SCALARS on "
-              "otherwise linear maps -- softmax sets the mixing coefficients, LayerNorm "
-              "removes a mean (linear) and divides by an RMS (one scalar per token). The "
-              "whole network is therefore an input-dependent linear operator on the embedded "
-              "sequence, which is a far more tractable object than a ReLU stack even though "
-              "it is NOT yet closed form. FOLLOW UP IMMEDIATELY.")
-    compare("M4 rf_mlp (linear1 frozen)      ", rung_med.get((4, 4, "rf_mlp")), hub,
-            yard_ms, "mean_solve", True)
-    compare("M6 no_mlp (attention only)      ", rung_med.get((4, 4, "no_mlp")), hub,
-            yard_ms, "mean_solve", True)
-    compare("M7 nhead 1 vs 4                 ", rung_med.get((4, 1, "full")), hub,
-            yard_ms, "mean_solve", True)
-    print()
+    # The same five questions at each depth the arch axis was run at. Stage A
+    # asked them at L=4 (M3-M7) and stage B at L=6 (N1-N5); the labels differ,
+    # the expressions do not, and both are scored against the POOLED s*.
+    for depth, tags in ((4, "M3-M7"), (6, "N1-N5")):
+        hub = rung_med.get((depth, 4, "full"))
+        print(f"=== {tags}: what each removal costs at L={depth}, "
+              f"all against the L={depth}/h4/full hub ===")
+        if hub is None:
+            print("  hub not measured yet -- nothing at this depth is interpretable\n")
+            continue
+        if hub["censored"]:
+            print(f"  <-- WARNING: the hub itself is CENSORED at L={depth} (median mean_solve "
+                  f"{hub['mean_solve']:.4f}, spread {rung_spread[(depth, 4, 'full')]['mean_solve']:.4f}). "
+                  f"This is the breaking depth; contrasts here sit on the floor and a 'tie' "
+                  f"below means 'both cells failed', not 'the machinery was removable'.")
+        print("  (verdicts on mean_solve, which never censors; rho_50 medians are in the rung "
+              "table above)")
+        n3, n4, n6, n7 = (("M3", "M4", "M6", "M7") if depth == 4 else ("N1", "N2", "N4", "N5"))
+        compare(f"{n3} linear (nonlinearity removed)", rung_med.get((depth, 4, "linear")), hub,
+                yard_ms, "mean_solve", True)
+        klin = (depth, 4, "linear")
+        if klin in rung_med and not hub["censored"] and \
+                abs(rung_med[klin]["mean_solve"] - hub["mean_solve"]) <= yard_ms:
+            print("      >>> linear TIES full at a depth where full still solves. This is the "
+                  "pre-registered headline, not a null: with an identity MLP activation there "
+                  "is no ELEMENTWISE nonlinearity left anywhere in the stack. What remains is "
+                  "the attention softmax and LayerNorm (pre-norm, so 2L+1 of them), and both "
+                  "act as input-dependent SCALARS on otherwise linear maps -- softmax sets the "
+                  "mixing coefficients, LayerNorm removes a mean (linear) and divides by an RMS "
+                  "(one scalar per token). The whole network is therefore an input-dependent "
+                  "linear operator on the embedded sequence, which is a far more tractable "
+                  "object than a ReLU stack even though it is NOT yet closed form. "
+                  "FOLLOW UP IMMEDIATELY.")
+        compare(f"{n4} rf_mlp (linear1 frozen)      ", rung_med.get((depth, 4, "rf_mlp")), hub,
+                yard_ms, "mean_solve", True)
+        compare(f"{n6} no_mlp (attention only)      ", rung_med.get((depth, 4, "no_mlp")), hub,
+                yard_ms, "mean_solve", True)
+        compare(f"{n7} nhead 1 vs 4                 ", rung_med.get((depth, 1, "full")), hub,
+                yard_ms, "mean_solve", True)
+        print()
 
-    print("=== M5: the convex cell (rf_all). Censored rho_50 AND mean_solve < 0.10? ===")
-    kr = (4, 4, "rf_all")
-    if kr in rung_med:
-        ks = [(4, 4, "rf_all", s) for s in SEEDS if (4, 4, "rf_all", s) in met]
-        n_cross = sum(1 for k in ks if met[k]["flag"] == "ok")
-        ms = rung_med[kr]["mean_solve"]
-        print(f"  {n_cross}/{len(ks)} seeds cross 0.5   median mean_solve {ms:.4f} (bar < 0.10)   "
-              f"median solve_at_floor {rung_med[kr]['solve_at_floor']:.4f}")
-        wf = [min(r["well_formed_rate"] for r in cells[k]) for k in ks]
-        print(f"  grammar even where it cannot solve: min well_formed over bins "
-              f"{min(wf):.4f}, best single-bin solve "
-              f"{max(met[k]['best_solve'] for k in ks):.4f}")
-        if ms >= 0.10:
-            print("  >>> FALSIFIED, and this is the most important cell in the grid: a CONVEX "
-                  "problem on features frozen at initialization does part of DD. The analytic "
-                  "programme runs through this cell -- make it the main object of study.")
+        tag5 = "M5" if depth == 4 else "N3"
+        print(f"  --- {tag5}: the convex cell (rf_all) at L={depth}. "
+              f"Censored rho_50 AND mean_solve < 0.10? ---")
+        kr = (depth, 4, "rf_all")
+        if kr in rung_med:
+            ks = [(depth, 4, "rf_all", s) for s in SEEDS if (depth, 4, "rf_all", s) in met]
+            n_cross = sum(1 for k in ks if met[k]["flag"] == "ok")
+            ms = rung_med[kr]["mean_solve"]
+            print(f"  {n_cross}/{len(ks)} seeds cross 0.5   median mean_solve {ms:.4f} "
+                  f"(bar < 0.10)   median solve_at_floor {rung_med[kr]['solve_at_floor']:.4f}   "
+                  f"trainable {met[ks[0]]['n_trainable']:,}/{met[ks[0]]['n_params']:,}")
+            wf = [min(r["well_formed_rate"] for r in cells[k]) for k in ks]
+            print(f"  grammar even where it cannot solve: min well_formed over bins "
+                  f"{min(wf):.4f}, best single-bin solve "
+                  f"{max(met[k]['best_solve'] for k in ks):.4f}")
+            if ms >= 0.10:
+                print("  >>> FALSIFIED, and this is the most important cell in the grid: a "
+                      "CONVEX problem on features frozen at initialization does part of DD. "
+                      "The analytic programme runs through this cell -- make it the main "
+                      "object of study.")
+            else:
+                print(f"  >>> as predicted: frozen attention cannot learn where to look. "
+                      f"The informative number is how far it got: mean_solve {ms:.4f}.")
         else:
-            print(f"  >>> as predicted: frozen attention cannot learn where to look. "
-                  f"The informative number is how far it got: mean_solve {ms:.4f}.")
+            print("  pending")
+        print()
+
+    # ----------------------------------------------- rho_50 before and after
+    # The metric of record, stated the way hshunt asked for it: what rho_50 was
+    # before any machinery was stripped, and what it is after each removal, at
+    # the shallowest depth where the full model still solves at all three seeds.
+    print("=== rho_50 BEFORE and AFTER stripping machinery (L=6, the metric of record) ===")
+    base = rung_med.get((6, 4, "full"))
+    if base is None:
+        print("  L=6/h4/full not measured yet")
+    elif base["censored"]:
+        print("  L=6/h4/full is censored -- there is no 'before' number to strip from")
     else:
-        print("  pending")
+        print(f"  BEFORE  L=6 h=4 full      rho_50 median {base['rho50']:.3f}  "
+              f"(spread {rung_spread[(6, 4, 'full')]['rho50']:.3f}, "
+              f"mean_solve {base['mean_solve']:.4f})")
+        print(f"  a removal is 'free' iff rho_50 rises by less than the pooled "
+              f"s* = {yard_r50:.4f}, i.e. stays below {base['rho50'] + yard_r50:.3f}")
+        for (L, h, a, nm) in [(6, 4, "linear", "linear (no elementwise nonlinearity)"),
+                              (6, 4, "rf_mlp", "rf_mlp (linear1 frozen at init)"),
+                              (6, 4, "no_mlp", "no_mlp (attention only)"),
+                              (6, 1, "full", "nhead=1 (one head, not four)"),
+                              (6, 4, "rf_all", "rf_all (only the readout trains)")]:
+            m = rung_med.get((L, h, a))
+            if m is None:
+                print(f"  AFTER   {nm:38s} pending")
+                continue
+            ks = [(L, h, a, s) for s in SEEDS if (L, h, a, s) in met]
+            tr = met[ks[0]]["n_trainable"]
+            if m["censored"]:
+                nx = sum(1 for k in ks if met[k]["flag"] == "ok")
+                print(f"  AFTER   {nm:38s} rho_50 CENSORED ({nx}/{len(ks)} seeds cross)  "
+                      f"mean_solve {m['mean_solve']:.4f}  trainable {tr:,}  -> NOT free")
+            else:
+                d = m["rho50"] - base["rho50"]
+                free = "FREE (within s*)" if d <= yard_r50 else "COSTS rho_50"
+                print(f"  AFTER   {nm:38s} rho_50 {m['rho50']:.3f}  {d:+.3f}  "
+                      f"trainable {tr:,}  -> {free}")
     print()
 
     # ------------------------------------------------------- trainability
