@@ -89,9 +89,16 @@ def main():
                          "to it.")
     ap.add_argument("--probe-epochs", type=int, default=600)
     ap.add_argument("--probe-seed", type=int, default=0)
-    ap.add_argument("--n-train-instances", type=int, default=120)
-    ap.add_argument("--n-test-instances", type=int, default=60)
-    ap.add_argument("--max-positions-per-instance", type=int, default=12)
+    # 50979059's protocol, NOT sudoku_probes' function defaults (120/60/12).
+    # The defaults give ~1436 train positions, and a 256 -> 96 probe fit on
+    # that is badly underfit: t04's next_node came back at top-1 0.3986 against
+    # the 0.8704 the probe job published. Ablating the singular subspace of an
+    # underfit probe aims the knife at a bad estimate of the direction and
+    # biases every condition toward "nothing is load-bearing", which is the
+    # conclusion this job is most at risk of reaching for the wrong reason.
+    ap.add_argument("--n-train-instances", type=int, default=400)
+    ap.add_argument("--n-test-instances", type=int, default=160)
+    ap.add_argument("--max-positions-per-instance", type=int, default=20)
     ap.add_argument("--rho-grid", type=float, nargs="+",
                     default=[0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45,
                              0.4, 0.35, 0.32])

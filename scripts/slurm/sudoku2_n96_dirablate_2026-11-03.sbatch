@@ -61,6 +61,15 @@
 # rho_50 for the cell (t04 0.5635, t05 0.8290) to within binomial noise. That
 # reproduction is itself a check on the harness; if clean does not match, stop.
 #
+# PROBE PROTOCOL. 400/160 instances at 20 positions each, matching 50979059
+# exactly, NOT sudoku_probes' function defaults. The first submission of this
+# job (51013090, cancelled 5 min in) used the defaults and t04's next_node
+# probe came back at top-1 0.3986 against the 0.8704 the probe job published
+# -- 1436 training positions is not enough for a 256 -> 96 readout. The
+# subspace this job deletes is only as good as the probe it comes from, and an
+# underfit probe points the knife slightly wrong in every condition, which
+# pushes all of P1-P3 toward "no effect".
+#
 # COST. One 14-point x 400-instance curve measured 18 min on one GPU
 # (sud2N96FallScan_50860571_0.out, 06:53:18 -> 07:11:25). Five conditions is
 # ~90 min, and ablated models truncate more often, so generations run nearer
@@ -103,7 +112,7 @@ python3 -m scripts.direction_ablation_rho \
     --ablate-from 1 \
     --probe-epochs 600 \
     --probe-seed 0 \
-    --n-train-instances 120 --n-test-instances 60 --max-positions-per-instance 12 \
+    --n-train-instances 400 --n-test-instances 160 --max-positions-per-instance 20 \
     --rho-grid 0.95 0.9 0.85 0.8 0.75 0.7 0.65 0.6 0.55 0.5 0.45 0.4 0.35 0.32 \
     --n-per-bin 400 \
     --seed-start 60000000000 \
