@@ -29,9 +29,15 @@ from notebooks.deck_tokenization import example_instance, page_tokenization, pag
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style, textpage
 from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DIRS,
                                       all_rungs, cell_key, cell_metrics, history, load, load_all,
-                                      median, spread)
+                                      median, rung_label, spread)
 
-N_CELLS_TOTAL = 51  # 36 in stage A, 15 in stage B
+# 36 in stage A (51032450) + 15 in stage B (51072446). Stage C (51114734) adds
+# 15 more in its own scan dir; this deck is the stage A+B write-up, so build it
+# with --scan-dir naming those two dirs once stage C starts landing, or bump
+# this to 66 and say so on the cover. A silently wrong denominator would turn
+# "PARTIAL" into "all cells" or the reverse, which is the one thing the cover
+# must never get wrong.
+N_CELLS_TOTAL = 51
 HUB4 = (4, 4, "full")   # stage A's arch hub, which turned out to be the breaking depth
 HUB6 = (6, 4, "full")   # stage B's arch hub, the shallowest rung that still solves
 # The previous best on this exact eval: finding 44's N=48 fall cells at the
@@ -483,7 +489,11 @@ def page_before(o, rung, prev):
                          "ff, same 14-point grid, same instances", ha="center", size=SMALL + 1,
              color="0.3")
     ax = fig.add_axes([0.08, 0.17, 0.88, 0.70])
-    Ls = sorted(set(prev) & {L for (L, h, a) in rung if h == 4 and a == "full"})
+    # k[:3] rather than unpacking: a stage C rung key carries (d_model, ff,
+    # warmup) after the first three, and this comparison is only ever against
+    # the 11-02 cells, which were all d256/ff1024/no warmup. len(k) == 3 is what
+    # selects those -- a narrow cell must not be charted against a wide one.
+    Ls = sorted(set(prev) & {k[0] for k in rung if len(k) == 3 and k[1] == 4 and k[2] == "full"})
     if Ls:
         w = 0.35
         ax.bar([i - w / 2 for i in range(len(Ls))], [median(prev[L]) for L in Ls], width=w,
@@ -547,7 +557,11 @@ def page_controls(o, rows, rung, n_cells):
                  if history(m["path"])[1] >= PLATEAU]
         if stuck:
             cens = {sd for sd, m in v if m["flag"] != "ok"}
-            partial.append(f"L={k[0]}/h{k[1]}/{k[2]} seed(s) "
+            # rung_label, not k[0..2]: a stage C rung carries its width and
+            # warmup after the first three slots, and naming a narrow cell as
+            # though it were the wide one is the exact confusion the cell key
+            # was widened to prevent.
+            partial.append(f"{rung_label(*k).strip()} seed(s) "
                            + ", ".join(f"{sd} at {nll:.3f}"
                                        + (" — and it is the censored one" if sd in cens else "")
                                        for sd, nll in stuck))
@@ -572,7 +586,7 @@ def page_controls(o, rows, rung, n_cells):
           "rung in this deck is a cell that simply failed to train."
           if not no_escape else
           "These rungs had NO seed get below finding 44's 1.64 training-NLL plateau: "
-          + ", ".join(f"L={L}/h{h}/{a}" for (L, h, a) in sorted(no_escape))
+          + ", ".join(rung_label(*k).strip() for k in sorted(no_escape))
           + ". They are reported as 'did not train at 375k steps', NOT as 'cannot represent "
             "deduction'. Separating the two needs more steps or a better optimizer, neither of "
             "which is in this job.")
