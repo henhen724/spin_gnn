@@ -49,15 +49,22 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DIRS,
-                                      SEEDS, _bound_median, all_rungs, cell_metrics, fmt_rho50,
-                                      history, load, median, rho_50, rung_label, spread)
+from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DEFAULT,
+                                      SCAN_L6, SEEDS, _bound_median, all_rungs, cell_metrics,
+                                      fmt_rho50, history, load, median, rho_50, rung_label, spread)
 from notebooks.make_minarch_deck import PREV, collect, yardstick
 
 # Stage A (51032450, the depth ladder + the arch axis at L=4) and stage B
 # (51072446, the arch and head axes re-run at L=6) are read TOGETHER, because
 # s* is pooled over both: see section 2.
-SCANS = os.environ.get("MINARCH_SCAN", " ".join(SCAN_DIRS)).split()
+#
+# PINNED to those two dirs rather than following SCAN_DIRS. This notebook IS
+# the stage A+B write-up, and s* is pooled over whatever it reads, so if it
+# tracked SCAN_DIRS then registering stage C -- or any later job -- would
+# silently widen the bar underneath verdicts that were already scored and
+# published here. A later stage gets its own notebook; set MINARCH_SCAN to
+# override deliberately.
+SCANS = os.environ.get("MINARCH_SCAN", " ".join([SCAN_DEFAULT, SCAN_L6])).split()
 rows, cells, met, rung = collect(SCANS, boot=2000)
 s = yardstick(rung)
 for d in SCANS:

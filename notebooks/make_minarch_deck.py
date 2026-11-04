@@ -27,16 +27,15 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style, textpage
-from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DIRS,
-                                      all_rungs, cell_key, cell_metrics, history, load, load_all,
-                                      median, rung_label, spread)
+from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DEFAULT,
+                                      SCAN_L6, all_rungs, cell_key, cell_metrics, history, load,
+                                      load_all, median, rung_label, spread)
 
-# 36 in stage A (51032450) + 15 in stage B (51072446). Stage C (51114734) adds
-# 15 more in its own scan dir; this deck is the stage A+B write-up, so build it
-# with --scan-dir naming those two dirs once stage C starts landing, or bump
-# this to 66 and say so on the cover. A silently wrong denominator would turn
-# "PARTIAL" into "all cells" or the reverse, which is the one thing the cover
-# must never get wrong.
+# 36 in stage A (51032450) + 15 in stage B (51072446), which is exactly what
+# --scan-dir defaults to below. Stage C (51114734) adds 15 more in a third scan
+# dir and gets its own deck; pointing this one at it without bumping the count
+# would turn "PARTIAL" into "all cells" or the reverse, and the cover is the
+# one place that must never be wrong about how much has landed.
 N_CELLS_TOTAL = 51
 HUB4 = (4, 4, "full")   # stage A's arch hub, which turned out to be the breaking depth
 HUB6 = (6, 4, "full")   # stage B's arch hub, the shallowest rung that still solves
@@ -615,7 +614,10 @@ def page_controls(o, rows, rung, n_cells):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scan-dir", nargs="+", default=SCAN_DIRS)
+    # Pinned to stage A + stage B, NOT SCAN_DIRS: this deck is their write-up,
+    # s* is pooled over whatever it reads, and a later job joining SCAN_DIRS
+    # would otherwise widen the bar underneath verdicts already published here.
+    ap.add_argument("--scan-dir", nargs="+", default=[SCAN_DEFAULT, SCAN_L6])
     ap.add_argument("--out", default=os.path.join(
         os.environ.get("SCRATCH", "/scratch/users/hshunt"), "spin_gnn", "decks",
         "minarch_2026-11-04"))
