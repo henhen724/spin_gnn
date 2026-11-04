@@ -49,6 +49,27 @@ balanced accuracy at a fixed 0-logit threshold ranks these procedures by how
 aggressively they predict positives rather than by what they know. The
 threshold-free columns -- auroc, average_precision -- are therefore reported
 alongside, and are what should be quoted.
+
+A SECOND BRACKET, for known_mask. Finding 46 quotes a known_mask collapse from
+AUROC 0.998 at N=24 to 0.907 at N=96 and has nothing to normalise it against,
+which is the same mistake this script exists to fix for frontier_mask. The
+known_mask bracket is a different shape, and the difference is the interesting
+part:
+
+  hints_only       pred = the hint mask, constant across the trace. Read the
+                   prompt and learn nothing.
+  depth_probe      a probe given ONLY (round_index, emitted-this-round) -- how
+                   far along the trace the position is, which the model can get
+                   by counting tokens without resolving a single node id.
+  hints_plus_depth both. THE FREE SCORE.
+  exact            hints union everything emitted so far, which IS known_mask
+                   by definition, so it scores 1.0.
+
+The ceiling is therefore exactly 1.0, unlike frontier_mask's 0.83: known_mask
+is a copying task whose answer is printed verbatim in the context, while the
+frontier has to be derived and the label is the round's set. A model at 0.907
+on known_mask is further from its ceiling than the same number on frontier
+would be, and the bracket is what makes that sayable.
 """
 import argparse
 import json
@@ -75,13 +96,27 @@ def balanced_accuracy(pred, y):
 def gather(cfg, vocab, n_instances, seed_start):
     keys = ("frontier_mask", "known_mask", "n_known_nbrs", "n_known_colors")
     out = {k: [] for k in keys}
-    for adj, _colors, hints, trace in build_instances(cfg, n_instances, seed_start=seed_start):
-        _pos, lab = dd_state_labels(adj, trace, vocab)
+    hint_chunks, depth_chunks = [], []
+    for adj, _colors, _hints, trace in build_instances(cfg, n_instances, seed_start=seed_start):
+        pos, lab = dd_state_labels(adj, trace, vocab)
         for k in keys:
             out[k].append(lab[k])
+        # The hint set is fixed for the whole trace, so it repeats down the
+        # positions: that constancy is exactly what makes it the floor.
+        hm = np.zeros(vocab.n_nodes, dtype=np.int8)
+        hm[np.fromiter((int(u) for u in trace["hints"]), dtype=np.int64,
+                       count=len(trace["hints"]))] = 1
+        hint_chunks.append(np.repeat(hm[None, :], len(pos), axis=0))
+        # How far along the trace this position is, with no node identity in
+        # it: a token counter gets both for free.
+        depth_chunks.append(np.stack(
+            [lab["round_index"], np.array([p["k"] for p in pos], dtype=np.int64)], axis=1))
     cast = {"frontier_mask": np.int8, "known_mask": np.int8,
             "n_known_nbrs": np.float32, "n_known_colors": np.float32}
-    return {k: np.concatenate(v).astype(cast[k]) for k, v in out.items()}
+    res = {k: np.concatenate(v).astype(cast[k]) for k, v in out.items()}
+    res["hint_mask"] = np.concatenate(hint_chunks).astype(np.float32)
+    res["depth"] = np.concatenate(depth_chunks).astype(np.float32)
+    return res
 
 
 def main():
@@ -112,13 +147,17 @@ def main():
     print(f"{f_tr.shape[0]} train / {f_te.shape[0]} test positions, {f_tr.shape[1]} nodes")
     print(f"frontier positive rate: {f_te.mean():.4f}   known positive rate: {k_te.mean():.4f}")
 
-    def probe_on(x_tr, x_te):
-        m = fit_linear_probe(
-            torch.as_tensor(x_tr, dtype=torch.float32), f_tr,
-            torch.as_tensor(x_te, dtype=torch.float32), f_te,
-            "multilabel", epochs=args.probe_epochs,
-        )
-        return {k: m[k] for k in ("balanced_accuracy", "auroc", "average_precision")}
+    def probe_for(y_tr, y_te):
+        def probe_on(x_tr, x_te):
+            m = fit_linear_probe(
+                torch.as_tensor(x_tr, dtype=torch.float32), y_tr,
+                torch.as_tensor(x_te, dtype=torch.float32), y_te,
+                "multilabel", epochs=args.probe_epochs,
+            )
+            return {k: m[k] for k in ("balanced_accuracy", "auroc", "average_precision")}
+        return probe_on
+
+    probe_on = probe_for(f_tr, f_te)
 
     res = {}
     # A 0/1 rule, so its AUROC equals its balanced accuracy by construction
@@ -161,6 +200,29 @@ def main():
     res["positive_rate"] = {"balanced_accuracy": 0.5, "auroc": 0.5,
                             "average_precision": float(f_te.mean())}
 
+    # ---- the second bracket: known_mask (see the module docstring) ---------
+    h_tr, h_te, d_tr, d_te = tr["hint_mask"], te["hint_mask"], tr["depth"], te["depth"]
+    kprobe = probe_for(k_tr, k_te)
+    kb = {
+        "positive_rate": {"balanced_accuracy": 0.5, "auroc": 0.5,
+                          "average_precision": float(k_te.mean())},
+        "hints_only": {
+            "balanced_accuracy": balanced_accuracy(h_te, k_te),
+            "auroc": auroc(h_te.ravel(), k_te.ravel()),
+            "average_precision": average_precision(h_te.ravel(), k_te.ravel()),
+        },
+        "depth_probe": kprobe(d_tr, d_te),
+        "hints_plus_depth": kprobe(np.hstack([h_tr, d_tr]), np.hstack([h_te, d_te])),
+    }
+    # known_mask IS hints union the emissions so far, so a reader that has both
+    # is not approximating anything. Asserted rather than fitted: if this is
+    # ever not 1.0 the label definition has drifted and the whole bracket is
+    # measuring something else.
+    exact = auroc(k_te.ravel().astype(np.float64), k_te.ravel())
+    assert abs(exact - 1.0) < 1e-9, f"known_mask self-AUROC is {exact}, not 1.0"
+    kb["exact"] = {"balanced_accuracy": 1.0, "auroc": 1.0, "average_precision": 1.0}
+    res["known_bracket"] = kb
+
     print("\nfrontier_mask predictability from label information only:")
     print(f"  {'':>13}  {'bal_acc':>8} {'auroc':>8} {'avg_prec':>9}")
     for name in ("positive_rate", "shuffled", "not_known", "known_probe", "degree_aug",
@@ -178,6 +240,19 @@ def main():
     print("  short of 1.0, because frontier_mask is the ROUND's set and the visible")
     print("  state has already moved on within the round.")
 
+    print("\nknown_mask predictability from label information only:")
+    print(f"  {'':>17}  {'bal_acc':>8} {'auroc':>8} {'avg_prec':>9}")
+    for name in ("positive_rate", "hints_only", "depth_probe", "hints_plus_depth", "exact"):
+        r = res["known_bracket"][name]
+        print(f"  {name:>17}: {r['balanced_accuracy']:8.4f} {r['auroc']:8.4f} "
+              f"{r['average_precision']:9.4f}")
+    kfree = max(res["known_bracket"][n]["auroc"]
+                for n in ("hints_only", "depth_probe", "hints_plus_depth"))
+    print(f"  FREE {kfree:.4f} -> CEILING 1.0000. Unlike frontier_mask the ceiling here is")
+    print("  exactly 1.0: known_mask is printed verbatim in the context, so any shortfall")
+    print("  is a copying failure, not a limit of the label. Normalise a model's known_mask")
+    print(f"  AUROC as (model - {kfree:.4f}) / (1 - {kfree:.4f}).")
+
     if args.out_json:
         # Carry the ensemble: this number is a property of the task, so an
         # N=96 fall baseline and the N=24 one are not interchangeable.
@@ -186,7 +261,8 @@ def main():
                       "probe_epochs": args.probe_epochs,
                       "pool_offset": args.pool_offset,
                       "n_test_positions": int(f_te.shape[0]),
-                      "positive_rate": float(f_te.mean())}
+                      "positive_rate": float(f_te.mean()),
+                      "known_positive_rate": float(k_te.mean())}
         with open(args.out_json, "w") as fh:
             json.dump(res, fh, indent=2)
         print(f"\nwrote {args.out_json}")
