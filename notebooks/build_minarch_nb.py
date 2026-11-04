@@ -50,8 +50,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from scripts.minarch_analysis import (ARCH_AXIS, ARCH_DEPTHS, DEPTH_LADDER, PLATEAU, SCAN_DIRS,
-                                      SEEDS, all_rungs, cell_metrics, fmt_rho50, history, load,
-                                      median, rho_50, rung_label, spread)
+                                      SEEDS, _bound_median, all_rungs, cell_metrics, fmt_rho50,
+                                      history, load, median, rho_50, rung_label, spread)
 from notebooks.make_minarch_deck import PREV, collect, yardstick
 
 # Stage A (51032450, the depth ladder + the arch axis at L=4) and stage B
@@ -211,8 +211,16 @@ depth where the full model still solves at all three seeds.
 **BEFORE** is L=6 with four heads and a trained ReLU MLP. **AFTER** is the same
 model with exactly one thing removed. A removal is *free* only if `rho_50` rises
 by less than the pooled s\\* — anything smaller than that is the seed, not the
-architecture. Censored rows never crossed a 50% solve rate anywhere in the grid,
-so their `rho_50` is a bound and the row is scored on `mean_solve` instead."""),
+architecture.
+
+A censored seed is not a missing number: it is known to be `>0.95`, which is
+enough to **order** it above every seed that did cross. So the median survives
+the censoring whenever the middle rank is one of the finite values, and a rung
+with one censored seed out of three still gets a real `rho_50` and a real delta
+rather than the word "censored". `_bound_median` in `scripts/minarch_analysis.py`
+does that ordering and is imported here rather than reimplemented, so this table
+and the pre-registration output in section 3 cannot disagree. Only a rung whose
+*middle* seed is censored stays unreadable, and it is reported as such."""),
 
 ("code", """base = (median([m["rho50"] for _, m in rung[(6, 4, "full")]])
         if (6, 4, "full") in rung and all(m["flag"] == "ok" for _, m in rung[(6, 4, "full")])
@@ -236,15 +244,23 @@ else:
             continue
         tr = v[0][1]["n_trainable"]
         msv = median([m["mean_solve"] for _, m in v])
-        if any(m["flag"] != "ok" for _, m in v):
-            nx = sum(1 for _, m in v if m["flag"] == "ok")
-            print(f"AFTER   {nm:42s} rho_50 CENSORED ({nx}/{len(v)} cross)  "
-                  f"mean_solve {msv:.4f}  trainable {tr:,}  -> NOT free")
-        else:
-            d = median([m["rho50"] for _, m in v]) - base
-            print(f"AFTER   {nm:42s} rho_50 {median([m['rho50'] for _, m in v]):.3f}  {d:+.3f}  "
-                  f"mean_solve {msv:.4f}  trainable {tr:,}  -> "
-                  f"{'FREE' if d <= s['rho50'] else 'COSTS rho_50'}")"""),
+        cens = sum(1 for _, m in v if m["flag"] != "ok")
+        bm = _bound_median([(m["rho50"], m["flag"] == "ok") for _, m in v])
+        if not bm["bm_readable"]:
+            print(f"AFTER   {nm:42s} rho_50 CENSORED ({len(v) - cens}/{len(v)} cross, the "
+                  f"MIDDLE seed among them)  mean_solve {msv:.4f}  trainable {tr:,}  -> NOT free")
+            continue
+        d = bm["rho50_bm"] - base
+        # A rung with a censored seed is never "free" even when the readable
+        # median sits inside s*: one seed in three never solved at all, and
+        # that is a cost the median cannot show.
+        verdict = ("COSTS rho_50" if d > s["rho50"]
+                   else "FREE" if not cens
+                   else "inside s*, but one seed never crossed -> NOT free")
+        note = (f"  [{len(v) - cens}/{len(v)} cross; median survives the censoring]"
+                if cens else "")
+        print(f"AFTER   {nm:42s} rho_50 {bm['rho50_bm']:.3f}  {d:+.3f}  "
+              f"mean_solve {msv:.4f}  trainable {tr:,}  -> {verdict}{note}")"""),
 
 ("md", """## 6. Comparison to the previous best on the same eval
 
@@ -266,12 +282,22 @@ pv = {}
 for (L, sd), v in sorted(prev.items()):
     val, flag = rho_50([(x["realized_rho"], x["solve_rate"]) for x in v])
     pv.setdefault(L, []).append(val if flag == "ok" else CENSOR)
+def show(xs):
+    # A censored seed is a BOUND, not a value; printing the 1.02 sentinel as a
+    # number makes a delta computed against it look exact when it is only a
+    # lower bound on the improvement.
+    return "/".join(">0.95" if x >= CENSOR else f"{x:.3f}" for x in xs)
+
 print(f"{'L':>3} {'11-02 rho_50':>22s} {'this job rho_50':>28s} {'delta of medians':>18s}")
 for L in sorted(set(pv) & {k[0] for k in rung if k[1] == 4 and k[2] == 'full'}):
     now = [(m["rho50"] if m["flag"] == "ok" else CENSOR) for _, m in rung[(L, 4, "full")]]
-    print(f"{L:>3} {'/'.join(f'{x:.3f}' for x in pv[L]):>22s} "
-          f"{'/'.join(f'{x:.3f}' for x in now):>28s} {median(now) - median(pv[L]):>+18.4f}")
-print(f"\\ns* in rho_50 is {s['rho50']:.4f}: a delta smaller than that is the seed, not the run.")"""),
+    d, bound = median(now) - median(pv[L]), median(pv[L]) >= CENSOR or median(now) >= CENSOR
+    print(f"{L:>3} {show(pv[L]):>22s} {show(now):>28s} "
+          f"{('<= ' + format(d, '+.4f')) if bound else format(d, '+.4f'):>18s}")
+print(f"\\ns* in rho_50 is {s['rho50']:.4f}: a delta smaller than that is the seed, not the run.")
+print("'<=' marks a row where one side's median is censored: the 11-02 cell never crossed 50%,")
+print("so the true gap is at least as large as shown and the row cannot be read as an exact one.")
+print("L=8 is the only fully uncensored match, and its -0.1062 sits INSIDE s* -- a replication.")"""),
 
 ("md", """## 7. Controls
 
