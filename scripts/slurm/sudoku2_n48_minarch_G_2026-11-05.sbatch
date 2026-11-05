@@ -197,7 +197,7 @@
 # 6 cells x ~4.2 h = ~25 GPU-h, ~11 h wall at 3 concurrent.
 #
 # THROTTLED TO 3 CONCURRENT and submitted while stage E still holds 3 GPUs:
-# sganguli showed 10 of 16 idle at submission, so this fills idle capacity
+# sganguli showed 11 of 16 GPUs idle at submission, so this fills idle capacity
 # rather than competing with the group or with its own earlier stages.
 #
 # ENVIRONMENT. Module stack only -- ${SCRATCH}/spin_gnn_venv is long dead to
