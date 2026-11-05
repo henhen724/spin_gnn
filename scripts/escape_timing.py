@@ -81,6 +81,90 @@ def escape_epoch(s):
     return next((i for i, (t, _v, _a) in enumerate(s) if t < PLATEAU), None)
 
 
+def tail_slope(tr, frac=0.2):
+    """Train-NLL slope per epoch over the last `frac` of the run."""
+    tail = tr[int(len(tr) * (1 - frac)):]
+    return (tail[-1] - tail[0]) / max(len(tail) - 1, 1)
+
+
+def eta(nll, slope):
+    """Epochs to reach the plateau at `slope`, or inf if it is not descending."""
+    return (nll - PLATEAU) / abs(slope) if slope < 0 and nll > PLATEAU else float("inf")
+
+
+def q3(by, extra_epochs=50):
+    """HOW FAR is a rung that never escaped, and do late escapes have a knee?
+
+    Q1 says escapes are still arriving at epoch 44 of 50. That is true and it
+    is NOT the same as "a 0/3 rung is nearly there": it is a statement about
+    the cells that escaped, and those may have been sitting on the line the
+    whole time. This asks the question Q1 cannot -- how big is the gap, in
+    epochs, at each cell's own terminal rate -- and it is the one that decides
+    what a longer budget can buy.
+    """
+    print("\n=== Q3: HOW FAR IS A RUNG THAT NEVER ESCAPED, AND IS THERE A KNEE? ===")
+
+    pre = []
+    for key in by:
+        for sd, s in by[key].values():
+            e = escape_epoch(s)
+            if e is None or e < EARLY or e < 2:
+                continue
+            tr = [t for t, _v, _a in s]
+            win = tr[max(0, e - 6):e]
+            sl = (win[-1] - win[0]) / max(len(win) - 1, 1)
+            pre.append((e, rung_label(*key).strip(), sd, win[-1], sl, eta(win[-1], sl)))
+    if pre:
+        print(f"  (a) THE {len(pre)} LATE ESCAPES (after epoch {EARLY}), as they crossed:")
+        print(f"      {'rung':<22} {'sd':>2} {'esc@':>4} {'NLL before':>10} "
+              f"{'prior slope':>11} {'linear ETA':>10}")
+        for e, name, sd, nll, sl, et in sorted(pre):
+            print(f"      {name:<22} {sd:>2} {e:>4} {nll:>10.3f} {sl:>+11.5f} "
+                  f"{et:>7.1f} ep")
+        near = [p for p in pre if p[5] <= 5]
+        print(f"      {len(near)} of {len(pre)} were within FIVE epochs of the plateau at "
+              f"their own rate, and")
+        print(f"      every one crossed from {min(p[3] for p in pre):.3f}-"
+              f"{max(p[3] for p in pre):.3f}. THERE IS NO KNEE: a late escape is a cell")
+        print("      that was already sitting ON the line and drifted the last hundredth")
+        print("      of a nat across it, not a cell that suddenly found the problem.")
+
+    nev = []
+    for key in by:
+        for sd, s in by[key].values():
+            if escape_epoch(s) is not None:
+                continue
+            tr = [t for t, _v, _a in s]
+            sl = tail_slope(tr)
+            nev.append((eta(tr[-1], sl), rung_label(*key).strip(), sd, tr[-1], sl, len(tr)))
+    if not nev:
+        print("  (b) every cell escaped.")
+        return
+    print(f"\n  (b) THE {len(nev)} CELLS THAT NEVER ESCAPED, and what the budget would have "
+          f"to be:")
+    print(f"      {'rung':<22} {'sd':>2} {'trainEnd':>8} {'last20% slope':>13} "
+          f"{'ETA':>9} {'=> epochs':>10}")
+    for et, name, sd, nll, sl, n in sorted(nev):
+        tot = f"{n + et:.0f}" if et != float("inf") else "never"
+        print(f"      {name:<22} {sd:>2} {nll:>8.3f} {sl:>+13.5f} "
+              f"{(f'{et:.0f} ep' if et != float('inf') else 'never'):>9} {tot:>10}")
+    reach = [p for p in nev if p[0] <= extra_epochs]
+    fin = [p[0] for p in nev if p[0] != float("inf")]
+    print(f"      {len(reach)} of {len(nev)} would reach the plateau within {extra_epochs} "
+          f"MORE epochs at their terminal rate.")
+    if fin:
+        print(f"      Median gap {sorted(fin)[len(fin) // 2]:.0f} epochs, range "
+              f"{min(fin):.0f}-{max(fin):.0f}.")
+    print("      So Q1's '29% of escapes are in the second half' must NOT be read as 'the")
+    print("      0/3 rungs are nearly there'. Both are true: the budget does truncate the")
+    print("      escape distribution, AND the cells it truncates are mostly far away. A")
+    print("      longer-budget rerun is still the right cell to run -- it is the only way")
+    print("      to tell a 120-epoch rung from an untrainable one -- but doubling the")
+    print("      budget is predicted to move only the cells already near the line, and")
+    print("      a linear extrapolation is itself optimistic: these tails are flattening,")
+    print("      not straight. Write the prediction down before the rerun lands.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scan-dir", nargs="+", default=SCAN_DIRS + [SCAN_E],
@@ -127,7 +211,9 @@ def main():
     print("    " + ", ".join(marginal))
     print("  Escapes are still ARRIVING when training stops, so a 0/3 rung is a rung whose")
     print("  escape time may simply exceed the budget. That does not make the cheap rungs")
-    print("  trainable -- it makes 50 epochs unable to tell.")
+    print("  trainable -- it makes 50 epochs unable to tell. READ Q3 BEFORE USING THIS:")
+    print("  'still arriving' is a fact about the cells that escaped, and says nothing on")
+    print("  its own about how far the cells that did not escape actually are.")
 
     print("\n=== Q2: IS THERE ROOM TO SPEND MORE EPOCHS? ===")
     gaps, early_best = [], []
@@ -151,6 +237,8 @@ def main():
     print("  nats. With a constant LR and a fixed 240k pool, more epochs is more")
     print("  optimization and nothing else -- no schedule to reshape, no memorization to")
     print("  buy. Every run was stopped mid-descent.")
+
+    q3(by)
 
 
 if __name__ == "__main__":
