@@ -108,6 +108,13 @@ SCAN_E = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_E_2026-11-04")
 # dir stays out of the default list as the second line of defence: nothing at a
 # different budget belongs in a pooled bar or a paired comparison.
 SCAN_G = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_G_2026-11-05")
+# Stage H (11-05): the cheap end of stage E's result. Attention-only at L=12
+# and d128/d192 -- one knob from E2, which falsified the barrier reading this
+# morning at d256. These rungs carry a NON-default d_model, so unlike stage E
+# they key as 6-tuples and cannot enter the pooled bar by accident. The dir is
+# still kept out of SCAN_DIRS: a scan dir joins the default list only once
+# every verdict scored against the frozen bar has been re-read against it.
+SCAN_H = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_H_2026-11-05")
 SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C, SCAN_D]
 
 SEEDS = (0, 1, 2)

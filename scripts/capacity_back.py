@@ -139,6 +139,40 @@ def barrier_call(s, n_esc):
             "and is not a vote for either reading." % (r, BARRIER_HI), "worse")
 
 
+def arm_rollup(arms):
+    """The registered roll-up over the three arms that can break (A), as text.
+
+    Returned rather than printed so that a write-up renders the scorer's own
+    words instead of paraphrasing them -- a deck that restates the conclusion
+    in its own words is a deck that can drift away from the registration.
+    main() prints exactly this and nothing else.
+    """
+    open_arms = [k for k, v in arms.items() if v not in ("falsified", "held", "worse")]
+    if "falsified" in arms.values():
+        who = [k for k, v in arms.items() if v == "falsified"]
+        return (f"VERDICT: (A) BARRIER IS FALSIFIED, by {', '.join(who)}. An ablated rung handed\n"
+                "  more capacity than the hub crossed below the tie-break floor. The pile-up\n"
+                "  at 0.76 is reading (B) CAPACITY: those ablations cost about the same at\n"
+                "  that budget, and there is no floor. One rung is enough -- the registration\n"
+                "  says there is no partial credit and no 'but the other arm held'. Do not\n"
+                "  write 'the MLP is load-bearing in kind' anywhere.")
+    if open_arms:
+        return (f"VERDICT: NOT YET. {3 - len(open_arms)} of 3 arms reached a terminal state; "
+                f"{', '.join(open_arms)} still open.\n"
+                "  (A) cannot be confirmed by rungs that have not landed, and a rung that\n"
+                "  did not train, or whose median is censored, is NOT a rung that held.")
+    held = [k for k, v in arms.items() if v == "held"]
+    return (f"VERDICT: (A) BARRIER HOLDS ON EVERY ROW THAT COULD HAVE BROKEN IT "
+            f"({len(held)} of 3 landed in the window; the rest came back WORSE, which is\n"
+            "  not a vote for either reading).\n"
+            "  Width (D2) and depth (E1, E2) both failed to cross, which is the\n"
+            "  two-independent-axes outcome the stage E header named. The strongest\n"
+            "  reading the grid supports: the minimal architecture that still does\n"
+            "  direct deduction is the COMPLETE one, and the smallest complete one\n"
+            "  measured is the hub. STILL NOT 'the architectures are equivalent' --\n"
+            "  see the resolution-limit caveat in scripts/rung_collapse.py.")
+
+
 def paired(cells, key, what):
     """One line for a reference rung that was measured at the same budget."""
     ms = rung(cells, key)
@@ -236,31 +270,7 @@ def main():
     arms = {k: status[k] for k in ("D2", "E1", "E2")}
     print("  arm status: " + ", ".join(f"{k}={v}" for k, v in sorted(arms.items())) +
           f",  D1(bisector)={status['D1']}")
-    open_arms = [k for k, v in arms.items() if v not in ("falsified", "held", "worse")]
-    if "falsified" in arms.values():
-        who = [k for k, v in arms.items() if v == "falsified"]
-        print(f"VERDICT: (A) BARRIER IS FALSIFIED, by {', '.join(who)}. An ablated rung handed")
-        print("  more capacity than the hub crossed below the tie-break floor. The pile-up")
-        print("  at 0.76 is reading (B) CAPACITY: those ablations cost about the same at")
-        print("  that budget, and there is no floor. One rung is enough -- the registration")
-        print("  says there is no partial credit and no 'but the other arm held'. Do not")
-        print("  write 'the MLP is load-bearing in kind' anywhere.")
-    elif open_arms:
-        print(f"VERDICT: NOT YET. {3 - len(open_arms)} of 3 arms reached a terminal state; "
-              f"{', '.join(open_arms)} still open.")
-        print("  (A) cannot be confirmed by rungs that have not landed, and a rung that")
-        print("  did not train, or whose median is censored, is NOT a rung that held.")
-    else:
-        held = [k for k, v in arms.items() if v == "held"]
-        print(f"VERDICT: (A) BARRIER HOLDS ON EVERY ROW THAT COULD HAVE BROKEN IT "
-              f"({len(held)} of 3 landed in the window; the rest came back WORSE, which is")
-        print("  not a vote for either reading).")
-        print("  Width (D2) and depth (E1, E2) both failed to cross, which is the")
-        print("  two-independent-axes outcome the stage E header named. The strongest")
-        print("  reading the grid supports: the minimal architecture that still does")
-        print("  direct deduction is the COMPLETE one, and the smallest complete one")
-        print("  measured is the hub. STILL NOT 'the architectures are equivalent' --")
-        print("  see the resolution-limit caveat in scripts/rung_collapse.py.")
+    print(arm_rollup(arms))
     print("=" * 72)
 
     print("\nE4 -- OUT-OF-SAMPLE SUFFICIENCY TEST, free and reported AHEAD of E1/E2 if it")
