@@ -115,6 +115,14 @@ SCAN_G = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_G_2026-11-05")
 # still kept out of SCAN_DIRS: a scan dir joins the default list only once
 # every verdict scored against the frozen bar has been re-read against it.
 SCAN_H = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_H_2026-11-05")
+# Stage I (11-05): the bisector of the width TRAINABILITY floor. Stage H's two
+# finished d128 cells never got below finding 44's 1.64 plateau while its first
+# d192 cell escaped by epoch 40, which brackets the floor at L=12 in [128, 192]
+# with nothing in the grid inside it. d160 is the only cell in this dir. Like
+# H's rungs it carries a non-default d_model and keys as a 6-tuple, and like
+# every other staged dir it is kept out of SCAN_DIRS until every verdict scored
+# against the frozen bar has been re-read against it.
+SCAN_I = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_I_2026-11-05")
 SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C, SCAN_D]
 
 SEEDS = (0, 1, 2)
