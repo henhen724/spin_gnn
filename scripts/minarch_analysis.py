@@ -98,6 +98,16 @@ SCAN_D = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_D_2026-11-04")
 # must never move the bar an existing verdict was measured with. Read these
 # cells with --scan-dir, and score them against the frozen 0.1484 / 0.2918.
 SCAN_E = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_E_2026-11-04")
+# Stage G (11-05): the trainability floor. no_mlp at d128 and d256 for 100
+# epochs instead of 50, asking whether the cheap end of the grid is excluded by
+# capacity or by the budget. ALSO NOT IN SCAN_DIRS, and for a harder reason
+# than stage E's. E's rungs would merely pool into the registered grid; G's
+# would COLLIDE -- its cells carry entirely default architecture and differ
+# from stage B's and stage C's rungs in the epoch count alone. rung_key() is
+# epoch-aware as of 11-05 precisely so that collision cannot happen, but the
+# dir stays out of the default list as the second line of defence: nothing at a
+# different budget belongs in a pooled bar or a paired comparison.
+SCAN_G = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_G_2026-11-05")
 SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C, SCAN_D]
 
 SEEDS = (0, 1, 2)
