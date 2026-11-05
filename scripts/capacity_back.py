@@ -44,8 +44,18 @@ Nothing here is chosen after seeing a number.
   hub", because (B) is the claim that needs the evidence and a boundary value
   is not evidence. Written down in advance because stage C's P3 landed on its
   threshold to three decimals and had to be rescued by hand afterwards.
-  So the operative falsification threshold is a median strictly BELOW 0.72,
-  and this script says which branch it took every time.
+
+  THOSE TWO CLAUSES CONFLICT ON [0.72, 0.740), AND THE CONFLICT IS IN THE
+  REGISTRATION ITSELF, not in this script. Read literally, the E2 falsifier
+  ("below 0.740") kills (A) anywhere in that interval; the E1 tie-break,
+  written one paragraph earlier for exactly this overlap, assigns the same
+  interval to (A). This scorer follows the TIE-BREAK, because it is the clause
+  written to resolve the overlap and it is the conservative one -- it demands
+  more evidence for (B), the claim that needs it. So the operative
+  falsification threshold is a median strictly BELOW 0.72. The resolution is
+  NOT hidden: any median landing in [0.72, 0.740) is printed with BOTH
+  readings side by side, so a reader can see that the other clause would have
+  said the opposite and judge the registration rather than the verdict.
 
   TRAINABILITY IS CHECKED FIRST AND OUTRANKS EVERYTHING. no_mlp escapes
   finding 44's 1.64 plateau on 2 of 3 seeds at L=6 and 0 of 3 at L=4, so a
@@ -113,7 +123,12 @@ def barrier_call(s, n_esc):
         return ("TIE-BREAK REGION [%.2f, %.3f] -- median rho_50 %.3f, margin %+.3f on the "
                 "hub. SCORED AS (A) by the rule written before the cell existed: 'did not "
                 "clear the hub'. (B) is the claim that needs evidence and a boundary value "
-                "is not evidence. Report the margin, never the sign alone."
+                "is not evidence. Report the margin, never the sign alone. "
+                "THE REGISTRATION DISAGREES WITH ITSELF HERE and the disagreement is "
+                "reported rather than resolved silently: the E2 falsifier clause read "
+                "literally ('below 0.740') would call this (A) FALSIFIED. The tie-break "
+                "clause, written one paragraph earlier for this exact overlap, wins "
+                "because it is the conservative reading. Quote both in the write-up."
                 % (BARRIER_LO, FREE, r, r - FREE), "held")
     if r <= BARRIER_HI:
         return ("(A) HOLDS ON THIS RUNG -- median rho_50 %.3f sits inside the registered "
