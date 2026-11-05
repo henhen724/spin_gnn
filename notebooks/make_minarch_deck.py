@@ -227,6 +227,26 @@ def page_verdict(o, rung, s, n_cells):
         mlp_line = (f"Only {len(cuts)} of the 3 MLP cuts have landed (or the L=6 hub has no "
                     f"seed spread to judge them against); no all-or-nothing read yet.")
 
+    # rf_all is the one rung where "0 of 3 escaped the plateau" does NOT have
+    # to be hedged as "did not train at this budget". Freezing every weight but
+    # the readout leaves a CONVEX objective in the parameters that are still
+    # free, so a flat loss means converged, not under-trained -- which is a
+    # genuinely stronger statement than the same flag on, say, nhead=1, and the
+    # deck should not flatten the two into one caveat.
+    rfa = rung.get((6, 4, "rf_all"))
+    rfa_line = ""
+    if rfa:
+        nll = [history(m["path"])[1] for _, m in rfa]
+        slopes = [history(m["path"])[4] for _, m in rfa]
+        flat = all(s > -0.001 for s in slopes)
+        rfa_line = (
+            f"  rf_all escapes the usual 'did not train' hedge: freezing all but the readout leaves "
+            f"a CONVEX objective in the {rfa[0][1]['n_trainable']:,} free parameters, and its loss "
+            f"sits at {'/'.join(f'{v:.2f}' for v in nll)}, slope {max(slopes):+.5f}"
+            + (" — CONVERGED, not under-trained. Frozen features with a linear readout do none "
+               "of DD (mean solve 0.0000, 3/3): architecture, not budget."
+               if flat else " — still descending, so it stays a budget result."))
+
     blocks = [
         ("THE QUESTION", "#1a5fb4",
          "Not how well the model solves direct deduction — it already does, leak-free — but how "
@@ -235,7 +255,7 @@ def page_verdict(o, rung, s, n_cells):
         ("THE HEADLINE", "#613583", head),
         ("BEFORE AND AFTER, at the shallowest depth that still deduces", "#26a269",
          ("L=6 full has not landed yet." if not base_ok else
-          f"BEFORE: L=6, 4 heads, trained ReLU MLP — rho_50 = {base:.3f}. ") + strip),
+          f"BEFORE: L=6, 4 heads, trained ReLU MLP — rho_50 = {base:.3f}. ") + strip + rfa_line),
         ("WHAT EACH REMOVAL COSTS, IN LAYERS", "#26a269",
          ("Nothing stripped at L=6 has landed yet." if not xrate else
           "Each stripped L=6 cell, matched to the depth rung it scores like: "
@@ -262,7 +282,7 @@ def page_verdict(o, rung, s, n_cells):
                "finding 44's budget and optimizer, unchanged on purpose. Same 14-point x "
                "400-instance grid and the same instances as the 11-02 scan, so the curves are "
                "paired point by point.",
-             y0=0.83, gap=0.020, width=132)
+             y0=0.845, gap=0.016, width=138)
 
 
 def page_ladder(o, rung, cells, s):
@@ -470,6 +490,48 @@ def page_table(o, rung, s, commit):
     lines += ["", f"pooled yardstick s* = {s['rho50']:.4f} in rho_50, {s['mean_solve']:.4f} in "
                   f"mean solve — the largest across-seed spread on any complete rung above, "
                   f"taken over BOTH jobs"]
+
+    # AT MATCHED TRAINABLE PARAMETERS, is it better to remove the MLP or to
+    # remove layers? The table has the numbers but not the pairing, and the
+    # pairing is the part that answers "what should a small budget be spent
+    # on". Every stripped L=6 rung is matched to the DEPTH rung nearest it in
+    # trainable count -- nearest, not chosen, so the comparison cannot be
+    # picked after the fact -- and the match is quoted with its own error so a
+    # loose pairing is visible rather than hidden.
+    pairs = []
+    for a in ("no_mlp", "rf_mlp", "linear"):
+        k = (6, 4, a)
+        if k not in rung:
+            continue
+        ntr = rung[k][0][1]["n_trainable"]
+        cand = [(abs(rung[(D, 4, "full")][0][1]["n_trainable"] - ntr), D)
+                for D in DEPTH_LADDER if (D, 4, "full") in rung]
+        if not cand:
+            continue
+        off, D = min(cand)
+        if D == 6:
+            # linear freezes nothing, so its nearest match is the L=6 hub --
+            # itself, minus the nonlinearity. That is the BEFORE/AFTER already
+            # on page 1, not a budget traded two ways, and printing it here
+            # would read as "depth beats stripping" when no depth was traded.
+            continue
+        mine = median([m["mean_solve"] for _, m in rung[k]])
+        theirs = median([m["mean_solve"] for _, m in rung[(D, 4, "full")]])
+        # Judged against the L=6 hub's own across-seed spread, the same honest
+        # bar page 1 uses for the MLP cuts: three seeds of one architecture,
+        # all of which trained. NOT the pooled s* in mean solve, which one of
+        # the cells under test sets.
+        bar = (spread([m["mean_solve"] for _, m in rung[HUB6]])
+               if HUB6 in rung and len(rung[HUB6]) > 1 else s["mean_solve"])
+        verdict = ("stripped WINS" if mine - theirs > bar else
+                   "depth WINS" if theirs - mine > bar else "tie")
+        pairs.append(f"  {a:>7} L=6 {ntr/1e6:.3f}M  vs  full L={D:<2d} "
+                     f"{rung[(D, 4, 'full')][0][1]['n_trainable']/1e6:.3f}M "
+                     f"(within {off/1e3:.0f}k):  mean solve {mine:.4f} vs {theirs:.4f}  "
+                     f"-> {verdict}")
+    if pairs:
+        lines += ["", "SAME TRAINABLE BUDGET, SPENT TWO WAYS — each stripped L=6 rung against the "
+                      "depth rung nearest it in trainable count:"] + pairs
     ax.text(0.5, 1.0, "\n".join(lines), family="monospace", size=11.6, ha="center", va="top",
             linespacing=1.42)
     footer(fig, "'escape' counts the seeds whose final training NLL got below 1.64, where finding "
