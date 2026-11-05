@@ -32,6 +32,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.lines import Line2D
 from matplotlib.ticker import ScalarFormatter
 
 from notebooks.deck_utils import BIG, MED, SMALL, PdfAndPng, footer, set_style, textpage
@@ -137,18 +138,22 @@ def page_ladders(o, cells, commit):
 
     ax = fig.add_axes([0.07, 0.28, 0.52, 0.49])
     # Different marker shapes, not just colours: the two ladders land within
-    # 0.002 of each other at d128 and circles alone overprinted there.
-    for rows, colour, mk, name in ((full_rows, FULL_C, "o", "full (MLP intact)"),
-                                   (nomlp_rows, NOMLP_C, "s", "attention-only")):
+    # 0.002 of each other at d128 -- about a pixel -- and circles alone
+    # overprinted there. Markers are drawn per rung rather than by the line, so
+    # a hollow one can have NO face: a white face at d128 hid the other ladder's
+    # point completely, which is the one place on this figure that matters.
+    # no_mlp first, full second, so the d128 circle sits inside the d128 square.
+    for rows, colour, mk in ((nomlp_rows, NOMLP_C, "s"), (full_rows, FULL_C, "o")):
         ax.plot([r[0] for r in rows], [r[1]["mean_solve"] for r in rows], "-",
-                marker=mk, color=colour, lw=2.5, ms=11, zorder=3, label=name)
+                color=colour, lw=2.5, zorder=3)
         for d, s, seeds, n_esc in rows:
             ax.plot([d] * len(seeds), seeds, "o", color="0.72", ms=6, zorder=2)
             # Hollow = the rung never got below the plateau, so its number is an
             # optimization failure and says nothing about width.
-            if n_esc == 0:
-                ax.plot([d], [s["mean_solve"]], mk, mfc="white", mec=colour, mew=2.5,
-                        ms=12, zorder=4)
+            hollow = n_esc == 0
+            ax.plot([d], [s["mean_solve"]], mk, mfc="none" if hollow else colour,
+                    mec=colour, mew=2.5 if hollow else 1.0, ms=14 if hollow else 11,
+                    zorder=5 if colour == FULL_C else 4)
     ax.set_xscale("log", base=2)
     ax.set_xticks([64, 128, 192, 256, 384])
     ax.xaxis.set_major_formatter(ScalarFormatter())
@@ -156,7 +161,11 @@ def page_ladders(o, cells, commit):
     ax.set_ylabel("mean_solve   (higher is better)")
     ax.set_title("Width is a cliff; the MLP is a step off it", size=MED)
     ax.grid(alpha=0.25)
-    ax.legend(loc="upper left", framealpha=0.95)
+    ax.legend(handles=[Line2D([], [], color=FULL_C, marker="o", lw=2.5, ms=11,
+                              label="full (MLP intact)"),
+                       Line2D([], [], color=NOMLP_C, marker="s", lw=2.5, ms=11,
+                              label="attention-only")],
+              loc="upper left", framealpha=0.95)
 
     lines = ["HOLLOW MARKER = never escaped the",
              f"{PLATEAU} plateau, so the cell is an",
@@ -204,7 +213,9 @@ def page_band(o, cells, d1, d2, hub, commit):
             (HUB, "hub: full d256", FULL_C, (0, -32), "center"),
             (D1, "D1: full d192", FULL_C, (-16, 18), "right"),
             (NO_MLP_D256, "no_mlp d256", NOMLP_C, (16, -6), "left"),
-            (D2, "D2: no_mlp d384", NOMLP_C, (16, 18), "left"),
+            # Below its marker, not above: above puts it through the
+            # right-aligned (B) CAPACITY line, which sits at the same height.
+            (D2, "D2: no_mlp d384", NOMLP_C, (16, -26), "left"),
             (FULL_L8, "full L=8", FULL_C, (0, -32), "center"),
             (FULL_L12, "full L=12", FULL_C, (-18, -30), "right")):
         ms = rung(cells, key)
