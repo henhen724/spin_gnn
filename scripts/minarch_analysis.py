@@ -80,7 +80,13 @@ SCAN_L6 = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_L6_2026-11-04")
 # in main()'s "NOT in the registered grid" list on purpose, which is also what
 # keeps them out of the bar that stage A and B were scored against.
 SCAN_C = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_C_2026-11-04")
-SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C]
+# Stage D (51151957): the width axis again, after stage C's P1 falsified "width
+# is free" -- d192 full bisects the cliff between 256 and 128, and no_mlp at
+# d384 asks whether width can buy the MLP back. Same treatment as stage C: a
+# non-default d_model keeps these rungs out of the registered grid and out of
+# the pooled bar that stages A and B were scored against.
+SCAN_D = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_D_2026-11-04")
+SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C, SCAN_D]
 
 SEEDS = (0, 1, 2)
 # (L, nhead, arch_mode) -> label. At each arch depth the hub L/h4/full is a rung
