@@ -249,8 +249,13 @@ def main():
     print("=" * 72)
 
     print("\nE4 -- OUT-OF-SAMPLE SUFFICIENCY TEST, free and reported AHEAD of E1/E2 if it")
-    print("  fails: run `python3 -m scripts.acc_vs_solve` and check that these rungs land")
-    print("  on the depth ladder's accuracy-to-solve curve within the LOO bar 0.0423.")
+    print("  fails. acc_vs_solve defaults to SCAN_DIRS, which does NOT include stage E, so")
+    print("  the stage E rungs are invisible unless the dirs are passed by hand:")
+    print("    python3 -m scripts.acc_vs_solve --scan-dir \\\n      " +
+          " \\\n      ".join(dirs))
+    print("  The prediction is that E1 and E2 land on the depth ladder's "
+          "accuracy-to-solve")
+    print("  curve within the LOO bar 0.0423, as 13 of 13 held-out rungs have so far.")
     print("  Falling off would be the grid's first evidence of an architectural change")
     print("  doing something SOLVE-SPECIFIC rather than moving one quality axis.")
 
