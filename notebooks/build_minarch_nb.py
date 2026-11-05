@@ -269,6 +269,44 @@ else:
         print(f"AFTER   {nm:42s} rho_50 {bm['rho50_bm']:.3f}  {d:+.3f}  "
               f"mean_solve {msv:.4f}  trainable {tr:,}  -> {verdict}{note}")"""),
 
+("md", """### What the completed arch axis says
+
+**The MLP is all-or-nothing.** The three cuts remove three *different* amounts —
+`linear` removes only the elementwise nonlinearity, `rf_mlp` removes only the
+*training* of the first matrix, `no_mlp` removes the MLP write entirely — and
+they cost the same: mean solve 0.3146 / 0.3104 / 0.3039, a spread of **0.0107**
+against the L=6 hub's own across-seed spread of **0.0141**. The bar is the hub's
+spread and not the pooled s\\*, deliberately: `linear` has a seed stuck at the
+plateau and therefore *sets* s\\* in mean solve, so judging the cuts against it
+would be circular. A linear MLP is worth what no MLP is worth, and random
+nonlinear features are worth what no MLP is worth. **Only the learned
+nonlinearity buys anything, and it is worth about half the depth** — every
+stripped L=6 cell lands on the L=3/L=4 rungs of the full ladder.
+
+**rf_all is the one converged negative.** Freezing everything but the readout
+leaves an objective that is *convex* in the 14,906 parameters still free, and
+its training loss sits at 3.60/3.59 with a last-5-epoch slope of +0.00002.
+Everywhere else in this grid "0 of 3 escaped the plateau" has to be hedged as
+*did not train at this budget*; here the flat loss on a convex problem means
+**converged**, so frozen features with a linear readout genuinely do none of
+direct deduction (mean solve 0.0000, 3/3). That hedge still stands for
+`nhead=1`, whose objective is not convex and whose 0/3 is a statement about
+optimization until stage C's warmup control says otherwise.
+
+**At a matched parameter budget, stripping beats shortening.** Section 5's table
+pairs each stripped L=6 rung with the depth rung nearest it in *trainable*
+count: `no_mlp` L=6 (1.746M) against full L=2 (1.741M), within 0.3%, scores
+0.3039 against 0.0807 — six attention-only layers beat two full ones outright;
+`rf_mlp` L=6 (3.321M) against full L=4 (3.320M), within 0.03%, is a tie. So the
+minimal frontier here is **attention-only at L=6: 1,746,490 trainable
+parameters at rho_50 0.763**, cheaper than full L=3 (2,530,618 at 0.757) for
+the same score and a far more tractable object to analyze.
+
+**Caveat carried everywhere:** in all three stripped cells the censored seed *is*
+the seed that never escaped the 1.64 plateau, so part of each cost is
+trainability rather than representational power, and the quoted +0.17 is the
+cost on the seeds that did train."""),
+
 ("md", """## 6. Comparison to the previous best on the same eval
 
 Finding 44's 11-02 N=48 fall scan is the only prior run on this exact eval at
