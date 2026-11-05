@@ -128,12 +128,31 @@ PLATEAU = 1.64  # finding 44's L=4/ff=1024/240k train NLL, never escaped
 # would put a seed at a position another key uses for a knob.
 D_DEFAULT, FF_DEFAULT, W_DEFAULT = 256, 1024, 0
 VARIANT_DEFAULT = (D_DEFAULT, FF_DEFAULT, W_DEFAULT)
+# EPOCHS IS THE FOURTH SILENT KNOB, and the worst of the four. Stage G (11-05)
+# re-runs no_mlp at d128 and d256 for 100 epochs instead of 50 to separate "did
+# not train at this budget" from "cannot represent DD". Without this, a
+# 100-epoch no_mlp d256 cell keys as the bare (6, 4, 'no_mlp') -- not merely
+# pooling into the registered grid the way stage E would, but colliding with
+# stage B's OWN rung and moving the median of a published verdict by adding
+# three seeds trained twice as long. Keeping the scan dir out of SCAN_DIRS is
+# not enough protection, because acc_vs_solve and capacity_back are routinely
+# run with every dir passed explicitly on the command line.
+#
+# Appended AFTER the (d, ff, w) block and only when non-default, so a key is a
+# 3-, 6- or 7-tuple and position still means the same thing in all three. Every
+# cell of stages A-F ran 50 epochs, so every existing key is unchanged to the
+# byte -- verified by diffing the full key set across all five scan dirs before
+# and after this edit, not by inspection.
+EP_DEFAULT = 50
 
 
 def rung_key(r):
-    """(L, nhead, arch), plus (d_model, ff, warmup) when any is non-default."""
+    """(L, nhead, arch), + (d_model, ff, warmup) + (epochs), each when non-default."""
     base = (r["num_layers"], r["nhead"], r["arch_mode"])
     v = (int(r["d_model"]), int(r["dim_feedforward"]), int(r.get("warmup_epochs") or 0))
+    ep = int(r.get("epochs") or EP_DEFAULT)
+    if ep != EP_DEFAULT:
+        return base + v + (ep,)
     return base if v == VARIANT_DEFAULT else base + v
 
 
@@ -142,10 +161,12 @@ def cell_key(r):
     return rung_key(r) + (r["seed"],)
 
 
-def rung_label(L, nhead, arch, d_model=D_DEFAULT, ff=FF_DEFAULT, warmup=W_DEFAULT):
+def rung_label(L, nhead, arch, d_model=D_DEFAULT, ff=FF_DEFAULT, warmup=W_DEFAULT,
+               epochs=EP_DEFAULT):
     v = "".join((f" d{d_model}" if d_model != D_DEFAULT else "",
                  f" ff{ff}" if ff != FF_DEFAULT else "",
-                 f" w{warmup:02d}" if warmup != W_DEFAULT else ""))
+                 f" w{warmup:02d}" if warmup != W_DEFAULT else "",
+                 f" ep{epochs}" if epochs != EP_DEFAULT else ""))
     return f"L={L:<2d} h={nhead} {arch}{v}"
 
 
@@ -190,7 +211,12 @@ def load(scan_dir):
                     r["d_model"] = r.get("d_model") or cfg.get("d_model")
                     r["dim_feedforward"] = r.get("dim_feedforward") or cfg.get("dim_feedforward")
                 r["warmup_epochs"] = _config(r["path"]).get("warmup_epochs", 0) or 0
-                for k in ("nhead", "d_model", "dim_feedforward", "warmup_epochs"):
+                # epochs is never a CSV column, so it always comes from the
+                # config, and an unreadable config reads as the default 50 --
+                # the same caveat the warmup line above carries, counted by the
+                # same control that counts cells with no readable config.
+                r["epochs"] = _config(r["path"]).get("epochs", 0) or EP_DEFAULT
+                for k in ("nhead", "d_model", "dim_feedforward", "warmup_epochs", "epochs"):
                     r[k] = int(r[k])
                 r["_scan"] = os.path.basename(scan_dir.rstrip("/"))
                 rows.append(r)
