@@ -225,9 +225,12 @@ def page_band(o, cells, e1, e2, hub, commit):
     # overprinted them on the width deck.
     for key, name, colour, off, ha in (
             (HUB, "hub: full L=6", FULL_C, (0, -32), "center"),
-            # Up-left, not right: E1's diamond lands within a few hundred
-            # thousand parameters of this marker and sat on top of the label.
-            (NOMLP_L6, "no_mlp L=6", NOMLP_C, (-14, 10), "right"),
+            # Straight up, and far enough up to clear the (B) dashes at 0.740:
+            # this is the leftmost point on a log axis, so a right-aligned
+            # label runs off the axes and over the y tick labels, and a
+            # left-aligned one reaches E1's diamond a few hundred thousand
+            # parameters away.
+            (NOMLP_L6, "no_mlp L=6", NOMLP_C, (0, 26), "center"),
             # BOTH paired controls go UP. With L=12's label sent downward the
             # two ran into each other in the middle of the plot, because a
             # right-aligned label at 9.6M parameters reaches back past 5M.
@@ -237,7 +240,10 @@ def page_band(o, cells, e1, e2, hub, commit):
             # Below the marker: above it is the (B) threshold line, and the
             # label was printing straight through the dashes.
             (E1, "E1: no_mlp L=8", NOMLP_C, (0, -30), "center"),
-            (E2, "E2: no_mlp L=12", NOMLP_C, (14, -28), "left")):
+            # Left, not right: with three seeds E2 lands at 0.605, close
+            # enough to the hub's own depth that a right-reaching label ran
+            # into "hub: full L=6" hanging below the hub marker.
+            (E2, "E2: no_mlp L=12", NOMLP_C, (-16, -26), "right")):
         ms = rung(cells, key)
         if not ms:
             continue
@@ -323,14 +329,13 @@ def page_verdicts(o, cells, e1, e2, st, commit):
         width=122)
 
 
-def page_next(o, cells, hub, commit):
+def page_next(o, cells, hub, e2, commit):
     nomlp = summarize(rung(cells, NOMLP_L6))
     l12 = summarize(rung(cells, FULL_L12))
     textpage(
         o,
         "What this does not settle, and what is still running",
-        "Stage G (51194118) moves the one knob stage E deliberately held fixed: "
-        "the training budget",
+        "Stage G (51194118) doubles the budget; stage H (51223007) tries to give the size back",
         [
             ("THE BUDGET ARM, REGISTERED BEFORE ITS FIRST CELL FINISHED", NOTE_C,
              f"Every rung in this deck ran 50 epochs. Stage G reruns attention-only at d128 and "
@@ -347,16 +352,17 @@ def page_next(o, cells, hub, commit):
              f"median 87 epochs short, and only 10 of 39 within another 50 -- none of them a "
              f"stage G cell. So doubling the budget is registered to NOT rescue the d128 rung, "
              f"which contradicts stage G's own header, and that contradiction is on record."),
-            ("NO IMPROVEMENT IS CLAIMED HERE, AND NONE WAS SOUGHT", FULL_C,
-             f"Previous best on this eval, same grid and same budget: the complete model at L=12, "
-             f"rho_50 {rho_txt(l12)} / mean_solve {l12['mean_solve']:.4f} at {l12['trainable']:,} "
-             f"trainable. Nothing in this deck approaches it, and nothing in it was trying to. "
-             f"Since 11-04 the brief is the SMALLEST architecture that still learns direct "
-             f"deduction, so the number that matters is the standing minimum: attention-only at "
-             f"d256, {nomlp['trainable']:,} trainable, rho_50 {rho_txt(nomlp)} -- "
-             f"{hub['trainable'] / nomlp['trainable']:.2f}x fewer parameters than the hub and "
-             f"{(nomlp['rho50'] - hub['rho50']) / S_RHO50:.1f} s* worse. Stage F, a 3-seed "
-             f"replicate at N=96 of whichever rung survives, is still unwritten on purpose."),
+            ("THE STANDING MINIMUM MOVED, AND IT MOVED THE WRONG WAY ON SIZE", FULL_C,
+             f"Best on this eval at any size, same grid and budget: the complete model at L=12, "
+             f"rho_50 {rho_txt(l12)} at {l12['trainable']:,} trainable -- nothing here approaches "
+             f"it and nothing was trying to. The brief is the SMALLEST architecture that still "
+             f"learns direct deduction, and the replacement rule was fixed in stage H's header "
+             f"before E2 was scored: 3 of 3 crossing seeds AND a median at or below {FREE}. E2 is "
+             f"the first rung to satisfy it, so the standing minimum is now attention-only L=12, "
+             f"{e2['trainable']:,} trainable at rho_50 {rho_txt(e2)}, taking it from attention-"
+             f"only L=6, {nomlp['trainable']:,} at {rho_txt(nomlp)} on 2 of 3 seeds: rho_50 fell "
+             f"{nomlp['rho50'] - e2['rho50']:.3f} ({(nomlp['rho50'] - e2['rho50']) / S_RHO50:.2f} "
+             f"s*) and the size ROSE {e2['trainable'] / nomlp['trainable']:.2f}x."),
         ],
         f"The resolution limit stands whatever the calls on page 6 say: rung_collapse found no "
         f"DETECTABLE separation between architecture labels inside the band (p = 0.569, positive "
@@ -408,7 +414,7 @@ def main():
         page_ladders(o, cells, args.commit)
         page_band(o, cells, e1, e2, hub, args.commit)
         page_verdicts(o, cells, e1, e2, st, args.commit)
-        page_next(o, cells, hub, args.commit)
+        page_next(o, cells, hub, e2, args.commit)
     size = os.path.getsize(f"{args.out}/slides.pdf") / 1e6
     print(f"wrote {args.out}/slides.pdf ({o.n} pages, {size:.2f} MB)")
 
