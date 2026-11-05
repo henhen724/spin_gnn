@@ -86,6 +86,18 @@ SCAN_C = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_C_2026-11-04")
 # non-default d_model keeps these rungs out of the registered grid and out of
 # the pooled bar that stages A and B were scored against.
 SCAN_D = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_D_2026-11-04")
+# Stage E (51171824): the attention-only stack at L=8 and L=12, asking whether
+# DEPTH can buy the MLP back where stage D asks whether WIDTH can.
+#
+# DELIBERATELY NOT IN SCAN_DIRS, and that is the opposite of the treatment C
+# and D get above. C's and D's rungs carry a non-default d_model, ff or warmup,
+# so rung_key() hands them 6-tuple keys and they cannot pool. Stage E's rungs
+# carry ENTIRELY DEFAULT hyperparameters -- d256, ff1024, nhead4, no warmup --
+# so they key as plain (8, 4, "no_mlp") and (12, 4, "no_mlp") and WOULD enter
+# the pooled s* that every verdict in stages A-D was scored against. A new rung
+# must never move the bar an existing verdict was measured with. Read these
+# cells with --scan-dir, and score them against the frozen 0.1484 / 0.2918.
+SCAN_E = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_E_2026-11-04")
 SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C, SCAN_D]
 
 SEEDS = (0, 1, 2)
