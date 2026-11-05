@@ -49,7 +49,13 @@ ROWS = {
     "P1": ((6, 4, "full", 128, 1024, 0), "width 256->128"),
     "P2": ((6, 4, "no_mlp", 128, 1024, 0), "is the MLP gap width-dependent"),
     "P3": ((6, 4, "full", 256, 256, 0), "ff 1024->256"),
-    "P4": ((6, 4, "full", 256, 1024, 5), "trainability control on N5"),
+    # nhead=1, NOT 4: P4 is the trainability control on stage B's N5, so it
+    # keeps N5's single head and changes only the warmup. Written as 4 here
+    # first, which silently reported "pending" while all three cells sat on
+    # disk -- the per-cell table at the bottom is what caught it, which is the
+    # reason that table prints every stage C key rather than only the scored
+    # ones.
+    "P4": ((6, 1, "full", 256, 1024, 5), "trainability control on N5"),
     "P5": ((6, 4, "full", 64, 1024, 0), "bracket, 128->64"),
 }
 # Stage B's attention-only cell at the hub's width. P2's difference of
@@ -224,7 +230,16 @@ def main():
         if tag == "P4":
             # P4 is a CONTROL on stage B's N5, and its registered quantity is
             # the escape count, not rho_50: 0/3 again makes N5's "WORSE" a
-            # property of the architecture rather than of the schedule.
+            # property of the architecture rather than of the schedule. The
+            # comparison that matters is therefore against stage B's OWN
+            # nhead=1 cells at warmup 0, not against the 4-head hub, so print
+            # them side by side rather than leaving the reader to look it up.
+            n5 = rung(cells, (6, 1, "full"))
+            if n5:
+                n5_esc, n5_nll = escapes(n5)
+                print(f"  stage B's N5 at warmup 0: escapes {n5_esc}/{len(n5)}, train NLL "
+                      + "/".join(f"{v:.3f}" for v in n5_nll)
+                      + f", mean_solve {summarize(n5)['mean_solve']:.4f}")
             if n_esc == 0:
                 verdict("""
 >>> 0/3 ESCAPES A SECOND TIME, with a different optimizer setting. That is the
@@ -240,7 +255,27 @@ def main():
             continue
         gap = s["rho50"] - hub["rho50"] if s["rho50_readable"] else float("nan")
         if tag == "P3":
-            if s["rho50_readable"] and gap < S_RHO50:
+            # The two metrics can disagree at the censoring boundary -- rho_50
+            # is an interpolated crossing and goes undefined one bin earlier
+            # than mean_solve degrades -- so print both whichever way the
+            # registered rule falls, and never let a hair's-breadth pass be
+            # written up as a demonstration.
+            dmean = s["mean_solve"] - hub["mean_solve"]
+            margin = S_RHO50 - gap
+            print(f"  mean_solve delta {dmean:+.4f} vs s* {S_MEAN:.4f} "
+                  f"(for scale: removing the whole MLP at d256 costs -0.2350)")
+            if s["rho50_readable"] and gap < S_RHO50 and margin < 0.1 * S_RHO50:
+                verdict(f"""
+>>> PASSES THE REGISTERED RULE BY {margin:.4f} AND NOTHING MORE. gap {gap:+.3f} against
+    s* {S_RHO50:.4f} is a TIE WITH THE BAR, not a demonstration that quartering ff
+    is free, and it must not be written up as one: the median seed sits on
+    the free/not-free threshold to three decimals. Read the mean_solve line
+    instead, where there is no boundary: {s['mean_solve']:.4f} against the hub's
+    {hub['mean_solve']:.4f} is {dmean:+.4f}, essentially what removing the ENTIRE MLP costs
+    (-0.2350, mean_solve 0.3039). So a 4x narrower MLP is worth about what no
+    MLP is worth -- which SHARPENS 'the MLP is all-or-nothing': the 'all' it
+    needs is ff=1024, and its WIDTH is nearly all of its contribution.""")
+            elif s["rho50_readable"] and gap < S_RHO50:
                 verdict(f">>> PASSES: gap {gap:+.3f} < s* {S_RHO50:.4f}. Quartering ff is free.")
             else:
                 verdict(f"""
