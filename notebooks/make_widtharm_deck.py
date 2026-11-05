@@ -231,7 +231,11 @@ def page_band(o, cells, d1, d2, hub, commit):
                  f"Tick marks: crossing seeds", size=MED)
     ax.grid(alpha=0.25)
 
+    # D1 registered TWO clauses, and the second one is the informative one: a
+    # bisector has to sit strictly between the rungs it bisects.
     d1_in = 0.10 <= d1["mean_solve"] <= 0.45
+    lo = summarize(rung(cells, (6, 4, "full", 128, 1024, 0)))["mean_solve"]
+    d1_between = lo < d1["mean_solve"] < hub["mean_solve"]
     block = [
         "REGISTERED, THEN SCORED",
         "",
@@ -240,7 +244,9 @@ def page_band(o, cells, d1, d2, hub, commit):
         "         and strictly between its two",
         "         neighbours on the ladder",
         f"  got    {d1['mean_solve']:.4f}, rho_50 {rho_txt(d1)}",
-        f"         -> {'INSIDE the window' if d1_in else 'OUTSIDE the window'}",
+        f"         -> {'INSIDE' if d1_in else 'OUTSIDE'} the window, and",
+        f"         {'between' if d1_between else 'NOT between'} "
+        f"{lo:.4f} and {hub['mean_solve']:.4f}",
         "",
         f"D2   no_mlp d384, {d2['trainable']:,}",
         f"  asked  rho_50 <= {FREE:.3f}",
