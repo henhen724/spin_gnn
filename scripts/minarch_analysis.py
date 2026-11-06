@@ -123,6 +123,15 @@ SCAN_H = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_H_2026-11-05")
 # every other staged dir it is kept out of SCAN_DIRS until every verdict scored
 # against the frozen bar has been re-read against it.
 SCAN_I = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_I_2026-11-05")
+# Stage J (11-05): the MATCHED-PARAMETER contrast. no_mlp L=12 d224 (2,571,130)
+# against no_mlp L=16 d192 (2,504,890) -- two shapes 2.6% apart in trainable
+# parameters, asking whether shape matters at all once size is held fixed. Both
+# rungs carry a non-default d_model and key as 6-tuples, and L=16 has never been
+# run at any width, so neither can collide with anything already pooled. Out of
+# SCAN_DIRS on the same terms as E, G, H and I: a dir joins the default list
+# only once every verdict scored against the frozen bar has been re-read
+# against it.
+SCAN_J = os.path.join(_SCR, "spin_gnn", "sudoku_n48_minarch_J_2026-11-05")
 SCAN_DIRS = [SCAN_DEFAULT, SCAN_L6, SCAN_C, SCAN_D]
 
 SEEDS = (0, 1, 2)
