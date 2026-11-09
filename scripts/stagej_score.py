@@ -101,8 +101,8 @@ separable at this budget", never a result.
 import argparse
 from collections import defaultdict
 
-from scripts.minarch_analysis import (SCAN_DIRS, SCAN_E, SCAN_H, SCAN_I, SCAN_J,
-                                      cell_key, cell_metrics, load_all)
+from scripts.minarch_analysis import (SCAN_DIRS, SCAN_E, SCAN_G, SCAN_H, SCAN_I,
+                                      SCAN_J, cell_key, cell_metrics, load_all)
 from scripts.stagec_score import (S_MEAN, S_RHO50, escapes, rho_txt, rung,
                                   summarize, verdict)
 
@@ -152,6 +152,18 @@ PARTNER_KEY = {"H1": H1, "I1": I1, "H2": H2, "E2": E2}
 # the refit is noted so the two numbers are not read as a disagreement.
 SUFFICIENCY_AT_REGISTRATION = dict(rungs=19, cells=41, worst=0.0222)
 SUFFICIENCY_AT_DELIVERY = dict(rungs=21, cells=46, disc=20, worst=0.0222)
+# Stage J's own refit, over the nine dirs below -- the number of record for J4.
+SUFFICIENCY_AT_STAGEJ = dict(rungs=22, cells=47, disc=21, worst=0.0222)
+
+# The sufficiency refit reads ONE MORE DIR than the paired scoring above. That
+# is deliberate in both directions. SCAN_G is 100 epochs where everything else
+# is 50, so it stays out of --scan-dir: nothing at a different budget belongs in
+# a pooled bar or a paired median. But acc_vs_solve fits token accuracy against
+# solve rate ACROSS rungs, and a rung at another budget is a held-out test of
+# that curve rather than a contaminant -- the H+I write-up's "eight scan dirs"
+# and stage J's 22/47 both include it. Printing --scan-dir here instead would
+# reproduce 20 of 20 over 42 and quietly contradict the deck.
+SUFFICIENCY_DIRS = SCAN_DIRS + [SCAN_E, SCAN_G, SCAN_H, SCAN_I, SCAN_J]
 
 STANDING = ("E2", "attention-only L=12 d256", 3331642, 0.605)
 
@@ -483,10 +495,15 @@ def main():
     print(f"  (the H+I write-up refit the same curve over all eight scan dirs "
           f"and got\n   {sd['rungs']} of {sd['rungs']} over {sd['cells']} cells, "
           f"{sd['disc']} discriminating, same worst miss {sd['worst']}.)")
+    sj = SUFFICIENCY_AT_STAGEJ
+    print(f"  Delivered, with stage J's dir added: {sj['rungs']} of {sj['rungs']} "
+          f"over {sj['cells']} cells,\n   {sj['disc']} discriminating, same worst "
+          f"miss {sj['worst']}. That is the number of record.")
     print(f"  Prediction: BOTH stage J rungs land on the curve within {LOO_BAR}.")
-    print("  Run:")
+    print("  Run (NINE dirs -- SCAN_G is held out of the paired scoring above as")
+    print("  a different budget, but it is a fair held-out test of this curve):")
     print("    python3 -m scripts.acc_vs_solve --scan-dir \\\n      " +
-          " \\\n      ".join(args.scan_dir))
+          " \\\n      ".join(SUFFICIENCY_DIRS))
     print("  A rung falling OFF the curve is where a real shape effect would")
     print("  show up, so if J0's falsifier fired, read that output before")
     print("  quoting J0 anywhere.")
