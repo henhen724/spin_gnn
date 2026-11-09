@@ -183,8 +183,7 @@ def page_headline(o, p, l12, l16, anchors, commit):
              f"{I1_RHO50} minus {DEPTH_STEP_AT_D192:.3f} = {PRED_KA_POINT}, registered as "
              f"[{PRED_KA_LO}, {PRED_KA_HI}] with the robust call being 'KA IS FREE on 3/3'. "
              f"Observed {rho_txt(ka['s'])}."),
-            (f"KB (L=16 d128, {kb['s']['trainable']:,}) -- "
-             + ("CENSORED, as registered" if vkb.startswith("censored") else "CROSSED, falsifying K1"),
+            (f"KB (L=16 d128, {kb['s']['trainable']:,}) -- " + kb_head(kb, vkb),
              DEAD_C if vkb.startswith("censored") else BAND_C,
              kb_text(kb, vkb)),
             ("WHAT IS NOT CLAIMED", DEAD_C,
@@ -203,6 +202,19 @@ def page_headline(o, p, l12, l16, anchors, commit):
         width=122)
 
 
+def kb_head(kb, vkb):
+    """Crossing and being free are two different things, so the heading says which.
+
+    'CROSSED, falsifying K1' alone read as good news on the page whose verdict
+    is that nothing moved: K1 is about whether the eval can read the rung at
+    all, K2 about whether it is free, and KB came back readable-but-not-free.
+    """
+    if vkb.startswith("censored"):
+        return "CENSORED, as registered"
+    return ("CROSSED AND FREE, falsifying K1" if kb["s"]["rho50"] <= FREE
+            else "CROSSED BUT NOT FREE, falsifying K1")
+
+
 def kb_text(kb, vkb):
     s = kb["s"]
     if vkb == "censored_trained":
@@ -218,11 +230,19 @@ def kb_text(kb, vkb):
                 f"fires: this is a TRAINABILITY statement about d128 at this budget, not an "
                 f"architecture one. It is reported as a failure to train and nothing is concluded "
                 f"from it about what d128 can represent.")
-    return (f"KB crosses on {s['n_cross']}/3 seeds at rho_50 {rho_txt(s)}, which FALSIFIES K1: "
-            f"d128 censored at L=12 and does not at L=16, so depth does pay for a per-layer width "
-            f"bottleneck after all and the floor moves to ~{s['trainable'] / 1e6:.2f}M. "
-            f"{kb['esc']}/3 seeds left the {PLATEAU} plateau. This was named in advance as the "
-            f"outcome that would move the floor furthest, and it is the more interesting miss.")
+    # 'The floor' is two different lines and this branch is the one place they
+    # come apart: the CENSORING boundary (narrowest rung the eval can read at
+    # all) does move down to d128, while the STANDING MINIMUM only moves if the
+    # registered rule fires, which at 0.766 > 0.740 it does not. Saying only
+    # 'the floor moves' here contradicted this very page's own K2 verdict.
+    return (f"KB crosses {s['n_cross']}/3 at rho_50 {rho_txt(s)} where d128 CENSORED at L=12, so "
+            f"depth does pay for a per-layer width bottleneck and the CENSORING BOUNDARY -- the "
+            f"narrowest rung this eval can read at all -- moves to ~{s['trainable'] / 1e6:.2f}M. "
+            + (f"It clears the free line {FREE} too, so the standing minimum moves with it. "
+               if s["rho50"] <= FREE else
+               f"That is not the free line: {rho_txt(s)} is "
+               f"{(s['rho50'] - FREE) / S_RHO50:+.2f} s* past {FREE}, so K2 does not fire. ")
+            + f"{kb['esc']}/3 seeds left the {PLATEAU} plateau.")
 
 
 def H2_rho(l12):
@@ -243,8 +263,13 @@ def page_ladders(o, l12, l16, p, commit):
              ha="center", size=MED - 3, color="0.3")
 
     ax = fig.add_axes([0.065, 0.30, 0.355, 0.50])
-    for rows, col, lab in ((l12, L12_C, "L=12  (stages H, I, J, E)"),
-                           (l16, L16_C, "L=16  (J2 + stage K)")):
+    # Same convention as the frontier page, and for the same reason: the two
+    # ladders are what collide here. At d=160 the medians are I1 0.773 and KA
+    # 0.757, 0.016 apart -- which IS the result this panel exists to show -- so a
+    # shared label offset stacks the two tags on top of each other exactly where
+    # the reader has to compare them. L=12 tags above the marker, L=16 below.
+    for rows, col, lab, dy in ((l12, L12_C, "L=12  (stages H, I, J, E)", 13),
+                               (l16, L16_C, "L=16  (J2 + stage K)", -23)):
         xs, ys = [], []
         for r in rows:
             for m in r["ms"]:
@@ -257,12 +282,14 @@ def page_ladders(o, l12, l16, p, commit):
                 ys.append(r["s"]["rho50"])
                 ax.plot([r["d"]], [r["s"]["rho50"]], "o", ms=11, mfc="white", mew=2.5,
                         color=col, zorder=5)
-                ax.annotate(r["tag"], xy=(r["d"], r["s"]["rho50"]), xytext=(0, 13),
+                ax.annotate(r["tag"], xy=(r["d"], r["s"]["rho50"]), xytext=(0, dy),
                             textcoords="offset points", ha="center", size=SMALL,
-                            color=col, weight="bold")
+                            color=col, weight="bold", va="bottom" if dy > 0 else "top")
             else:
-                ax.annotate(f"{r['tag']} CENSORED", xy=(r["d"], GRID_TOP), xytext=(5, 7),
-                            textcoords="offset points", ha="left", size=SMALL - 1, color=col)
+                ax.annotate(f"{r['tag']} CENSORED", xy=(r["d"], GRID_TOP),
+                            xytext=(5, 7 if dy > 0 else -9), textcoords="offset points",
+                            ha="left", size=SMALL - 1, color=col,
+                            va="bottom" if dy > 0 else "top")
         ax.plot(xs, ys, "-", lw=2.2, color=col, alpha=0.9, label=lab)
     ax.axhline(FREE, color=BAND_C, lw=1.5, ls="--")
     ax.text(0.99, FREE, f" free {FREE} ", size=SMALL - 2, color=BAND_C, va="bottom",
@@ -384,17 +411,33 @@ def page_frontier(o, l12, l16, anchors, commit):
 
     free = [r for r in l12 + l16 if qualifies(r)]
     smallest = min(free, key=lambda r: r["s"]["trainable"]) if free else None
+    read = [r for r in l12 + l16 if r["s"]["rho50_readable"]]
+    narrow = min(read, key=lambda r: r["s"]["trainable"]) if read else None
+    # Two lines on this plot get called 'the cliff' and only one of them is the
+    # one the registered rule reads. Whether it MOVED is a branch, not a given:
+    # written unconditionally, this paragraph announced a relocation on a page
+    # whose own verdict was that the minimum stayed put.
+    if smallest is None:
+        where = "No rung on this plot satisfies the registered rule. "
+    elif smallest["tag"] in ("KA", "KB"):
+        where = (f"The smallest rung that satisfies the registered rule anywhere on this plot is "
+                 f"now {smallest['tag']} at {smallest['s']['trainable']:,} trainable, rho_50 "
+                 f"{rho_txt(smallest['s'])} -- a stage K rung, so the cliff really has been "
+                 f"RELOCATED, and relocating it is the entire content of the stage. ")
+    else:
+        where = (f"The smallest rung that satisfies the registered rule anywhere on this plot is "
+                 f"still {smallest['tag']} at {smallest['s']['trainable']:,}, rho_50 "
+                 f"{rho_txt(smallest['s'])} -- the same rung as before stage K, so THE CLIFF HAS "
+                 f"NOT MOVED. What did move is a lower line: the narrowest READABLE rung is now "
+                 f"{narrow['tag']} at {narrow['s']['trainable']:,}. Readable is not free, and the "
+                 f"rule reads the free line. ")
     note = (
         f"WHAT THE SHAPE OF THIS CURVE NOW SAYS. Before stage K the cliff was a one-depth "
         f"measurement: everything below 2M was L=12, and the honest reading was 'a floor near 2M "
         f"parameters on this task, and everything above it is flat'. Stage K is the test of that "
         f"word 'task'. "
-        + (f"The smallest rung that satisfies the registered rule anywhere on this plot is now "
-           f"{smallest['tag']} at {smallest['s']['trainable']:,} trainable, rho_50 "
-           f"{rho_txt(smallest['s'])}. "
-           if smallest else "No rung on this plot satisfies the registered rule. ")
-        + f"The cliff is still real -- it has only been relocated, and relocating it is the "
-        f"entire content of the stage. Nothing here says a smaller model is a better one: the "
+        + where
+        + f"Nothing here says a smaller model is a better one: the "
         f"complete L=12 d256 model at {best['s']['trainable']:,} still solves at "
         f"{rho_txt(best['s'])}, far below anything on the attention-only curve."
     )
