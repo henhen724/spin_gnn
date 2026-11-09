@@ -284,8 +284,14 @@ def page_ladders(o, l12, l16, p, commit):
                  "converge, the floor is the task's", size=MED - 4)
 
     ax2 = fig.add_axes([0.495, 0.30, 0.205, 0.50])
-    for r in l16:
-        col = {"KA": NOTE_C, "KB": BAND_C, "J2": L16_C}[r["tag"]]
+    # KB is NOT drawn in BAND_C: that is the colour of the plateau line and its
+    # label in this very panel, and this panel is the one that decides K1's gate
+    # (censored having left 1.64 = capacity, censored still on it = trainability).
+    # A KB curve in the threshold's own colour is the one confusion that would
+    # cost the reading. J2 is drawn first so the two K rungs sit on top of the
+    # reference rather than under it when the curves nearly coincide.
+    for r in sorted(l16, key=lambda r: 0 if r["tag"] == "J2" else 1):
+        col = {"KA": NOTE_C, "KB": FULL_C, "J2": L16_C}[r["tag"]]
         for m in r["ms"]:
             nll, _acc = curve(m["path"])
             ax2.plot(range(1, len(nll) + 1), nll, "-", lw=1.5, color=col, alpha=0.8)
@@ -296,7 +302,7 @@ def page_ladders(o, l12, l16, p, commit):
     ax2.set_ylabel("train NLL")
     ax2.grid(alpha=0.25)
     ax2.legend(handles=[Line2D([], [], color=NOTE_C, lw=2.2, label="KA  L=16 d160"),
-                        Line2D([], [], color=BAND_C, lw=2.2, label="KB  L=16 d128"),
+                        Line2D([], [], color=FULL_C, lw=2.2, label="KB  L=16 d128"),
                         Line2D([], [], color=L16_C, lw=2.2, label="J2  L=16 d192")],
                loc="upper right", framealpha=0.95, fontsize=SMALL - 1)
     ax2.set_title("A rung that censors WITHOUT leaving the plateau\nis a trainability failure, "
@@ -332,7 +338,7 @@ def page_frontier(o, l12, l16, anchors, commit):
     fig.text(0.5, 0.893, "Every attention-only rung this programme has run at N=48, against the "
                          "two complete-model anchors", ha="center", size=MED - 3, color="0.3")
 
-    ax = fig.add_axes([0.085, 0.30, 0.40, 0.50])
+    ax = fig.add_axes([0.075, 0.22, 0.43, 0.58])
     # L=12 labels go above their marker and L=16 labels below: the two ladders
     # are what collide on this axis (J2 2.50M / 0.580 sits on top of J1 2.57M /
     # 0.579), and separating by ladder fixes it whatever the K rungs come back as.
@@ -356,10 +362,14 @@ def page_frontier(o, l12, l16, anchors, commit):
                             textcoords="offset points", ha="left", size=SMALL - 2, color=col)
         ax.plot([], [], "o", color=col, label=lab)
     hub, best = anchors["hub"], anchors["best"]
-    for a, name, mark in ((hub, "hub  full L=6 d256", "s"), (best, "full L=12 d256", "D")):
+    # The best solver is the largest thing on the axis, so a centred label under it
+    # runs off the right edge of the plot and gets clipped; right-align that one so
+    # it extends inwards instead. The hub sits mid-axis and is fine centred.
+    for a, name, mark, ha in ((hub, "hub  full L=6 d256", "s", "center"),
+                              (best, "full L=12 d256", "D", "right")):
         ax.plot([a["s"]["trainable"]], [a["s"]["rho50"]], mark, ms=11, color=FULL_C, zorder=5)
         ax.annotate(name, xy=(a["s"]["trainable"], a["s"]["rho50"]), xytext=(0, -24),
-                    textcoords="offset points", ha="center", size=SMALL - 1, color=FULL_C)
+                    textcoords="offset points", ha=ha, size=SMALL - 1, color=FULL_C)
     ax.axhline(FREE, color=BAND_C, lw=1.5, ls="--")
     ax.text(0.99, FREE, f" free {FREE} ", size=SMALL - 2, color=BAND_C, va="bottom", ha="right",
             transform=ax.get_yaxis_transform())
@@ -388,7 +398,10 @@ def page_frontier(o, l12, l16, anchors, commit):
         f"complete L=12 d256 model at {best['s']['trainable']:,} still solves at "
         f"{rho_txt(best['s'])}, far below anything on the attention-only curve."
     )
-    fig.text(0.535, 0.79, "\n".join(textwrap.wrap(note, 66)), size=SMALL, va="top",
+    # Centred on the plot's vertical span rather than hugging the top: top-anchored,
+    # this block left the whole bottom-right quadrant blank while the plot filled the
+    # left. One point larger too -- these decks get read on a phone.
+    fig.text(0.545, 0.51, "\n".join(textwrap.wrap(note, 54)), size=SMALL + 1, va="center",
              linespacing=1.6)
     footer(fig, f"The hub is the architecture s* is anchored to (full L=6 d256, rho_50 "
                 f"{HUB_RHO50} at {HUB_TRAINABLE:,}); the free line is the hub plus one s*. "
