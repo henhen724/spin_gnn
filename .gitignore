@@ -64,3 +64,4 @@ _*_smoke.csv
 # scripts' PNG-per-page output lands here. Only the PDF is kept, committed by
 # hand under notebooks/<topic>/slides.pdf the way every earlier deck was.
 decks/
+notebooks/stagen_2026-11-10_DRY_PARTIAL/
