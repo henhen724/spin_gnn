@@ -14,7 +14,7 @@ from torch import nn
 from .ksat2_tokens import decode
 
 # See SudokuReasoningModelConfig.arch_mode for what each one removes.
-ARCH_MODES = ("full", "linear", "rf_mlp", "rf_all", "no_mlp")
+ARCH_MODES = ("full", "linear", "rf_mlp", "rf_all", "no_mlp", "tied_no_mlp")
 
 
 def _identity(x):
@@ -62,7 +62,21 @@ class SATReasoningTransformer(nn.Module):
         # practice in every GPT-2-style decoder, not needed for post-norm
         # (each post-norm block already ends with its own LayerNorm).
         final_norm = nn.LayerNorm(d_model) if norm_first else None
-        self.encoder = nn.TransformerEncoder(layer, num_layers=num_layers, norm=final_norm)
+        # arch_mode="tied_no_mlp" shares ONE block across every iteration, so
+        # that the network is a single operator applied num_layers times --
+        # h_{t+1} = F(h_t) -- rather than a composition of num_layers distinct
+        # maps. nn.TransformerEncoder deep-copies `layer`, so a tied stack is
+        # built with one copy and iterated in forward() instead.
+        #
+        # `num_layers` keeps its meaning as the DEPTH, i.e. how many times the
+        # block is applied, which is what joins a tied cell to the depth ladder
+        # at all; what changes is that the depth no longer costs parameters.
+        # save_checkpoint records it off model_cfg and never off
+        # len(encoder.layers), so a tied checkpoint round-trips exactly.
+        self.tied = arch_mode == "tied_no_mlp"
+        self.n_iters = num_layers
+        self.encoder = nn.TransformerEncoder(
+            layer, num_layers=1 if self.tied else num_layers, norm=final_norm)
         self.readout = nn.Linear(d_model, vocab_size)
         self._apply_arch_mode()
 
@@ -86,7 +100,7 @@ class SATReasoningTransformer(nn.Module):
                 p.requires_grad_(False)
             for p in self.readout.parameters():
                 p.requires_grad_(True)
-        elif self.arch_mode == "no_mlp":
+        elif self.arch_mode in ("no_mlp", "tied_no_mlp"):
             # Zeroing and freezing the SECOND MLP linear makes the feedforward
             # write identically zero for every input (dropout of zero is zero)
             # without patching nn.TransformerEncoderLayer.forward or deleting
@@ -114,7 +128,19 @@ class SATReasoningTransformer(nn.Module):
         h = self.token_embed(x) + self.pos_embed[:l]
         causal_mask = torch.triu(torch.ones(l, l, dtype=torch.bool, device=x.device), diagonal=1)
         src_key_padding_mask = ~valid_mask if valid_mask is not None else None
-        h = self.encoder(h, mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
+        if self.tied:
+            # One shared block, applied n_iters times. Calling the layer
+            # directly rather than self.encoder avoids re-applying the final
+            # LayerNorm (nn.TransformerEncoder's `norm`) once per iteration --
+            # it belongs after the last one only, exactly as in the untied
+            # stack.
+            blk = self.encoder.layers[0]
+            for _ in range(self.n_iters):
+                h = blk(h, src_mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
+            if self.encoder.norm is not None:
+                h = self.encoder.norm(h)
+        else:
+            h = self.encoder(h, mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
         return self.readout(h)
 
 

@@ -28,7 +28,12 @@ from .config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuRea
 from .sat_transformer2 import ARCH_MODES
 from .train_sudoku_transformer import eval_solve_by_rho, save_checkpoint, train_sudoku_model
 
-ARCH_TAG = {"full": "", "linear": "_lin", "rf_mlp": "_rfm", "rf_all": "_rfa", "no_mlp": "_noff"}
+ARCH_TAG = {"full": "", "linear": "_lin", "rf_mlp": "_rfm", "rf_all": "_rfa", "no_mlp": "_noff",
+            # A tied cell has the same (d_model, nhead, L, ff) as its untied
+            # twin and a ninth of the parameters, so it needs its own segment
+            # for the reason every other one here exists: it must never share a
+            # directory name with J2.
+            "tied_no_mlp": "_noff_tied"}
 assert set(ARCH_TAG) == set(ARCH_MODES), "every arch_mode needs a tag segment"
 
 
