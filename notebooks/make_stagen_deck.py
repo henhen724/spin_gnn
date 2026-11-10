@@ -34,10 +34,12 @@ from notebooks.deck_tokenization import example_instance, page_tokenization, pag
 from notebooks.deck_utils import (BIG, MED, SMALL, PdfAndPng, _check_header,
                                   footer, set_style, textpage)
 from notebooks.make_stagehi_deck import acc_of, collect, curve
+from scripts.acc_vs_solve import FLOOR, is_reference, pava, predict
+from scripts.acc_vs_solve import collect as acc_collect
 from scripts.minarch_analysis import SCAN_J
 from scripts.stagec_score import (PLATEAU, S_RHO50, escapes, rho_txt, rung,
                                   summarize)
-from scripts.stagej_score import LOO_BAR
+from scripts.stagej_score import LOO_BAR, SUFFICIENCY_DIRS
 from scripts.stagek_score import FREE, SCAN_K
 from scripts.stagen_score import (J2, K_SEEDS, KB, KB_K_ESCAPES, KB_K_RHO50,
                                   KB_TRAINABLE, N_SEEDS, PRED_HI, PRED_LO,
@@ -78,19 +80,72 @@ def column(fig, lines):
              family="monospace", linespacing=1.7)
 
 
-def end_labels(ax, ends, close):
+def escaped(m):
+    """Did this seed train out of the N=48 plateau? Final epoch, no selection."""
+    return curve(m["path"])[0][-1] < PLATEAU
+
+
+def split_by_escape(ms):
+    """(rho_50 of seeds that escaped, rho_50 of seeds that did not), measured only.
+
+    The six-seed pool made this split worth having: conditioning on N3's
+    pre-registered plateau criterion is not the same as dropping an inconvenient
+    point, and the two spreads differ by an order of magnitude.
+    """
+    ok = [m for m in ms if m["flag"] == "ok"]
+    return ([m["rho50"] for m in ok if escaped(m)],
+            [m["rho50"] for m in ok if not escaped(m)])
+
+
+def end_labels(ax, ends, close=None, step=13.0):
     """Label each curve at its right-hand end, nudged apart where they coincide.
 
     `ends` is [(x, y, colour, label)]; `close` is the y-distance in data units
     below which two labels would print on top of each other. Six seeds of one
     architecture land within a percent of each other at the top bin, so without
     this the labels stack into an unreadable smudge -- seen on page3.png.
+
+    Each pile-up is spread about its own centre and then slid back inside the
+    axes. Two earlier versions of this were wrong in ways only the PNG showed:
+    nudging always downward marched the bottom labels through the x tick
+    labels, and then the clamp that was supposed to stop that MIXED UNITS --
+    annotate's offsets are in points, transData returns display pixels, so
+    every comparison was off by dpi/72 and the clamp silently under-corrected.
+    `close` is now measured as one label height through the axes transform
+    instead of being a hand-picked constant, because the constant (0.012 NLL)
+    was smaller than a label and let s0 and s1 print on top of each other.
+
+    Call this AFTER set_ylim -- it reads ax.transData.
     """
+    fig = ax.figure
+    px = fig.dpi / 72.0                       # offset points -> display pixels
+    sep = (step + 3) * px                     # minimum gap between two labels
     ordered = sorted(ends, key=lambda e: -e[1])
-    for i, (x, y, color, lab) in enumerate(ordered):
-        dy = -13 * sum(1 for y2 in (e[1] for e in ordered[:i]) if abs(y2 - y) < close)
-        ax.annotate(lab, (x, y), xytext=(7, dy), textcoords="offset points",
-                    color=color, size=SMALL, va="center")
+
+    # Work entirely in display pixels, then convert each label's total
+    # displacement back to points at the end. Grouping-and-centring was tried
+    # first and kept producing overlaps that the arithmetic said were
+    # impossible; a top-down sweep cannot, because it enforces the gap
+    # pairwise and in order.
+    want = [ax.transData.transform((0, y))[1] for _, y, _, _ in ordered]
+    got = list(want)
+    for i in range(1, len(got)):
+        got[i] = min(got[i], got[i - 1] - sep)
+
+    y0, y1 = sorted(ax.get_ylim())
+    floor = ax.transData.transform((0, y0))[1] + 0.5 * sep
+    ceil = ax.transData.transform((0, y1))[1] - 0.5 * sep
+    if got and min(got) < floor:               # stack ran off the bottom
+        lift = floor - min(got)
+        got = [g + lift for g in got]
+    if got and max(got) > ceil:                # ... and would now run off the top
+        drop = max(got) - ceil
+        got = [g - drop for g in got]
+
+    for (x, y, color, lab), w, g in zip(ordered, want, got):
+        ax.annotate(lab, (x, y), xytext=(7, (g - w) / px),
+                    textcoords="offset points", color=color, size=SMALL,
+                    va="center")
 
 
 # --------------------------------------------------------------------------
@@ -280,7 +335,13 @@ def page_replication(o, pooled, fresh, old, commit):
                  "N1 and N3 are read BEFORE N2:",
                  "a level from a censoring rung",
                  "is a bound, not a measurement."])
-    footer(fig, f"commit {commit} · open circles are censored seeds · "
+    # The censored-marker legend is printed only when a seed is actually
+    # censored. With 6 of 6 crossing it sent the reader hunting for open
+    # circles that are not on the page.
+    cens = ("open circles are censored seeds · " if any(
+        m["flag"] != "ok" for m in pooled["ms"]) else "every seed crossed, so no "
+            "marker is a censor · ")
+    footer(fig, f"commit {commit} · {cens}"
                 f"horizontal bars are each triple's bound-aware median · "
                 f"a censor is a result, not a missing number")
     o.savefig(fig)
@@ -293,10 +354,17 @@ def page_transition(o, raw, pooled, commit):
     # "scored on the same grid" is true of every page in every deck.
     readable = [m["rho50"] for m in pooled["ms"] if m["flag"] == "ok"]
     spread = (max(readable) - min(readable)) / S_RHO50 if len(readable) > 1 else 0.0
+    esc_r, stuck_r = split_by_escape(pooled["ms"])
+    esc_spread = (max(esc_r) - min(esc_r)) if len(esc_r) > 1 else float("nan")
     if not n:
         title = "No transition curve has landed yet"
     elif s["n_cross"] < n:
         title = f"{n - s['n_cross']} of {n} seeds never reach a 0.5 solve rate"
+    elif stuck_r and esc_spread * 3 < (max(readable) - min(readable)):
+        # The whole apparent seed spread is one seed that never trained out of
+        # the plateau. That is the finding on this page, not the 14-point grid.
+        title = (f"{len(stuck_r)} seed that never left the plateau carries the "
+                 f"whole spread")
     elif spread >= 1.0:
         title = (f"The same architecture spreads {spread:.1f} s* across "
                  f"{n} seeds")
@@ -317,13 +385,13 @@ def page_transition(o, raw, pooled, commit):
         ax.plot([p[0] for p in pts], [p[1] for p in pts], "-o", ms=4, lw=1.8,
                 color=color, alpha=0.85, rasterized=True)
         ends.append((pts[-1][0], pts[-1][1], color, f"s{m['seed']}"))
-    end_labels(ax, ends, 0.035)
     ax.axhline(0.5, color=BAND_C, lw=2, ls="--")
     ax.text(0.335, 0.52, "solve rate 0.5 -- where rho_50 is read off",
             color=BAND_C, size=SMALL)
     ax.set_xlabel(r"realized hint density $\rho$")
     ax.set_ylabel("solve rate")
     ax.set_ylim(-0.02, 1.02)
+    end_labels(ax, ends)
     ax.spines[["top", "right"]].set_visible(False)
     footer(fig, f"commit {commit} · orange = stage K's seeds 0/1/2, blue = stage N's "
                 f"3/4/5 · 400 instances per bin · grid floor 0.33, top {GRID_TOP} · "
@@ -353,14 +421,19 @@ def page_plateau(o, pooled, fresh, old, commit):
                 rasterized=True)
         ends.append((len(tr), tr[-1], color, f"s{m['seed']}"))
         lo = min(lo, min(tr))
-    end_labels(ax, ends, 0.012)
     ax.axhline(PLATEAU, color=BAND_C, lw=2, ls="--")
-    ax.annotate(f"plateau {PLATEAU} (finding 44, an N=48 number)",
-                (2, PLATEAU), xytext=(0, 7), textcoords="offset points",
-                color=BAND_C, size=SMALL)
+    # Short, and va="bottom" with a 10-point offset. At 7 points the dashed
+    # line printed through the digits; at full length ("finding 44, an N=48
+    # number") the label stretched to epoch 27 and the descending curves cut
+    # through it instead. Kept to epoch 2-8, which nothing crosses; the
+    # provenance moved to the footer.
+    ax.annotate(f"plateau {PLATEAU}", (2, PLATEAU), xytext=(0, 10),
+                textcoords="offset points", color=BAND_C, size=SMALL,
+                va="bottom")
     # Cropped to the decision region: epoch 1 is near 2.4 and squashes the only
     # part of the curve the plateau call is about. Said in the footer, not hidden.
     ax.set_ylim(lo - 0.02, 1.95)
+    end_labels(ax, ends)
     ax.set_xlabel("epoch")
     ax.set_ylabel("train NLL")
     ax.spines[["top", "right"]].set_visible(False)
@@ -376,10 +449,11 @@ def page_plateau(o, pooled, fresh, old, commit):
         mark = "" if tr[-1] < PLATEAU else "  never escaped"
         lines.append(f"  s{m['seed']}  {tr[-1]:.3f}{mark}")
     column(fig, lines)
-    footer(fig, f"commit {commit} · orange = stage K, blue = stage N · y-axis "
-                f"cropped at 1.95; epoch 1 starts near 2.4 · every checkpoint is "
-                f"the final epoch, no best-val selection · an optimization-limited "
-                f"rung outranks N2")
+    footer(fig, f"commit {commit} · the plateau {PLATEAU} is finding 44, an N=48 "
+                f"number · orange = stage K, blue = stage N · y-axis cropped at "
+                f"1.95; epoch 1 starts near 2.4 · every checkpoint is the final "
+                f"epoch, no best-val selection · an optimization-limited rung "
+                f"outranks N2")
     o.savefig(fig)
 
 
@@ -387,46 +461,100 @@ def KB_T_ESC(grp):
     return f"{grp['esc']} of {grp['s']['n']}" if grp else "pending"
 
 
+def kb_residuals(pooled):
+    """Each KB seed's distance from the depth ladder's accuracy-to-solve curve.
+
+    N4 is a statement about the CURVE, not about the spread of accuracy. The
+    first version of this page plotted the six accuracies and titled them "all
+    6 fall inside the 0.0423 LOO bar", which compared a spread in accuracy
+    against a bar on a solve-rate residual -- two different axes. The bar only
+    means something against the residual, so the residual is what gets plotted.
+
+    Computed through acc_vs_solve's own pava/predict, over its own reference
+    set (`is_reference` = the depth ladder), so this agrees with the scorer by
+    construction rather than by transcription. Cells whose prediction sits at
+    or below the FLOOR are returned flagged: the curve predicts "solves almost
+    nothing" there, so a small residual is not evidence of anything and must
+    not be counted as if it were.
+    """
+    # SUFFICIENCY_DIRS, not SCAN_DIRS: the registered check fits over the nine
+    # sufficiency dirs (21 reference cells), and a narrower set moves the fit
+    # enough to flip s1 across the floor -- it put s1's prediction at 0.103
+    # where the scorer has it below 0.10, so the deck called six seeds
+    # discriminating where the scorer calls five. Same dirs, same verdict.
+    cells = [c for c in acc_collect(list(SUFFICIENCY_DIRS) + [SCAN_K, SCAN_N])
+             if c["acc"] == c["acc"]]
+    fit = pava([(c["acc"], c["mean_solve"]) for c in cells if is_reference(c["rung"])])
+    by_seed = {c["seed"]: c for c in cells if c["rung"] == KB}
+    out = []
+    for m in pooled["ms"]:
+        c = by_seed.get(m["seed"])
+        if c is None:
+            continue
+        pred, oor, cov = predict(fit, c["acc"])
+        # acc_vs_solve.py:227 -- discriminating needs BOTH a tight bracket and a
+        # prediction off the floor. Testing only the floor made the deck call
+        # six seeds discriminating where the scorer calls five: s1's prediction
+        # clears 0.10 by 0.003, but it sits in the ladder's empty stretch where
+        # the bracket is wider than the bar, so its residual constrains nothing.
+        out.append({"seed": m["seed"], "acc": c["acc"], "pred": pred,
+                    "resid": c["mean_solve"] - pred, "oor": oor, "cov": cov,
+                    "weak": not (cov <= LOO_BAR and pred > FLOOR),
+                    "why": "floor" if pred <= FLOOR else "wide"})
+    return out
+
+
 def page_accuracy(o, pooled, fresh, old, commit):
-    accs = [(m["seed"], curve(m["path"])[1][-1]) for m in pooled["ms"]]
-    if not accs:
+    res = kb_residuals(pooled)
+    disc = [r for r in res if not r["weak"] and not r["oor"]]
+    if not res:
         title = "No accuracy has landed yet"
+    elif disc and max(abs(r["resid"]) for r in disc) <= LOO_BAR:
+        title = (f"All {len(disc)} discriminating seeds sit on the curve, worst "
+                 f"miss {max(abs(r['resid']) for r in disc):.4f}")
+    elif disc:
+        title = (f"{sum(1 for r in disc if abs(r['resid']) > LOO_BAR)} of "
+                 f"{len(disc)} seeds fall OFF the curve by more than {LOO_BAR:.4f}")
     else:
-        lo, hi = min(a for _, a in accs), max(a for _, a in accs)
-        # Measured against the registered LOO bar, not against the word "only":
-        # a span is small or large only relative to something declared earlier.
-        title = (f"All {len(accs)} seeds fall inside the {LOO_BAR:.4f} LOO bar"
-                 if hi - lo < LOO_BAR else
-                 f"Seed spread of {hi - lo:.4f} exceeds the {LOO_BAR:.4f} LOO bar")
+        title = "No seed's residual is discriminating: the curve cannot judge this rung"
 
     fig = plt.figure(figsize=(16, 9))
-    header(fig, title, "the measure that never censors, read before rho_50")
+    header(fig, title, "distance from the depth ladder's accuracy-to-solve curve")
     ax = fig.add_axes(PLOT_BOX)
-    for seed, a in accs:
-        color = K_C if seed in K_SEEDS else N_C
-        ax.scatter([seed], [a], s=150, color=color, zorder=3)
+    ax.axhspan(-LOO_BAR, LOO_BAR, color=BAND_C, alpha=0.10)
+    ax.axhline(0, color="0.6", lw=1)
+    for r in res:
+        color = K_C if r["seed"] in K_SEEDS else N_C
+        # Hollow = the curve predicts below the floor here, so this point is
+        # drawn but is NOT part of the title's claim.
+        ax.scatter([r["seed"]], [r["resid"]], s=150, zorder=3, color=color,
+                   facecolors="none" if r["weak"] else color, linewidths=2)
+    ax.text(-0.4, LOO_BAR + 0.002, f"LOO bar ±{LOO_BAR:.4f}", color=BAND_C,
+            va="bottom", size=SMALL)
     ax.set_xlim(-0.5, 5.5)
     ax.set_xticks(range(6))
     ax.set_xlabel("seed")
-    ax.set_ylabel("final validation token accuracy")
+    ax.set_ylabel("mean solve rate − curve prediction")
     ax.spines[["top", "right"]].set_visible(False)
 
-    body = ("Accuracy is read BEFORE rho_50 on every stage of this programme, "
-            "because it never censors and because a rung that falls OFF "
-            "scripts/acc_vs_solve.py's fitted curve is the interesting one. "
-            "That curve is an N=48 object and is applied here only because this "
-            "stage is N=48.")
-    column(fig, [f"  s{seed}  {a:.4f}" for seed, a in accs]
-           + ["", f"  median K  {old['acc']:.4f}" if old else "  median K  pending",
-              f"  median N  {fresh['acc']:.4f}" if fresh else "  median N  pending",
-              "", f"  LOO bar   {LOO_BAR:.4f}"])
-    # In the column, not under the axes: at y=0.11 this ran through the x-label
-    # and into the footer.
-    fig.text(COL_X, 0.44, textwrap.fill(body, 46), size=SMALL - 1, va="top",
-             color="0.25")
-    footer(fig, f"commit {commit} · orange = stage K, blue = stage N · "
-                f"N4's out-of-sample check runs separately over the nine "
-                f"sufficiency dirs plus K and N")
+    lines = ["N4 -- on the curve?", f"  bar  ±{LOO_BAR:.4f}", "",
+             "seed   acc    residual"]
+    for r in res:
+        mark = f"  {r['why']}" if r["weak"] else ""
+        lines.append(f"  s{r['seed']}  {r['acc']:.4f}  {r['resid']:+.4f}{mark}")
+    column(fig, lines)
+    body = ("Accuracy is read BEFORE rho_50 because it never censors, and a "
+            "rung that falls OFF this curve is the interesting one. Hollow "
+            "points are not discriminating: the prediction is on the floor, "
+            "or its bracketing reference cells are further apart than the bar, "
+            "so the residual is drawn but claims nothing.")
+    # Below the column rather than at a fixed y: with six seeds the column runs
+    # to y=0.44 and the two texts printed through each other.
+    fig.text(COL_X, COL_TOP - 0.032 * (len(lines) + 1), textwrap.fill(body, 46),
+             size=SMALL - 1, va="top", color="0.25")
+    footer(fig, f"commit {commit} · orange = stage K, blue = stage N · curve fitted "
+                f"by scripts/acc_vs_solve.py over the depth ladder only · "
+                f"N4's held-out sufficiency check runs separately")
     o.savefig(fig)
 
 
@@ -439,12 +567,30 @@ def page_next(o, pooled, fresh, j2, commit):
     # draft simply claimed the next steps were smaller than the spread.
     readable = [m["rho50"] for m in pooled["ms"] if m["flag"] == "ok"]
     spread = max(readable) - min(readable) if len(readable) > 1 else float("nan")
+    esc_r, stuck_r = split_by_escape(pooled["ms"])
+    esc_spread = (max(esc_r) - min(esc_r)) if len(esc_r) > 1 else float("nan")
     width_gap = (s["rho50"] - j2["s"]["rho50"]) if s["rho50_readable"] else float("nan")
-    grid = (f"d128 -> d192 moves rho_50 by {width_gap:.3f} while the seeds inside "
-            f"d128 already spread {spread:.3f}. The width effect this ladder is "
-            f"measuring is about the size of its own seed noise, so a rung below "
-            f"d128 would need more than three seeds to say anything -- which is a "
-            f"statement about this grid's resolution, not about the task.")
+    # The title, the section heading and the paragraph all read off this one
+    # flag. They did not: the paragraph was rewritten when the six-seed data
+    # refuted the resolution claim and the title was left asserting the refuted
+    # version, so page8.png shipped a title contradicting its own body.
+    resolves = bool(stuck_r) and esc_spread * 3 < spread
+    grid_head = "Where the next cut is" if resolves else "Where this grid runs out"
+    if resolves:
+        grid = (f"d128 -> d192 moves rho_50 by {width_gap:.3f}. The raw six-seed "
+                f"spread is {spread:.3f}, but all of it is the {len(stuck_r)} seed "
+                f"that never escaped the plateau; the {len(esc_r)} that did span "
+                f"only {esc_spread:.3f}. Conditioned on N3's criterion -- "
+                f"pre-registered, not chosen after the fact -- the width effect is "
+                f"about {width_gap / esc_spread:.0f}x the seed spread, so a rung "
+                f"BELOW d128 is resolvable and is the next cut. Three seeds are "
+                f"not enough to find the stuck one, which is the real cost.")
+    else:
+        grid = (f"d128 -> d192 moves rho_50 by {width_gap:.3f} while the seeds "
+                f"inside d128 spread {spread:.3f}. The width effect this ladder "
+                f"measures is about the size of its own seed noise, so a rung "
+                f"below d128 would need more seeds to say anything -- a statement "
+                f"about this grid's resolution, not about the task.")
 
     if s["n"] < 6:
         textpage(o, f"Only {s['n']} of 6 seeds have landed, so nothing is settled yet",
@@ -471,10 +617,12 @@ def page_next(o, pooled, fresh, j2, commit):
              "Whether it transfers to N=96. Finding 55 measured that the previous "
              "N=48 minimum did not, so the honest default is that this one does "
              "not either until a paired N=96 cell says so."),
-            ("The next cut", NOTE_C, grid),
+            (grid_head, NOTE_C, grid),
         ]
     else:
-        title = "The minimum holds, and this width grid is at its resolution limit"
+        title = ("The minimum holds, but a rung below d128 is still resolvable"
+                 if resolves else
+                 "The minimum holds, and this width grid is at its resolution limit")
         why = ("not all six seeds crossed" if s["n_cross"] < s["n"]
                else f"the six-seed median is "
                     f"{(s['rho50'] - FREE) / S_RHO50:+.2f} s* past {FREE:.3f}"
@@ -490,7 +638,7 @@ def page_next(o, pooled, fresh, j2, commit):
              f"its crossing now rest on {s['n']} seeds, which is what K1's own "
              f"registration asked for before the d128 result is quoted outside "
              f"the scorer."),
-            ("Where this grid runs out", NOTE_C, grid),
+            (grid_head, NOTE_C, grid),
         ]
     textpage(o, title, "what stage N settles, and what it leaves open", blocks,
              f"commit {commit} · the replacement rule H3 = I3 = J3 = K2, pooled "
