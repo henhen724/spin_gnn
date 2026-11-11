@@ -181,13 +181,25 @@ EP_DEFAULT = 50
 
 
 def rung_key(r):
-    """(L, nhead, arch), + (d_model, ff, warmup) + (epochs), each when non-default."""
+    """(L, nhead, arch), + (d_model, ff, warmup) + (epochs) + (eval T), each when
+    non-default.
+
+    `n_iters_eval` is the number of times the block was APPLIED at eval, which
+    only a tied cell can vary (scripts/rho_transition_eval.py --n-iters). It is
+    appended only when it differs from num_layers, so every CSV written before
+    the column existed keys exactly as it did. Without it a T-sweep's six
+    curves would share one key and pool into a single cell -- six different
+    models' bins averaged together, reported as one number, with nothing in the
+    output saying so.
+    """
     base = (r["num_layers"], r["nhead"], r["arch_mode"])
     v = (int(r["d_model"]), int(r["dim_feedforward"]), int(r.get("warmup_epochs") or 0))
     ep = int(r.get("epochs") or EP_DEFAULT)
+    t = int(r.get("n_iters_eval") or r["num_layers"])
+    tail = (t,) if t != int(r["num_layers"]) else ()
     if ep != EP_DEFAULT:
-        return base + v + (ep,)
-    return base if v == VARIANT_DEFAULT else base + v
+        return base + v + (ep,) + tail
+    return (base if v == VARIANT_DEFAULT else base + v) + tail
 
 
 def cell_key(r):

@@ -44,6 +44,7 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from spin_gnn.config import SudokuReasoningConfig
+from spin_gnn.sat_transformer2 import is_tied, model_depth
 from spin_gnn.train_sudoku_transformer import eval_solve_by_rho, load_checkpoint
 
 
@@ -80,6 +81,12 @@ def main():
                     help="fixed by default so every checkpoint sees the SAME instances "
                          "at each rho and curves can be compared point by point")
     ap.add_argument("--out-csv", required=True)
+    ap.add_argument("--n-iters", type=int, default=0,
+                    help="TIED CHECKPOINTS ONLY: apply the one shared block this "
+                         "many times instead of the trained count, on FIXED weights. "
+                         "A dial no untied cell has -- `encoder.layers` holds the "
+                         "whole depth there, so changing it would change the model. "
+                         "0 leaves the trained count alone.")
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -90,6 +97,19 @@ def main():
         model, vocab, config = load_checkpoint(ckpt, device=device)
         sudoku_cfg = cfg_from_checkpoint(config)
         name = os.path.basename(os.path.normpath(ckpt))
+        trained_iters = model_depth(model)
+        if args.n_iters:
+            # Refuse on untied rather than silently scoring the trained depth:
+            # setting n_iters on a model whose forward() iterates encoder.layers
+            # does nothing at all, and a column saying T=24 over a depth-16 pass
+            # is worse than an error.
+            if not is_tied(model):
+                raise SystemExit(
+                    "--n-iters is meaningless for %s (arch_mode=%s): an untied "
+                    "stack's depth IS its weights." % (name, config.get("arch_mode", "full")))
+            model.n_iters = args.n_iters
+            name = "%s_T%02d" % (name, args.n_iters)
+            print(f"  n_iters {trained_iters} -> {args.n_iters} on fixed weights")
         n_params = sum(p.numel() for p in model.parameters())
         print(f"\n=== {name} ===")
         print(f"  L={config['num_layers']} d_model={config['d_model']} "
@@ -118,6 +138,11 @@ def main():
                 # DictWriter from the first row, so every existing reader
                 # (DictReader everywhere) is unaffected.
                 "arch_mode": config.get("arch_mode", "full"),
+                # Applications of the block at EVAL, which for a tied cell is a
+                # dial and for an untied one is num_layers by construction. A
+                # row is otherwise indistinguishable from the trained-T row of
+                # the same checkpoint.
+                "n_iters_eval": model_depth(model), "n_iters_trained": trained_iters,
                 "n_params": n_params,
                 "n_trainable_params": config.get("n_trainable_params", n_params),
                 "n_train_instances": config.get("n_train_instances"),
