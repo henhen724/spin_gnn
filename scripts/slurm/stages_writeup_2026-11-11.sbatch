@@ -59,30 +59,45 @@ printf '%s\n' "$staged" | sed 's/^/  /'
 if [ -n "$staged" ]; then
     while IFS= read -r p; do
         [ -z "$p" ] && continue
-        if ! printf '%s\n' "$staged" | grep -qx -- "$p"; then
-            echo "FAILING CLOSED: $p did not stage."
-            exit 1
+        printf '%s\n' "$staged" | grep -qx -- "$p" && continue
+        # Not staged has TWO causes and only one of them is a fault. The fault
+        # this guard exists for is an IGNORED path, where `git add` succeeds and
+        # stages nothing; an UNCHANGED path stages nothing either, and that is
+        # ordinary. Job 51919478 committed two of these three files before it
+        # died on a render, so job 51922718 reached this line with
+        # build_stages_nb.py already identical to HEAD and failed closed on it.
+        # `git ls-files --error-unmatch` separates the two: tracked and unstaged
+        # means identical to HEAD, which needs no commit.
+        if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then
+            echo "  ($p unchanged since HEAD -- already committed)"
+            continue
         fi
+        echo "FAILING CLOSED: $p is not tracked (gitignored?) and did not stage."
+        exit 1
     done <<< "$PATHS"
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
         commit -q -F - <<'MSG'
-Stage S write-up builders: the deck and the results notebook
+Stage S write-up: an unchanged path is not an ignored one
 
-Both read every number through the registered scorer's own functions
+Whatever of the three paths below has changed since HEAD is in this commit;
+the builders themselves went in as 41e49e4 and 33a01bd, from the two runs of
+this job that committed and then died in the renderer (51905177 on a missing
+matplotlib, 51919478 on a points page with four bullets where slides.py caps
+at three).
+
+That second death is what this fixes. The staging guard required every listed
+path to appear in `git diff --cached --name-only`, which is true of a path
+that CHANGED and false of a path that is merely identical to HEAD -- so run
+51922718 failed closed in 6 seconds on notebooks/build_stages_nb.py, a file
+that was already committed and correct. The guard's real target is an IGNORED
+path, where `git add` succeeds and stages nothing, and `git ls-files
+--error-unmatch` is what tells the two apart.
+
+Both builders read every number through the registered scorer's own functions
 (scripts/stages_score.py, committed by register job 51846608 before the first
 cell trained) and share their figures: the notebook imports the deck's
-module-level draw_* functions rather than redrawing, so the two cannot disagree
-about what a curve looks like.
-
-The deck's claim is that tying costs ACCURACY and not the accuracy-to-solve
-relation, which is S4's registered reading, and the accuracy-to-solve page
-re-runs acc_vs_solve's own pava/predict over the same scan dirs the registered
-S4 job used rather than quoting its printout.
-
-d448 is optional in the builder and required nowhere: it lost two seeds to an
-epoch-0 divergence that diagnostic 51860479 traced to warmup. If it has not
-landed, the pages that would have shown it say so and the saturation claim is
-withdrawn rather than asserted from one seed.
+module-level draw_* functions rather than redrawing, so the two cannot
+disagree about what a curve looks like.
 MSG
     echo "commit rc=$?"
 else

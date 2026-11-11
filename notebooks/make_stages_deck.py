@@ -475,9 +475,11 @@ def main():
         # is why the deck does not adopt it.
         d.points_page(
             "The scorer printed S0 FALSIFIED; its own precedence rule outranks it",
-            ["S0 was registered on d448, which came back censored with escapes 1/3",
+            # Three bullets, not four: slides.py caps a points page at 3 and
+            # raised on the fourth. The one cut said that failing to TRAIN is a
+            # fourth outcome the scorer has no branch for; it is in the notebook.
+            ["S0 was registered on d448, which never trained: escapes 1/3, NLL 3.79",
              "S1 outranks S0: a cell that never left the plateau says nothing about tying",
-             "Failing to train is a fourth outcome the scorer has no branch for",
              "d320's reading stands: 3/3 crossing, rho_50 0.757, 0.017 past the line"])
 
         d.claim_page(
