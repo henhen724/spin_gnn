@@ -45,16 +45,28 @@ OUT=/scratch/users/hshunt/spin_gnn/sudoku_n48_tiedT_T_2026-11-11
 mkdir -p "$OUT"
 
 SEED=${SLURM_ARRAY_TASK_ID}
-CKPT="$SRC/t0${SEED}_d0320_ff01024_h04_tied_no_mlp_L16_s${SEED}/d0320_h04_L16_ff01024_lr1e-03_pre_shuf_fall_noff_tied"
+CELL="$SRC/t0${SEED}_d0320_ff01024_h04_tied_no_mlp_L16_s${SEED}"
 
 echo "host=$(hostname)  job=${SLURM_JOB_ID}  array task=${SLURM_ARRAY_TASK_ID}"
 echo "start $(date '+%F %T')"
-echo "checkpoint: $CKPT"
+echo "cell: $CELL"
 
-if [ ! -d "$CKPT" ]; then
-    echo "FAILING CLOSED: no such checkpoint directory."
+# The run tag is DISCOVERED, not spelled out. train_sudoku_transformer appends a
+# _sNN suffix for non-zero seeds and nothing at all for seed 0, so the tag that
+# was correct for seed 0 failed closed on seeds 1 and 2 (array 51904636_1/_2).
+# Exactly one checkpoint directory per cell, or this stops rather than guessing.
+if [ ! -d "$CELL" ]; then
+    echo "FAILING CLOSED: no such cell directory."
     exit 1
 fi
+mapfile -t found < <(find "$CELL" -mindepth 1 -maxdepth 1 -type d | sort)
+if [ "${#found[@]}" -ne 1 ]; then
+    echo "FAILING CLOSED: ${#found[@]} checkpoint dirs under the cell, expected 1:"
+    printf '  %s\n' "${found[@]}"
+    exit 1
+fi
+CKPT="${found[0]}"
+echo "checkpoint: $CKPT"
 
 # The grid is stage S's grid, not a new one: 14 points to the 0.33 floor at 400
 # per bin. Changing it here would make the T=16 curve incomparable to stage S's.

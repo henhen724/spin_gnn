@@ -228,8 +228,12 @@ def page_trace(out, ex, max_rounds=4, title="One real reasoning trace", note=Non
                 + (" ..." if len(events) > 4 else ""), size=SMALL - 2, va="top", **MONO)
         y -= dy
     if ex.n_rounds > max_rounds:
-        ax.text(0.0, y, f"... {ex.n_rounds - max_rounds} further rounds", size=SMALL - 2,
-                va="top", color="0.45")
+        # Pluralized: most instances elide several rounds, but one that runs to
+        # exactly max_rounds + 1 printed "... 1 further rounds" on every deck
+        # this module has drawn.
+        more = ex.n_rounds - max_rounds
+        ax.text(0.0, y, "... %d further round%s" % (more, "" if more == 1 else "s"),
+                size=SMALL - 2, va="top", color="0.45")
         y -= dy
     ax.text(0.0, y, "SOLVED", size=SMALL - 2, va="top", color="#2ca02c", **MONO)
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
