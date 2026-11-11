@@ -6,7 +6,18 @@ quoted: balanced accuracy thresholds a BCE probe's logits at 0, which on a
 separates. AUROC and average precision replace it, so they have to be right.
 """
 import numpy as np
-import pytest
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.sudoku_probes import auroc, average_precision
 
@@ -92,3 +103,9 @@ def test_degenerate_labels_are_nan_not_a_crash(labels):
         assert np.isnan(average_precision(scores, labels))
     else:
         assert average_precision(scores, labels) == pytest.approx(1.0)
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

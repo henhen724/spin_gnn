@@ -1,5 +1,16 @@
 import numpy as np
-import pytest
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.sudoku_agg_eval import (
     check_comparable, instance_signature, mcnemar_exact_p, wilson_interval,
@@ -115,3 +126,9 @@ def test_signature_ignores_everything_that_is_not_the_question():
            "hint_mode": "removal", "scratchpad": False, "d_model": 384, "epochs": 300}
     other = dict(cfg, d_model=256, epochs=900, n_train_instances=5000)
     assert instance_signature(cfg) == instance_signature(other)
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

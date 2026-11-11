@@ -1,5 +1,16 @@
 import numpy as np
-import pytest
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.config import SudokuReasoningConfig
 from spin_gnn.sudoku_depth_slots import (
@@ -114,3 +125,9 @@ def test_thin_cells_are_dropped_rather_than_fitted():
     assert [m["round_idx"] for m in marginal] == [1]
     # Only one usable round index remains, so no slope can be fitted at all.
     assert np.isnan(controlled[COLORING]["round_effect_within_position"])
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

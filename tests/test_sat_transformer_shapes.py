@@ -7,8 +7,19 @@ autoregressive (unlike SpinTransformer's fixed-window case), that the causal
 mask really blocks information from later positions: changing only the last
 input token must not change any earlier position's output logits."""
 import numpy as np
-import pytest
 import torch
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.sat_transformer import SATTransformer, generate_trace, sat_accuracy, sat_nll_loss
 
@@ -138,3 +149,9 @@ def test_causal_mask_blocks_future_positions_low_rank_qk():
 def test_qk_dim_not_divisible_by_nhead_raises():
     with pytest.raises(ValueError, match="qk_dim"):
         SATTransformer(n_vars=4, d_model=16, num_layers=1, nhead=3, max_len=8, qk_dim=10)
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

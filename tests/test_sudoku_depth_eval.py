@@ -6,8 +6,19 @@ what gets pinned here. The model-dependent half is exercised by the job that
 uses it, not by a test that would have to train something.
 """
 import numpy as np
-import pytest
 from dataclasses import replace
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.config import SudokuReasoningConfig
 from spin_gnn.sudoku_depth_eval import bin_by_depth
@@ -65,3 +76,9 @@ def test_fixed_rho_really_pins_density_across_depth_bins(rho):
     depth = np.array(list(bins), dtype=float)
     if np.std(realized) > 0:
         assert abs(np.corrcoef(np.array(realized), depth)[0, 1]) < 0.95
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

@@ -4,8 +4,19 @@ the pipeline runs and every metric key exists/is in a sane range, not that
 the model actually learns anything at this size."""
 from dataclasses import replace
 
-import pytest
 import torch
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
 from spin_gnn.train_sudoku_transformer import (
@@ -187,3 +198,9 @@ def test_eval_by_rho_reports_realized_density_and_deduction_time():
     # Removal-path instances are resolvable by construction at every density,
     # so a solve_rate drop can never be the instance becoming unsolvable.
     assert all(r["dd_resolved_frac"] == 1.0 for r in records)
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

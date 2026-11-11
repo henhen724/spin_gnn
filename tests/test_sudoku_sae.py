@@ -7,6 +7,18 @@ whose correct answer is known by construction.
 import numpy as np
 import torch
 
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
+
 from spin_gnn.sudoku_sae import SparseAutoencoder, dd_predicates, score_features, train_sae
 
 
@@ -297,7 +309,6 @@ def test_position_mask_separates_a_free_predicate_from_a_computed_one():
 def test_position_mask_rejects_a_mismatched_or_empty_mask():
     """A mask of the wrong length would silently score a shifted subset, and an
     empty one would report F1=0 for every feature as if that were a result."""
-    import pytest
     P, n_nodes, n_colors = 200, 6, 4
     labels = _fake_labels(P, n_nodes, n_colors, seed=12)
     rng = np.random.default_rng(0)
@@ -308,3 +319,9 @@ def test_position_mask_rejects_a_mismatched_or_empty_mask():
     with pytest.raises(ValueError, match="keeps"):
         score_features(feats, labels, n_nodes, n_colors,
                        position_mask=np.zeros(P, dtype=bool))
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

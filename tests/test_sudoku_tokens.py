@@ -1,5 +1,16 @@
 import numpy as np
-import pytest
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.sudoku_dd import planted_regular_graph
 from spin_gnn.sudoku_tokens import (
@@ -221,3 +232,9 @@ def test_scratchpad_render_shows_evidence():
     adj, colors, hints, trace, vocab = _scratchpad_instance(seed=1)
     text = render(encode_instance(adj, trace, vocab), vocab)
     assert "evidence N" in text
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

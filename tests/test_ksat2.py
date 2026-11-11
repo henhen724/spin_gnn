@@ -4,7 +4,18 @@ claims, every unit-prop must actually be unit at the time it's claimed, and
 the final verdict/assignment must agree with the original (well-tested)
 ksat.solve_with_trace on the same instance."""
 import numpy as np
-import pytest
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.config import SATConfig
 from spin_gnn.ksat import sample_random_ksat, solve_with_trace
@@ -111,3 +122,9 @@ def test_sample_hints_rejects_too_many():
     rng = np.random.default_rng(0)
     with pytest.raises(ValueError, match="n_hints"):
         sample_hints(n_vars=5, n_hints=6, rng=rng)
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

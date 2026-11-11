@@ -1,5 +1,16 @@
 import numpy as np
-import pytest
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.config import SATConfig
 from spin_gnn.ksat import sample_random_ksat
@@ -95,3 +106,9 @@ def test_render_smoke():
     assert "HINTS" in text
     assert "CLAUSE1" in text
     assert ("SAT" in text) or ("UNSAT" in text)
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))

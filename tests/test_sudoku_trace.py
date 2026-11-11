@@ -2,7 +2,18 @@
 event trace must agree exactly with sudoku_dd.dd_times's from-scratch
 deduction times (the existing, independently-tested reference)."""
 import numpy as np
-import pytest
+
+import os
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))   # repo root, for `spin_gnn`
+sys.path.insert(0, _HERE)                    # for `_pytest_shim`
+
+try:
+    import pytest
+except ImportError:                          # no pytest for py312 on Sherlock
+    import _pytest_shim as pytest
 
 from spin_gnn.sudoku_dd import INF, dd_times, planted_regular_graph
 from spin_gnn.sudoku_trace import sample_hints, solve_with_dd_trace
@@ -66,3 +77,9 @@ def test_too_few_hints_leaves_nodes_unresolved():
     trace = solve_with_dd_trace(adj, colors, hints, q)
     assert not trace["resolved"]
     assert len(trace["unresolved_nodes"]) > 0
+
+
+if __name__ == "__main__":
+    import _pytest_shim
+
+    sys.exit(_pytest_shim.run(globals()))
