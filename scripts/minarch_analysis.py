@@ -195,17 +195,26 @@ def rung_key(r):
     `n_blocks` (k) is the same hazard one axis over: a k=2 cell holds twice the
     weights of the shared-block cell at identical (L, nhead, arch, d, ff), so
     without it stage U's three rungs would pool into stage S's one. It is
-    appended as the STRING "k2", not as the integer 2, because the eval-T tail
-    is already a bare integer and `k=2 at the trained depth` would otherwise key
-    identically to `k=1 evaluated at T=2` -- two different models, one key, no
-    error anywhere.
+    appended as the STRING "k2", not as the integer 2, so that `k=2 at the
+    trained depth` cannot key identically to `k=1 evaluated at T=2` -- two
+    different models, one key, no error anywhere.
+
+    The eval-T tail is likewise a STRING, "T24". The grouping is identical
+    either way -- it is a relabelling, and no key is ever stored -- but a bare
+    integer there is indistinguishable from the epochs tail, which is also a
+    bare integer, and that ambiguity is not academic: it is what made stage T's
+    T=24 cell label itself "ep24" wherever rung_label printed it. Epochs KEEPS
+    its bare-integer form because stage G's scorer freezes rung keys that
+    contain it (stageg_score.G1/G2), so the three tails are now distinguishable
+    by type: int = epochs, "kK" = distinct blocks, "TN" = applications at eval.
     """
     base = (r["num_layers"], r["nhead"], r["arch_mode"])
     v = (int(r["d_model"]), int(r["dim_feedforward"]), int(r.get("warmup_epochs") or 0))
     ep = int(r.get("epochs") or EP_DEFAULT)
     k = int(r.get("n_blocks") or 1)
     t = int(r.get("n_iters_eval") or r["num_layers"])
-    tail = (("k%d" % k,) if k != 1 else ()) + ((t,) if t != int(r["num_layers"]) else ())
+    tail = ((("k%d" % k,) if k != 1 else ())
+            + (("T%d" % t,) if t != int(r["num_layers"]) else ()))
     if ep != EP_DEFAULT:
         return base + v + (ep,) + tail
     return (base if v == VARIANT_DEFAULT else base + v) + tail
@@ -216,13 +225,57 @@ def cell_key(r):
     return rung_key(r) + (r["seed"],)
 
 
+def sort_key(key):
+    """A total order over keys of MIXED SHAPE. Use it wherever keys are sorted.
+
+    `sorted(cells)` compares keys elementwise, and two keys of different
+    lengths are compared position by position until they differ -- so a cell
+    key carrying a string tail meets the SEED of a shorter key from the same
+    rung at the same position:
+
+        (16, 4, 'tied_no_mlp', 320, 1024, 0, 'T24', 0)   stage T, T=24
+        (16, 4, 'tied_no_mlp', 320, 1024, 0, 0)          the same cell at T=16
+
+    and position 6 is 'T24' against the int 0. Python 3 raises TypeError on
+    that, which is how job 51931433 found it. The hazard is not specific to the
+    eval-T tail: stage U's "k2" tail has exactly the same shape, so this would
+    have raised the first time stage U's rows were loaded alongside stage S's
+    -- tonight -- rather than at a convenient moment.
+
+    Ordering: ints before strings, ints in numeric order (zero-padded, never
+    negative here), strings lexicographically. The order itself carries no
+    meaning beyond being stable and total; it exists so that a listing can be
+    printed at all.
+    """
+    return tuple((0, "%012d" % el) if isinstance(el, int) and not isinstance(el, bool)
+                 else (1, str(el)) for el in key)
+
+
 def rung_label(L, nhead, arch, d_model=D_DEFAULT, ff=FF_DEFAULT, warmup=W_DEFAULT,
-               epochs=EP_DEFAULT):
-    v = "".join((f" d{d_model}" if d_model != D_DEFAULT else "",
-                 f" ff{ff}" if ff != FF_DEFAULT else "",
-                 f" w{warmup:02d}" if warmup != W_DEFAULT else "",
-                 f" ep{epochs}" if epochs != EP_DEFAULT else ""))
-    return f"L={L:<2d} h={nhead} {arch}{v}"
+               *tail):
+    """A rung key as text. `rung_label(*key)` for a key of any length.
+
+    THE TAIL IS READ BY TYPE, NOT BY POSITION. The seventh element used to be
+    taken as `epochs` whatever it held, so stage T's T=24 cell printed itself
+    as "ep24" and stage U's k=2 cell would have printed "epk2" -- a label
+    naming an axis the cell does not vary, in every table and every deck page
+    that prints one. int is the epoch count, "kK" the number of distinct
+    blocks, "TN" the applications at eval; anything else raises here rather
+    than being formatted into a wrong name.
+    """
+    parts = [f" d{d_model}" if d_model != D_DEFAULT else "",
+             f" ff{ff}" if ff != FF_DEFAULT else "",
+             f" w{warmup:02d}" if warmup != W_DEFAULT else ""]
+    for el in tail:
+        if isinstance(el, int) and not isinstance(el, bool):
+            parts.append(f" ep{el}" if el != EP_DEFAULT else "")
+        elif isinstance(el, str) and el[:1] in ("k", "T") and el[1:].isdigit():
+            parts.append(" " + el)
+        else:
+            raise ValueError(
+                "rung tail element %r is not an epoch count, a 'kK' or a 'TN'; "
+                "a new tail needs a case here, not a silent label" % (el,))
+    return f"L={L:<2d} h={nhead} {arch}{''.join(parts)}"
 
 
 def all_rungs(arch_depths=ARCH_DEPTHS):
@@ -425,7 +478,8 @@ def main():
     # here so a new cell ANNOUNCES itself instead of moving someone else's
     # median.
     extra = sorted({k[:-1] for k in cells} - set(all_rungs()), key=lambda t: (len(t), t))
-    have = [k for k in want if k in cells] + [k for k in sorted(cells) if k[:-1] in set(extra)]
+    have = [k for k in want if k in cells] + [k for k in sorted(cells, key=sort_key)
+                                              if k[:-1] in set(extra)]
     for d in args.scan_dir:
         n = len([r for r in rows if r["_scan"] == os.path.basename(d.rstrip("/"))])
         print(f"{n:5d} rows  {os.path.basename(d.rstrip('/'))}")

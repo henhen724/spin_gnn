@@ -48,7 +48,8 @@ import glob
 import json
 import os
 
-from scripts.minarch_analysis import (SCAN_DIRS, cell_key, load_all, rung_label)
+from scripts.minarch_analysis import (SCAN_DIRS, cell_key, load_all, rung_label,
+                                      sort_key)
 
 # Above this predicted solve rate a cell is doing something rather than
 # babbling, so agreeing with the curve there is a constraint. 0.10 is the same
@@ -141,7 +142,10 @@ def collect(scan_dirs):
     for r in rows:
         cells.setdefault(cell_key(r), []).append(r)
     out = []
-    for key, rs in sorted(cells.items()):
+    # sort_key, not the keys themselves: a cell key with a string tail ("T24",
+    # "k2") meets the SEED of the same rung's shorter key at that position, and
+    # int < str raises. See minarch_analysis.sort_key.
+    for key, rs in sorted(cells.items(), key=lambda kv: sort_key(kv[0])):
         rung, seed = key[:-1], key[-1]
         acc = val_accuracy(rs[0]["path"])
         out.append({
