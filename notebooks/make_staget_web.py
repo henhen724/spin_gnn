@@ -273,7 +273,10 @@ def main():
 
     d.points_page(
         "All sixteen applications are used: none is padding",
-        ["T* = %d, within %.2f of T=16's mean solve" % (tstar, NEAR),
+         # NOT "T* = 16, within 0.01 of T=16's mean solve", which the first render
+         # printed: T* is DEFINED as the smallest T within NEAR of the trained
+         # count, so that sentence says only that 16 is within 0.01 of itself.
+        ["T* = %d: the smallest T within %.2f of the trained count" % (tstar, NEAR),
          "T=12 already costs %.4f of mean solve"
          % (base["mean_solve"] - level[12]["mean_solve"]),
          "So the analysable object does not shrink below sixteen rounds"])
