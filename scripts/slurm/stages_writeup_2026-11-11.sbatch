@@ -105,7 +105,11 @@ none of it raised: a deck is checked by LOOKING at every page.
        held-out set as its own cell -- so the worst miss is 0.0729, not 0.0222.
        The three tied d320 residuals are unchanged to the digit (+0.0165 /
        -0.0034 / +0.0065), so the claim stands; the note is computed now, and
-       the renderer prints which cells miss, by rung tuple.
+       the renderer and the notebook both print WHICH cells miss, by rung
+       tuple. The widest is tied d192 seed 0 -- P1, stage S's own censored
+       sibling, at +0.0729 -- and not one of stage T's off-schedule cells,
+       which was the guess. The notebook says in words that the bar is stage
+       J's threshold for these three seeds, not a claim that all 46 clear it.
   p18  "What stage S does not show" is a LABEL -- it could head any stage's
        limitations page. Now "Stage S speaks only for N=48 at train depth
        16", which could not.

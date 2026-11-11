@@ -209,7 +209,15 @@ the accuracy gap buys at this steepness. If they sit **off** it, tying changes
 the relation, which is a larger claim than any level.
 
 A cell only tests the curve if its prediction is away from the 0.10 floor — a
-cell predicted at the floor cannot fail. Those are reported separately."""),
+cell predicted at the floor cannot fail. Those are reported separately.
+
+**The held-out population here is larger than S4's registered run saw** — 46
+discriminating cells against 30 — because the `rho_curve_*.csv` glob fix made
+stage T's grids visible to the loader. The three `d320` residuals are unchanged
+to the digit, but the *widest* miss in the enlarged population is **outside** the
+0.0423 bar; the list below names it. So the bar is read here as what stage J
+froze it as, a threshold for these three seeds, and not as a claim that every
+held-out cell in the fit clears it."""),
 
 ("code", """ref, fit, resids = s4_residuals(SCAN)
 t320 = tied_cells(resids, S1)
@@ -226,6 +234,15 @@ disc = [r for r in resids if r["discriminating"]]
 print()
 print("worst |residual| among all %d discriminating held-out cells: %.4f"
       % (len(disc), max(abs(r["resid"]) for r in disc)))
+# Named, not just counted. S4's registered run saw 30 discriminating cells and
+# a worst miss of 0.0222; this fit sees more cells because the rho_curve_*.csv
+# glob fix made stage T's grids visible to the loader, and the worst miss it
+# finds is LARGER than the 0.0423 bar. Which cell that is matters: the rung is
+# printed as the tuple because rung_label() reads a 7-tuple's tail as `epochs`.
+print("the five widest misses, by rung:")
+for r in sorted(disc, key=lambda r: -abs(r["resid"]))[:5]:
+    print("  %+.4f  seed %d  pred %.4f  obs %.4f  rung %s"
+          % (r["resid"], r["seed"], r["pred"], r["mean_solve"], r["rung"]))
 
 fig, ax = plt.subplots(figsize=(10, 6))
 draw_s4(ax, ref, fit, t320)
