@@ -616,8 +616,12 @@ def main():
           % (args.out, d._n))
     print("S4 fit: %d reference cells, %d held-out, %d discriminating"
           % (len(ref), len(resids), sum(r["discriminating"] for r in resids)))
-    # WHICH cells miss, by rung tuple and not by label: rung_label() reads a
-    # 7-tuple's tail as `epochs`, so an eval-T cell labels itself "ep24".
+    # WHICH cells miss, by rung tuple and not by label. This said "because
+    # rung_label() reads a 7-tuple's tail as `epochs`, so an eval-T cell labels
+    # itself ep24" -- true when it was written, fixed since (9ce4bde: the tail
+    # is read by type and an eval-T cell prints "T24"). The tuple is still what
+    # is printed, for the reason that outlives the bug: the scorers' frozen
+    # literals are written as tuples, so a miss can be grepped for directly.
     for r in sorted((r for r in resids if r["discriminating"]),
                     key=lambda r: -abs(r["resid"]))[:3]:
         print("  worst miss %+.4f  seed %d  rung %s" % (r["resid"], r["seed"], r["rung"]))
