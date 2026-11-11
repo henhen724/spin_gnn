@@ -148,21 +148,79 @@ def run_behavior(model, vocab, device, cases):
     return rows
 
 
+def _is_tied(model):
+    return bool(getattr(model, "tied", False))
+
+
+def _depth(model):
+    """How many times a block is APPLIED, which is the layer axis every
+    intervention here indexes.
+
+    For an untied stack that is len(encoder.layers). For arch_mode
+    "tied_no_mlp" it is NOT: nn.TransformerEncoder holds a single copy and
+    sat_transformer2.forward applies it model.n_iters times, so
+    len(encoder.layers) is 1 where the depth is 16. Reading the length would
+    have silently reduced every per-layer analysis on a tied checkpoint to its
+    first round. n_iters is set for every arch_mode, tied or not, so it is the
+    right field in both cases; the length is only a fallback for a model
+    predating the field.
+    """
+    n = getattr(model, "n_iters", None)
+    return int(n) if n else len(model.encoder.layers)
+
+
+def _require_untied(model, what):
+    """Refuse a WEIGHT-space intervention on a tied model instead of faking it.
+
+    Zeroing a head or a sublayer edits the weights, and a tied block has one
+    set of them shared by all n_iters applications -- so the edit lands in
+    every round at once. Looping over range(n_iters) would emit n_iters
+    IDENTICAL rows labelled layer 0..n-1 and read as a localisation, which is
+    strictly worse than no answer. Per-round weight ablation on a tied cell is
+    a different experiment (a call-indexed hook that subtracts one sublayer's
+    write), not this one.
+    """
+    if _is_tied(model):
+        raise NotImplementedError(
+            "%s edits shared weights, so on a tied block it ablates every one of "
+            "the %d applications at once and cannot localise by layer. Use "
+            "run_patching, whose layer axis is the application index and whose "
+            "intervention is per-call." % (what, _depth(model)))
+
+
 def _capture_clean(model, tokens, device):
-    """Residual stream after every layer for the clean run."""
+    """Residual stream after every layer for the clean run.
+
+    On a tied model the single block fires once per ROUND, so the hook keyed by
+    module index would be overwritten n_iters times and return only the last
+    round under the key 0. Here the calls are counted instead, giving the same
+    {0..depth-1} dict shape in both cases -- acts[i] is always "after the i-th
+    application", which is what run_patching splices.
+    """
     acts = {}
-    handles = [
-        model.encoder.layers[i].register_forward_hook(
-            lambda _m, _i, o, i=i: acts.__setitem__(i, o.detach().clone())
-        )
-        for i in range(len(model.encoder.layers))
-    ]
+    if _is_tied(model):
+        calls = [0]
+
+        def _tied_hook(_m, _i, o):
+            acts[calls[0]] = o.detach().clone()
+            calls[0] += 1
+
+        handles = [model.encoder.layers[0].register_forward_hook(_tied_hook)]
+    else:
+        handles = [
+            model.encoder.layers[i].register_forward_hook(
+                lambda _m, _i, o, i=i: acts.__setitem__(i, o.detach().clone())
+            )
+            for i in range(len(model.encoder.layers))
+        ]
     try:
         with torch.no_grad():
             model(torch.from_numpy(tokens).unsqueeze(0).to(device))
     finally:
         for h in handles:
             h.remove()
+    assert len(acts) == _depth(model), (
+        "captured %d activations for a depth-%d model" % (len(acts), _depth(model)))
     return acts
 
 
@@ -172,7 +230,8 @@ def run_patching(model, vocab, device, cases, positions_of_interest):
 
     recovery = 1.0 means that single cell fully restores the clean behavior,
     i.e. the deduction is carried there; 0.0 means it is irrelevant."""
-    n_layers = len(model.encoder.layers)
+    n_layers = _depth(model)
+    tied = _is_tied(model)
     rows = []
     for adj, colors, hints, trace, case in cases:
         clean, corrupt, pos = build_pair(adj, colors, hints, trace, vocab, case)
@@ -186,11 +245,26 @@ def run_patching(model, vocab, device, cases, positions_of_interest):
         sites = positions_of_interest(clean, vocab, case, pos)
         for layer in range(n_layers):
             for site_name, site_pos in sites.items():
-                def hook(_m, _i, o, layer=layer, site_pos=site_pos):
-                    o = o.clone()
-                    o[:, site_pos] = clean_acts[layer][:, site_pos]
-                    return o
-                h = model.encoder.layers[layer].register_forward_hook(hook)
+                if tied:
+                    # The hook is on the ONE shared block, so it fires in every
+                    # round; splice only on the layer-th call, or the patch
+                    # would be applied at all 16 depths at once and recovery
+                    # would measure something no untied row measures.
+                    calls = [0]
+
+                    def hook(_m, _i, o, layer=layer, site_pos=site_pos, calls=calls):
+                        i, calls[0] = calls[0], calls[0] + 1
+                        if i != layer:
+                            return None       # None = leave the output alone
+                        o = o.clone()
+                        o[:, site_pos] = clean_acts[layer][:, site_pos]
+                        return o
+                else:
+                    def hook(_m, _i, o, layer=layer, site_pos=site_pos):
+                        o = o.clone()
+                        o[:, site_pos] = clean_acts[layer][:, site_pos]
+                        return o
+                h = model.encoder.layers[0 if tied else layer].register_forward_hook(hook)
                 try:
                     with torch.no_grad():
                         patched = _logit_diff(model(corrupt_t), pos, vocab, case)
@@ -221,6 +295,7 @@ def run_head_ablation(model, vocab, device, cases):
     An earlier version hooked it and silently reported effect_retained == 1.0
     for all 7200 (layer, head, case) rows, i.e. a no-op dressed as "no head
     matters"."""
+    _require_untied(model, "run_head_ablation")
     n_layers = len(model.encoder.layers)
     nhead = model.encoder.layers[0].self_attn.num_heads
     d_model = model.encoder.layers[0].self_attn.embed_dim
@@ -279,6 +354,7 @@ def run_sublayer_ablation(model, vocab, device, cases):
     that removing it destroys the flip entirely. Same normalisation as
     run_head_ablation, so the two are directly comparable.
     """
+    _require_untied(model, "run_sublayer_ablation")
     n_layers = len(model.encoder.layers)
     rows = []
     for adj, colors, hints, trace, case in cases:
