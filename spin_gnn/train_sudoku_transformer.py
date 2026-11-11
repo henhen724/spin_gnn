@@ -440,6 +440,7 @@ def train_sudoku_model(
         nhead=model_cfg.nhead, max_len=model_max_len,
         dim_feedforward=model_cfg.dim_feedforward or None, norm_first=model_cfg.norm_first,
         arch_mode=getattr(model_cfg, "arch_mode", "full"),
+        n_blocks=getattr(model_cfg, "n_blocks", 1),
     ).to(device)
     n_all = sum(p.numel() for p in model.parameters())
     n_trainable = model.trainable_parameter_count()
@@ -533,6 +534,10 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
         # "linear" cell with a ReLU, or an "no_mlp" cell with a live MLP, and
         # reports a plausible number with no error at all.
         "arch_mode": getattr(model, "arch_mode", "full"),
+        # How many DISTINCT blocks the stack holds, read off the MODEL and not
+        # off model_cfg, so it records what was actually built. 1 on every
+        # checkpoint before 2026-11-11 and on every untied cell.
+        "n_blocks": int(getattr(model, "n_blocks", 1)) if getattr(model, "tied", False) else 1,
         "n_trainable_params": model.trainable_parameter_count(),
         "max_len": model_max_len, "baseline_accuracy": baseline_acc, "solve_metrics": solve_metrics,
         # Provenance: before 2026-10-25 none of the training settings were saved
@@ -575,6 +580,9 @@ def load_checkpoint(out_dir, device="cpu"):
         nhead=config["nhead"], max_len=config["max_len"], dim_feedforward=config.get("dim_feedforward"),
         norm_first=config.get("norm_first", True),
         arch_mode=config.get("arch_mode", "full"),
+        # Absent on every checkpoint before 2026-11-11, where it reads 1 --
+        # correct for them: a tied cell there was always ONE shared block.
+        n_blocks=config.get("n_blocks", 1),
     ).to(device)
     model.load_state_dict(torch.load(os.path.join(out_dir, "model.pt"), map_location=device, weights_only=True))
     model.eval()

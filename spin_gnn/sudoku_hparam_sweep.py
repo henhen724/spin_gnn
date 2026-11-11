@@ -47,6 +47,7 @@ def run_one(args):
     model_cfg = SudokuReasoningModelConfig(
         d_model=args.d_model, num_layers=args.num_layers, nhead=args.nhead, dim_feedforward=args.dim_feedforward,
         norm_first=not args.no_norm_first, arch_mode=args.arch_mode,
+        n_blocks=args.n_blocks,
     )
     train_cfg = SudokuReasoningTrainConfig(
         n_train_instances=args.n_train_instances, n_val_instances=args.n_val_instances,
@@ -109,6 +110,13 @@ def run_one(args):
         # sudoku_agg_eval and sudoku_depth_eval see one basename for two models
         # and can only tell them apart by their parent directory. Only present
         # when non-default, so every tag written before 2026-11-01 is unchanged.
+        # Same rule, and the same reason as ARCH_TAG: k distinct blocks at
+        # identical (d_model, nhead, L, ff, arch_mode) is a different
+        # architecture -- k=2 holds twice the weights of k=1 and composes a
+        # different map -- so it must never share a directory name with the
+        # shared-block cell. Only present when k != 1, so every tag written
+        # before 2026-11-11 is byte-identical.
+        + (f"_k{args.n_blocks:02d}" if args.n_blocks != 1 else "")
         + (f"_s{args.seed:02d}" if args.seed else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
@@ -123,6 +131,7 @@ def run_one(args):
         "n_train_instances": args.n_train_instances, "n_val_instances": args.n_val_instances,
         "epochs": args.epochs, "n_params": sum(p.numel() for p in result["model"].parameters()),
         "arch_mode": args.arch_mode,
+        "n_blocks": args.n_blocks,
         "n_trainable_params": result["model"].trainable_parameter_count(),
         "baseline_accuracy": result["baseline_accuracy"],
         "final_val_accuracy": result["history"][-1]["accuracy"],
@@ -201,6 +210,12 @@ if __name__ == "__main__":
     ap.add_argument("--num-layers", type=int, default=2)
     ap.add_argument("--dim-feedforward", type=int, default=0)
     ap.add_argument("--no-norm-first", action="store_true")
+    ap.add_argument("--n-blocks", type=int, default=1,
+                    help="k: how many DISTINCT blocks a tied stack cycles through, each "
+                         "applied num_layers/k times. 1 (default) is the shared-block cell; "
+                         "k must divide num_layers and is only valid with "
+                         "--arch-mode tied_no_mlp. The network is still one map iterated "
+                         "num_layers/k times, with k primitive maps inside each step.")
     ap.add_argument("--arch-mode", type=str, default="full", choices=list(ARCH_MODES),
                     help="how much machinery each block keeps: full (trained ReLU MLP, the "
                          "default and every run before 2026-11-04), linear (identity "

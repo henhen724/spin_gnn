@@ -31,10 +31,34 @@ def _identity(x):
 
 class SATReasoningTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=64, num_layers=2, nhead=1, max_len=1024, dim_feedforward=None,
-                 norm_first=False, arch_mode="full"):
+                 norm_first=False, arch_mode="full", n_blocks=1):
         super().__init__()
         if arch_mode not in ARCH_MODES:
             raise ValueError(f"arch_mode must be one of {ARCH_MODES}, got {arch_mode!r}")
+        # n_blocks = k: how many DISTINCT blocks the tied stack cycles through.
+        # k=1 is the weight-tied cell (one operator, num_layers applications);
+        # k=num_layers would be the untied stack. In between, blocks fire in the
+        # order 0,1,...,k-1,0,1,... so the network is still a single map
+        # iterated num_layers/k times -- G = F_{k-1} o ... o F_0 -- which is the
+        # whole point: every rung of the k ladder stays a fixed-point iteration,
+        # and only the number of primitive maps inside one step changes.
+        #
+        # The divisibility requirement is not cosmetic: a partial final cycle
+        # would make the last few applications a different composition from
+        # every earlier one, and "iterated T/k times" would stop being true.
+        if n_blocks < 1:
+            raise ValueError(f"n_blocks must be >= 1, got {n_blocks}")
+        if n_blocks > 1:
+            if arch_mode != "tied_no_mlp":
+                raise ValueError(
+                    "n_blocks > 1 cycles a SHARED block and is only defined for "
+                    f"arch_mode='tied_no_mlp', got {arch_mode!r}. An untied stack "
+                    "already has num_layers distinct blocks.")
+            if num_layers % n_blocks:
+                raise ValueError(
+                    f"n_blocks={n_blocks} does not divide num_layers={num_layers}; "
+                    "the cycle would end part-way through and the last "
+                    "applications would compose differently from the rest.")
         self.vocab_size = vocab_size
         self.norm_first = norm_first
         self.arch_mode = arch_mode
@@ -75,8 +99,17 @@ class SATReasoningTransformer(nn.Module):
         # len(encoder.layers), so a tied checkpoint round-trips exactly.
         self.tied = arch_mode == "tied_no_mlp"
         self.n_iters = num_layers
+        # k distinct blocks for a tied stack, num_layers for an untied one. The
+        # k copies come from nn.TransformerEncoder's own _get_clones, which
+        # DEEP-COPIES the one layer it is given, so at a fixed seed all k start
+        # IDENTICAL to each other and to the k=1 cell -- the same discipline
+        # _apply_arch_mode documents below, and it makes the k ladder a
+        # statement about what training does with the extra blocks rather than
+        # about having drawn different weights.
+        self.n_blocks = n_blocks if self.tied else num_layers
         self.encoder = nn.TransformerEncoder(
-            layer, num_layers=1 if self.tied else num_layers, norm=final_norm)
+            layer, num_layers=self.n_blocks if self.tied else num_layers,
+            norm=final_norm)
         self.readout = nn.Linear(d_model, vocab_size)
         self._apply_arch_mode()
 
@@ -134,8 +167,11 @@ class SATReasoningTransformer(nn.Module):
             # LayerNorm (nn.TransformerEncoder's `norm`) once per iteration --
             # it belongs after the last one only, exactly as in the untied
             # stack.
-            blk = self.encoder.layers[0]
-            for _ in range(self.n_iters):
+            # t % n_blocks, so k=1 is the single shared block applied n_iters
+            # times (byte-identical to before this field existed) and k>1
+            # cycles 0,1,...,k-1 for n_iters/k full turns.
+            for t in range(self.n_iters):
+                blk = self.encoder.layers[t % self.n_blocks]
                 h = blk(h, src_mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
             if self.encoder.norm is not None:
                 h = self.encoder.norm(h)
@@ -145,8 +181,20 @@ class SATReasoningTransformer(nn.Module):
 
 
 def is_tied(model):
-    """True when the network is ONE block applied n_iters times."""
+    """True when the network SHARES blocks across applications.
+
+    k distinct blocks cycled n_iters/k times is still tied in the only sense
+    this predicate is used for: len(encoder.layers) is not the depth, and
+    forward() applies blocks more than once each.
+    """
     return bool(getattr(model, "tied", False))
+
+
+def n_blocks(model):
+    """How many DISTINCT blocks the stack holds (k). 1 for the shared-block
+    cell, num_layers for an untied stack, k in between."""
+    n = getattr(model, "n_blocks", None)
+    return int(n) if n else len(model.encoder.layers)
 
 
 def model_depth(model):
@@ -175,7 +223,8 @@ def applied_blocks(model):
     as depth 1 and returns one map where the caller expects n.
     """
     if is_tied(model):
-        return [model.encoder.layers[0]] * model_depth(model)
+        k = n_blocks(model)
+        return [model.encoder.layers[t % k] for t in range(model_depth(model))]
     return list(model.encoder.layers)
 
 
@@ -216,10 +265,13 @@ class ApplicationHooks:
                 i, self._calls = self._calls, self._calls + 1
                 return self.fn(i, out)
 
-            self._handles = [
-                model.register_forward_pre_hook(_reset),
-                model.encoder.layers[0].register_forward_hook(_dispatch),
-            ]
+            # One counter, a hook on EVERY distinct block: with k > 1 the
+            # applications still fire in order 0,1,...,k-1,0,..., so a single
+            # shared counter is the application index whichever block fired,
+            # and hooking only layers[0] would miss k-1 applications in k.
+            self._handles = [model.register_forward_pre_hook(_reset)]
+            self._handles += [blk.register_forward_hook(_dispatch)
+                              for blk in model.encoder.layers]
         else:
             def mk(i):
                 def hook(_m, _i, out):

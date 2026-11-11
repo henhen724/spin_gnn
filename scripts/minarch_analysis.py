@@ -181,8 +181,8 @@ EP_DEFAULT = 50
 
 
 def rung_key(r):
-    """(L, nhead, arch), + (d_model, ff, warmup) + (epochs) + (eval T), each when
-    non-default.
+    """(L, nhead, arch), + (d_model, ff, warmup) + (epochs) + ("kK") + (eval T),
+    each when non-default.
 
     `n_iters_eval` is the number of times the block was APPLIED at eval, which
     only a tied cell can vary (scripts/rho_transition_eval.py --n-iters). It is
@@ -191,12 +191,21 @@ def rung_key(r):
     curves would share one key and pool into a single cell -- six different
     models' bins averaged together, reported as one number, with nothing in the
     output saying so.
+
+    `n_blocks` (k) is the same hazard one axis over: a k=2 cell holds twice the
+    weights of the shared-block cell at identical (L, nhead, arch, d, ff), so
+    without it stage U's three rungs would pool into stage S's one. It is
+    appended as the STRING "k2", not as the integer 2, because the eval-T tail
+    is already a bare integer and `k=2 at the trained depth` would otherwise key
+    identically to `k=1 evaluated at T=2` -- two different models, one key, no
+    error anywhere.
     """
     base = (r["num_layers"], r["nhead"], r["arch_mode"])
     v = (int(r["d_model"]), int(r["dim_feedforward"]), int(r.get("warmup_epochs") or 0))
     ep = int(r.get("epochs") or EP_DEFAULT)
+    k = int(r.get("n_blocks") or 1)
     t = int(r.get("n_iters_eval") or r["num_layers"])
-    tail = (t,) if t != int(r["num_layers"]) else ()
+    tail = (("k%d" % k,) if k != 1 else ()) + ((t,) if t != int(r["num_layers"]) else ())
     if ep != EP_DEFAULT:
         return base + v + (ep,) + tail
     return (base if v == VARIANT_DEFAULT else base + v) + tail
@@ -225,9 +234,21 @@ def all_rungs(arch_depths=ARCH_DEPTHS):
 
 
 def load(scan_dir):
-    """Rows from every rho_curve CSV, one per (cell, rho) bin."""
+    """Rows from every rho_curve CSV, one per (cell, rho) bin.
+
+    The glob is `rho_curve_*.csv`, NOT `rho_curve_t*.csv`. Every stage through S
+    named its curves after the array task (`rho_curve_t03_<jobid>.csv`), so the
+    `t` was load-bearing by accident; stage T names them after the seed and the
+    evaluated T (`rho_curve_s0_T24_<jobid>.csv`) because one cell writes six
+    curves, and all 18 of its grids were therefore invisible to this loader --
+    the scorer printed "nothing on disk yet" with the whole stage on disk.
+    Widening it changes no existing number: every directory any scorer scans has
+    curves that all begin with `t` (checked dir by dir on 11-11), and the one
+    stray non-`t` file on scratch lives in sudoku_n48_rho_curves_2026-11-02,
+    which only the fall-scan deck reads and it reads it with its own glob.
+    """
     rows = []
-    for f in sorted(glob.glob(os.path.join(scan_dir, "rho_curve_t*.csv"))):
+    for f in sorted(glob.glob(os.path.join(scan_dir, "rho_curve_*.csv"))):
         with open(f) as fh:
             for r in csv.DictReader(fh):
                 for k in ("rho", "realized_rho", "solve_rate", "outcome_accuracy",
@@ -257,12 +278,22 @@ def load(scan_dir):
                     r["d_model"] = r.get("d_model") or cfg.get("d_model")
                     r["dim_feedforward"] = r.get("dim_feedforward") or cfg.get("dim_feedforward")
                 r["warmup_epochs"] = _config(r["path"]).get("warmup_epochs", 0) or 0
+                # k, the number of DISTINCT blocks a tied stack cycles through.
+                # A CSV column from 2026-11-11; before that, and for every
+                # untied cell, the checkpoint's config has no such key and it
+                # reads 1, which is what those cells are. Same treatment as
+                # warmup: read the config rather than defaulting, because a
+                # wrong 1 here pools a k=2 cell into the shared-block rung it
+                # exists to be compared against.
+                if not r.get("n_blocks"):
+                    r["n_blocks"] = _config(r["path"]).get("n_blocks", 1) or 1
                 # epochs is never a CSV column, so it always comes from the
                 # config, and an unreadable config reads as the default 50 --
                 # the same caveat the warmup line above carries, counted by the
                 # same control that counts cells with no readable config.
                 r["epochs"] = _config(r["path"]).get("epochs", 0) or EP_DEFAULT
-                for k in ("nhead", "d_model", "dim_feedforward", "warmup_epochs", "epochs"):
+                for k in ("nhead", "d_model", "dim_feedforward", "warmup_epochs",
+                          "epochs", "n_blocks"):
                     r[k] = int(r[k])
                 r["_scan"] = os.path.basename(scan_dir.rstrip("/"))
                 rows.append(r)

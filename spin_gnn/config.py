@@ -277,6 +277,15 @@ class SudokuReasoningModelConfig:
     # linear, with no error and a plausible number, so it is written into
     # config.json and read back by load_checkpoint.
     arch_mode: str = "full"
+    # k: how many DISTINCT blocks a tied stack cycles through, with each one
+    # applied num_layers/k times. 1 (the default) is the weight-tied cell every
+    # run before 2026-11-11 trained; num_layers would be the untied stack. Only
+    # defined for arch_mode="tied_no_mlp" -- SATReasoningTransformer raises
+    # otherwise rather than quietly ignoring it. Load-bearing at EVAL time the
+    # way arch_mode is: a reader that defaults it to 1 for a k=2 checkpoint
+    # builds half the blocks and load_state_dict fails -- loudly, which is the
+    # one mercy here, but it is still written into config.json and read back.
+    n_blocks: int = 1
 
 
 @dataclass

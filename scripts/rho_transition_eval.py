@@ -143,6 +143,13 @@ def main():
                 # row is otherwise indistinguishable from the trained-T row of
                 # the same checkpoint.
                 "n_iters_eval": model_depth(model), "n_iters_trained": trained_iters,
+                # k: distinct blocks in the cycle. Without it a k=2 curve keys
+                # as the shared-block rung at the same (L, d, ff, arch) and
+                # pools into it. Read off the CONFIG, not off
+                # len(encoder.layers), so an untied stack reads 1 rather than
+                # its depth -- rung_key only ever appends it when it is not 1,
+                # and "untied" is already said by arch_mode.
+                "n_blocks": int(config.get("n_blocks", 1) or 1),
                 "n_params": n_params,
                 "n_trainable_params": config.get("n_trainable_params", n_params),
                 "n_train_instances": config.get("n_train_instances"),
