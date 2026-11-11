@@ -77,9 +77,9 @@ if [ -n "$staged" ]; then
     done <<< "$PATHS"
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
         commit -q -F - <<'MSG'
-Stage S write-up: seven defects the PNG read-back found
+Stage S write-up: eight defects the PNG read-back found
 
-The deck rendered clean (19 pages, 185 KB, exit 0) and seven of its pages
+The deck rendered clean (19 pages, 185 KB, exit 0) and eight of its pages
 were wrong anyway. None of this is visible to a lint that counts words, and
 none of it raised: a deck is checked by LOOKING at every page.
 
@@ -99,6 +99,13 @@ none of it raised: a deck is checked by LOOKING at every page.
   p9   the J2 line struck its own annotation through. The offset was 0.0015
        of accuracy, under two pixels at that y range; it is 5 points now.
   p13  "tied d320" sat under its 11pt marker. dx 6 -> 12.
+  p14  the note quoted "the 30 discriminating cells in this fit" from S4's
+       registered run. This fit has 46 of 81, because the rho_curve_*.csv glob
+       fix made stage T's 18 grids visible and every off-schedule T entered the
+       held-out set as its own cell -- so the worst miss is 0.0729, not 0.0222.
+       The three tied d320 residuals are unchanged to the digit (+0.0165 /
+       -0.0034 / +0.0065), so the claim stands; the note is computed now, and
+       the renderer prints which cells miss, by rung tuple.
   p18  "What stage S does not show" is a LABEL -- it could head any stage's
        limitations page. Now "Stage S speaks only for N=48 at train depth
        16", which could not.

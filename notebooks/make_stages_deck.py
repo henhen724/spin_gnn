@@ -539,12 +539,21 @@ def main():
             note="S4, registered before the run. The reference curve is the depth "
                  "ladder's own isotonic fit; the tied cells were never in it.")
 
+        # The counts are COMPUTED, not quoted. S4's registered run saw 30
+        # discriminating held-out cells and a worst miss of 0.0222; this fit
+        # sees more of both, because the rho_curve_*.csv glob fix made stage T's
+        # 18 grids visible to the loader and every off-schedule T entered the
+        # held-out set as its own cell. The three tied d320 residuals are
+        # unchanged to the digit, so the claim is unaffected -- but a note that
+        # still said "30" would be quoting a population this page no longer draws.
+        disc = [r for r in resids if r["discriminating"]]
+        worst = max(abs(r["resid"]) for r in disc) if disc else float("nan")
         d.claim_page(
             "All three tied seeds sit inside the bar that defines on-curve",
             lambda ax: draw_resid(ax, tied320),
-            note="The bar %.4f is stage J's leave-one-out residual, frozen there. Worst "
-                 "miss among the 30 discriminating cells in this fit: see the next "
-                 "page." % LOO_BAR)
+            note="Bar %.4f is stage J's leave-one-out residual, frozen there. Of %d "
+                 "held-out cells %d discriminate; the worst misses by %.4f."
+                 % (LOO_BAR, len(resids), len(disc), worst))
 
         d.table_page(
             "The tied cells are DISCRIMINATING, so the fit could have rejected them",
@@ -598,6 +607,11 @@ def main():
           % (args.out, d._n))
     print("S4 fit: %d reference cells, %d held-out, %d discriminating"
           % (len(ref), len(resids), sum(r["discriminating"] for r in resids)))
+    # WHICH cells miss, by rung tuple and not by label: rung_label() reads a
+    # 7-tuple's tail as `epochs`, so an eval-T cell labels itself "ep24".
+    for r in sorted((r for r in resids if r["discriminating"]),
+                    key=lambda r: -abs(r["resid"]))[:3]:
+        print("  worst miss %+.4f  seed %d  rung %s" % (r["resid"], r["seed"], r["rung"]))
     for r in tied320:
         print("  tied d320 s%d  acc %.4f  pred %.4f  obs %.4f  resid %+.4f"
               % (r["seed"], r["acc"], r["pred"], r["mean_solve"], r["resid"]))
