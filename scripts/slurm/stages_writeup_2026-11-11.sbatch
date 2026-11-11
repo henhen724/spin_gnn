@@ -77,7 +77,41 @@ if [ -n "$staged" ]; then
     done <<< "$PATHS"
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
         commit -q -F - <<'MSG'
-Stage S write-up: eight defects the PNG read-back found
+Stage S write-up: two pages that were WRONG, not merely ugly
+
+The first read-back found eight layout defects on pages 1-9 and they are fixed
+(previous commit). Reading pages 11-19 back found two more, and neither is a
+layout problem -- both are pages that say something the project no longer
+believes, on a deck that renders clean either way.
+
+  p16  "The object to improve is the optimization, not the architecture."
+       Stage S cannot say that, and stage T (answered this morning, before
+       this deck ships) contradicts it: the shared block is not an iterable
+       operator, which is an architectural fact, and stage U is the
+       architectural cut now running. Replaced with the claim stage S does
+       support -- width does not close the 0.011, accuracy saturates at
+       0.4830 -> 0.4837.
+  p17  posed stage T's test as an open question ("if the block is an iterable
+       operator, T>16 should hold quality"). It is answered. A deck that still
+       asks reads as though the answer is pending. The page now states the
+       answer with its numbers: rho_50 bottoms at the trained count and rises
+       to 0.819 at T=24, and T1 fails at the easy end. The notebook's "what it
+       licenses next" section gets the same treatment in prose.
+
+Also corrected, in STATUS.md and LOG.md: stage T's T1 reading was written up
+as "solve_rate 0.0000 at T=24 in 2/3 seeds". The scorer printed per seed
+0.000 / 0.550 / 0.882 -- all three miss the 0.90 bar, ONE collapses to zero.
+The verdict is unchanged; the sentence was wrong.
+
+The three cross-stage numbers on p17 are frozen literals with their source
+named in a comment (job 51919538, array 51904636), which is how J2's 0.580 is
+already carried here and how stage S's 0.757 is carried in staget_score.py: a
+reference to another stage's registered reading is quoted, not recomputed by a
+second code path that could drift from the scorer.
+
+--- the first read-back, for the record ------------------------------------
+
+Eight defects the PNG read-back found
 
 The deck rendered clean (19 pages, 185 KB, exit 0) and eight of its pages
 were wrong anyway. None of this is visible to a lint that counts words, and

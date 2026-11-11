@@ -569,13 +569,22 @@ def main():
             ["Tied d320 %.4f acc -> %s rho_50; untied J2 %.4f -> 0.580"
              % (s1["acc_median"], rho_txt(s1["s"]), J2_ACC),
              "Both sit on one curve, so the gap is a LEVEL, not a relation",
-             "The object to improve is the optimization, not the architecture"])
+             "Width does not close it: accuracy saturates 0.4830 -> 0.4837"])
 
+        # This page POSED stage T's test -- "if the block is an iterable operator,
+        # T>16 should hold quality" -- and stage T answered it this morning, before
+        # this deck shipped. A deck that still asks an answered question reads as
+        # though the answer is pending, so the page states the answer instead.
+        # The three numbers are frozen literals read from the registered scorer's
+        # own output (scripts/staget_score.py, job 51919538, array 51904636),
+        # the same way J2's 0.580 is frozen here and stage S's 0.757 is frozen in
+        # staget_score.py: a cross-stage reference is quoted, with its source
+        # named, rather than recomputed by a second code path.
         d.points_page(
-            "A tied stack has one dial no untied stack has: applications",
+            "Stage T: the tied block is a 16-step schedule, not an operator",
             ["16 is the count it was trained with, not a structural property",
-             "If the block is an iterable operator, T>16 should hold quality",
-             "If depth 16 is a trained schedule, quality should peak at 16"])
+             "Frozen weights, T=4..24: rho_50 bottoms at 16, then rises to 0.819",
+             "T1 falsified: one seed's easy-bin solve_rate is 0.0000 at T=24"])
 
         # "What stage S does not show" was a LABEL: it could head any stage's
         # limitations page, which is the test the title rule applies. The scope

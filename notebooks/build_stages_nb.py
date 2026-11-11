@@ -293,7 +293,20 @@ shared block is an iterable deduction *operator*, quality should hold when it is
 applied more than 16 times on fixed weights; if depth 16 is a trained
 *schedule*, quality should peak at exactly 16 and fall on both sides. That is
 **stage T** (`scripts/staget_score.py`, registered before its cells ran), which
-needs no training at all."""),
+needs no training at all.
+
+**Stage T has since answered it, and the answer is the schedule one** (array
+`51904636`, scored by job `51919538`, read in the registered order T1 → level
+table → T0). The same frozen d320 weights applied `T ∈ {4,8,12,16,20,24}` give
+`rho_50` CENSORED / CENSORED / 0.769 / **0.757** / 0.763 / 0.819: the level
+bottoms at the trained count and `mean_solve` peaks there, `|T24 − T16|` is
+0.062 against a 0.01 bar, and T1 — the easy end, which cannot censor — fails,
+with all three seeds below the 0.90 bar at T=24 (0.000 / 0.550 / 0.882) and one
+seed collapsing outright. T1 outranks T0 by registration, so the shared block is
+read as one weight set tuned to a 16-step schedule rather than an operator that
+can be iterated. Stage S's result is unaffected — stage T trained nothing — but
+the "what it licenses next" above is no longer open: the cut it points to is
+**k distinct blocks cycled T/k times**, which is stage U."""),
 ]
 
 
