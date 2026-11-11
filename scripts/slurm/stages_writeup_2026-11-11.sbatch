@@ -27,7 +27,10 @@ set -u
 cd /home/users/hshunt/spin_gnn || exit 1
 
 module purge
-module load devel math python/3.12.1 py-pytorch/2.4.1_py312 py-numpy/1.26.3_py312 py-numba/0.60.0_py312 py-pandas/2.2.1_py312 py-scipy/1.12.0_py312
+# viz + py-matplotlib are NOT optional here: run 51905177 committed the builders,
+# then died 19 seconds later on `import matplotlib` and rendered nothing. A deck
+# job without the plotting module is a commit job with extra steps.
+module load devel math viz python/3.12.1 py-pytorch/2.4.1_py312 py-numpy/1.26.3_py312 py-numba/0.60.0_py312 py-pandas/2.2.1_py312 py-scipy/1.12.0_py312 py-matplotlib/3.8.3_py312
 export NUMBA_CACHE_DIR="${SCRATCH}/numba_cache"
 export PYTHONUNBUFFERED=1
 

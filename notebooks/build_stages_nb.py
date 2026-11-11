@@ -181,9 +181,23 @@ Two of three `d448` seeds diverged at epoch 0. Diagnostic job `51860479` traced
 that to **warmup**, not to the cell: the same cell with warmup trained. So
 `d448` carries one usable seed and cannot support a 3-seed reading, and every
 quoted number in this notebook is `d320`'s. The surviving `d448` seed is
-reported for what it is — a single seed, 0.0007 of token accuracy above `d320`'s
-median, which is why the conclusion drawn from it is only that accuracy has
-**saturated in width**."""),
+reported for what it is — a single seed, 0.0001 of token accuracy above `d320`'s
+median (0.4831 against 0.4830), which is why the conclusion drawn from it is
+only that accuracy has **saturated in width**.
+
+**This is why the scorer's printed `S0 FALSIFIED` is not this notebook's
+verdict.** S0 was registered on the `d448` arm — "3 of 3 cross and median
+`rho_50` ≤ 0.74 at a width above H1's censoring floor" — and the arm came back
+CENSORED with **escapes 1/3** and a median train NLL of 3.7874, i.e. the uniform
+predictor. The scorer's own precedence rule, printed directly above it, is that
+**S1 outranks S0: "a cell that never left the plateau says nothing about tying,
+only about training it."** Two `d448` seeds never left the plateau, so the
+censor they produce is an optimization failure and not a statement about
+sharing. The scorer has no branch for a cell that fails to *train* — a fourth
+outcome beside pass, censor and past-the-line — so it applied the censor branch
+and printed a conclusion its own premise ("with the plateau escaped") does not
+support. The reading that survives is `d320`'s: **3/3 crossing, `rho_50` 0.757,
+0.017 past the free line.**"""),
 
 ("md", """## S4 — does tying change the accuracy-to-solve *relation*?
 

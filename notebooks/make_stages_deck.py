@@ -59,6 +59,12 @@ from scripts.stages_score import (BASELINE_DIRS, P1, S1, S2, SCAN_S,
 J2 = (16, 4, "no_mlp", 192, 1024, 0)
 J2_ACC = 0.4940
 
+# q=4, so a uniform predictor scores 0.25 on validation tokens. A seed below
+# that did not learn a worse rule, it learned nothing: the two divergent d448
+# seeds sit at 0.0412 and 0.0308. Used only to keep them out of the width trend,
+# never to drop them from the page.
+CHANCE_ACC = 0.25
+
 CELLS = [(P1, "P1 tied d192"), (S1, "S1 tied d320"), (S2, "S2 tied d448"),
          (J2, "J2 untied d192")]
 
@@ -234,13 +240,31 @@ def draw_nll(ax, hists, labels):
 
 def draw_accuracy(ax, widths, accs, j2_acc):
     """Validation token accuracy against width, with the untied twin's level as
-    the thing width is trying to reach."""
+    the thing width is trying to reach.
+
+    A seed that never left epoch 0 is drawn, but it is not averaged into the
+    trend: two of the three d448 seeds are the UNIFORM PREDICTOR (0.0412,
+    0.0308, against chance 0.25), and a median taken over those says that width
+    destroys accuracy when what it records is a warmup divergence diagnostic
+    51860479 already traced off the cell. Both the points and the exclusion are
+    on the page; neither is a choice the reader has to take on trust.
+    """
     cols = series_colors(len(widths), highlight=1)
     for x, (_, a), col in zip(widths, accs, cols):
         for seed, v in a:
-            ax.plot([x], [v], "o", color=col, markersize=9)
-    ax.plot(widths, [median([v for _, v in a]) for _, a in accs], "-",
+            trained = v >= CHANCE_ACC
+            ax.plot([x], [v], "o", color=col if trained else MUTED,
+                    markersize=9, fillstyle="full" if trained else "none",
+                    markeredgecolor=col if trained else MUTED)
+    trend = [[v for _, v in a if v >= CHANCE_ACC] for _, a in accs]
+    ax.plot([x for x, t in zip(widths, trend) if t],
+            [median(t) for t in trend if t], "-",
             color=SERIES[0], linewidth=2, zorder=0)
+    n_div = sum(len(a) - len(t) for (_, a), t in zip(accs, trend))
+    if n_div:
+        ax.text(0.02, 0.06, "%d seed(s) diverged at epoch 0 (open, excluded "
+                "from the line)" % n_div, transform=ax.transAxes, size=10,
+                color="0.3")
     ax.axhline(j2_acc, color="0.3", linestyle="--", linewidth=1.2)
     ax.text(widths[0], j2_acc + 0.0015, "untied twin J2  %.4f" % j2_acc,
             size=11, color="0.3")
@@ -430,8 +454,9 @@ def main():
             if D[S2] else "Width buys accuracy from d192 to d320, 0.011 short of J2",
             lambda ax: draw_accuracy(ax, [k[3] for k in TIED],
                                      [(k, D[k]["accs"]) for k in TIED], J2_ACC),
-            note="d448's single surviving seed is 0.0007 above d320's median. Accuracy "
-                 "has saturated in width, 0.011 below the untied twin."
+            note=("d448's one trained seed is %+.4f against d320's median; its "
+                  "other two never left epoch 0. Width has stopped buying accuracy."
+                  % (max(v for _, v in D[S2]["accs"]) - D[S1]["acc_median"]))
                  if D[S2] else
                  "d448 has not landed; on d192 to d320 alone, width is still buying "
                  "accuracy and the saturation claim is not yet made.")
@@ -442,6 +467,18 @@ def main():
              "So d448 carries %s and cannot support a 3-seed reading"
              % ("one seed" if D[S2] else "no scored seed yet"),
              "d320 is quoted throughout because d320 trained 3 of 3"])
+
+        # The registered scorer calls S0 FALSIFIED off the d448 censor. Its own
+        # precedence rule, printed one section above that verdict, says a cell
+        # that never left the plateau says nothing about tying -- and two d448
+        # seeds never left it. The verdict is printed in the notebook; this page
+        # is why the deck does not adopt it.
+        d.points_page(
+            "The scorer printed S0 FALSIFIED; its own precedence rule outranks it",
+            ["S0 was registered on d448, which came back censored with escapes 1/3",
+             "S1 outranks S0: a cell that never left the plateau says nothing about tying",
+             "Failing to train is a fourth outcome the scorer has no branch for",
+             "d320's reading stands: 3/3 crossing, rho_50 0.757, 0.017 past the line"])
 
         d.claim_page(
             "The tied cell lands 0.017 past the free line, not on it",
