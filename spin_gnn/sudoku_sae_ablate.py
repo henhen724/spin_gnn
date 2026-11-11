@@ -59,6 +59,7 @@ import numpy as np
 import torch
 
 from .config import SudokuReasoningConfig
+from .sat_transformer2 import ApplicationHooks, model_depth
 from .sudoku_circuits import collect_cases, reasoning_color_position
 from .sudoku_sae import SparseAutoencoder
 from .sudoku_tokens import encode_instance
@@ -201,20 +202,29 @@ def run_case(model, sae, mu, sigma, vocab, device, layer, adj, trace, case,
             with torch.no_grad():
                 logits = model(tok_t)
         else:
-            # SAE layer indices are OFF BY ONE from encoder block indices:
-            # sudoku_activations.ActCollector stores block i's output under
-            # index i+1, reserving 0 for the embedding. So the dictionary
-            # named "layer 8" was trained on encoder.layers[7]'s output, and
-            # hooking encoder.layers[8] applied it one block too late (and
-            # crashed outright at layer 12, which is layers[11]'s output).
+            # SAE layer indices are OFF BY ONE from block APPLICATION indices:
+            # sudoku_activations.ActCollector stores application i's output
+            # under index i+1, reserving 0 for the embedding. So the dictionary
+            # named "layer 8" was trained on application 7's output, and
+            # hooking index 8 applied it one block too late (and crashed
+            # outright at layer 12, which is application 11's output).
+            #
+            # And the index is the APPLICATION, not the module: on a tied cell
+            # model.encoder.layers[layer - 1] raises IndexError for every layer
+            # above 1, and layer 1 would have fired the SAE edit in all n_iters
+            # rounds rather than the single round its dictionary was trained
+            # at -- an all-layer intervention reported under one layer label.
             assert layer >= 1, "layer 0 is the embedding, not a block output"
-            h = model.encoder.layers[layer - 1].register_forward_hook(
-                _ablation_hook(sae, mu, sigma, pos, kill))
-            try:
+            depth = model_depth(model)
+            assert layer <= depth, "layer %d is past the model's depth %d" % (layer, depth)
+            edit = _ablation_hook(sae, mu, sigma, pos, kill)
+
+            def at_layer(i, out, _edit=edit, _want=layer - 1):
+                return _edit(None, None, out) if i == _want else None
+
+            with ApplicationHooks(model, at_layer):
                 with torch.no_grad():
                     logits = model(tok_t)
-            finally:
-                h.remove()
         ok, margin = _score(logits, pos, vocab, true_color)
         out[f"{name}_correct"] = ok
         out[f"{name}_margin"] = margin

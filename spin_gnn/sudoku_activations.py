@@ -30,6 +30,7 @@ token is the node id of a deduction.
 import numpy as np
 import torch
 
+from .sat_transformer2 import ApplicationHooks, model_depth
 from .sudoku_tokens import encode_instance
 
 
@@ -176,41 +177,50 @@ def dd_state_labels(adj, trace, vocab):
 
 
 class ResidualCapture:
-    """Forward hooks on every encoder block, plus the embedding input.
+    """Forward hooks on every block APPLICATION, plus the embedding input.
 
     Layer indexing: 0 = token+position embedding (no attention or MLP has
-    run), i >= 1 = output of block i-1. Index 0 is the control -- a probe
+    run), i >= 1 = output of application i-1. Index 0 is the control -- a probe
     that already succeeds there is reading the tokenization, not a learned
-    computation."""
+    computation.
+
+    The axis is the application index and not the position in encoder.layers,
+    which are the same thing only for an untied stack: on arch_mode
+    "tied_no_mlp" one module fires model_depth(model) times, and a
+    module-keyed hook would have returned a 2-layer stack (embedding plus the
+    LAST round, labelled layer 1) for a depth-16 network -- with every probe
+    sweep, every ablation site and every depth plot downstream reading that as
+    the real depth. See ApplicationHooks."""
 
     def __init__(self, model):
         self.model = model
         self._acts = {}
-        self._handles = []
+        self._hooks = None
 
     def __enter__(self):
-        def mk(i):
-            def hook(_mod, _inp, out):
-                self._acts[i] = out.detach()
-            return hook
+        def capture(i, out):
+            self._acts[i + 1] = out.detach()  # 0 is reserved for the embedding
 
-        for i, block in enumerate(self.model.encoder.layers):
-            self._handles.append(block.register_forward_hook(mk(i + 1)))
+        self._hooks = ApplicationHooks(self.model, capture)
+        self._hooks.__enter__()
         return self
 
     def __exit__(self, *exc):
-        for h in self._handles:
-            h.remove()
-        self._handles = []
+        self._hooks.__exit__(*exc)
+        self._hooks = None
         return False
 
     def run(self, tokens):
-        """tokens: (B, L) long tensor. Returns (n_layers + 1, B, L, d_model)."""
+        """tokens: (B, L) long tensor. Returns (depth + 1, B, L, d_model)."""
         self._acts = {}
         with torch.no_grad():
             emb = self.model.token_embed(tokens) + self.model.pos_embed[: tokens.shape[1]]
             self.model(tokens)
         self._acts[0] = emb.detach()
+        want = model_depth(self.model) + 1
+        assert len(self._acts) == want, (
+            "captured %d layers for a depth-%d model: the hook axis is not the "
+            "application axis" % (len(self._acts), model_depth(self.model)))
         return torch.stack([self._acts[i] for i in sorted(self._acts)], dim=0)
 
 

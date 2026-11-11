@@ -144,6 +144,101 @@ class SATReasoningTransformer(nn.Module):
         return self.readout(h)
 
 
+def is_tied(model):
+    """True when the network is ONE block applied n_iters times."""
+    return bool(getattr(model, "tied", False))
+
+
+def model_depth(model):
+    """How many times a block is APPLIED, which is the layer axis every
+    per-layer analysis indexes.
+
+    For an untied stack this is len(encoder.layers). For arch_mode
+    "tied_no_mlp" it is NOT: nn.TransformerEncoder holds a single copy and
+    forward() applies it n_iters times, so len(encoder.layers) is 1 where the
+    depth is 16. n_iters is set for every arch_mode, tied or not, so it is the
+    right field in both cases; the length is only a fallback for a checkpoint
+    predating the field.
+    """
+    n = getattr(model, "n_iters", None)
+    return int(n) if n else len(model.encoder.layers)
+
+
+def applied_blocks(model):
+    """The blocks in the order forward() applies them, one entry per
+    APPLICATION -- so a tied model yields the same module model_depth(model)
+    times.
+
+    Code that replicates forward by hand (to reach something the module API
+    does not expose, as sudoku_attention_distance does for attention weights)
+    must iterate this rather than encoder.layers, or it runs a depth-n network
+    as depth 1 and returns one map where the caller expects n.
+    """
+    if is_tied(model):
+        return [model.encoder.layers[0]] * model_depth(model)
+    return list(model.encoder.layers)
+
+
+class ApplicationHooks:
+    """Forward hooks keyed by a block's APPLICATION index, not by its index in
+    encoder.layers.
+
+    On an untied stack the two agree: block i fires exactly once, so its
+    position is also its round. On a tied block they do not, and a module-keyed
+    hook fails silently in both directions -- a capture keeps only the last
+    round, under key 0, and an intervention aimed at round k fires in every
+    round instead. Either one still returns a full-looking array, which is why
+    this is a class and not a comment.
+
+    fn(i, out) is called with the output of the i-th application (0-based).
+    Return None to leave the pass untouched (a capture), or a tensor to replace
+    that application's output (an intervention) -- torch's own forward-hook
+    contract, so fn can be written once for both cases.
+
+    Use as a context manager. The call counter is reset by a pre-hook on the
+    model, so one instance survives any number of model(...) calls; a block
+    invoked directly, outside model.forward, is not counted.
+    """
+
+    def __init__(self, model, fn):
+        self.model = model
+        self.fn = fn
+        self._handles = []
+        self._calls = 0
+
+    def __enter__(self):
+        model = self.model
+        if is_tied(model):
+            def _reset(_m, _i):
+                self._calls = 0
+
+            def _dispatch(_m, _i, out):
+                i, self._calls = self._calls, self._calls + 1
+                return self.fn(i, out)
+
+            self._handles = [
+                model.register_forward_pre_hook(_reset),
+                model.encoder.layers[0].register_forward_hook(_dispatch),
+            ]
+        else:
+            def mk(i):
+                def hook(_m, _i, out):
+                    return self.fn(i, out)
+                return hook
+
+            self._handles = [
+                blk.register_forward_hook(mk(i))
+                for i, blk in enumerate(model.encoder.layers)
+            ]
+        return self
+
+    def __exit__(self, *exc):
+        for h in self._handles:
+            h.remove()
+        self._handles = []
+        return False
+
+
 def sat2_nll_loss(logits, target, valid_mask):
     """logits: (B, L, V). target: (B, L) long token ids. valid_mask: (B, L)
     bool. Standard token-level cross-entropy over valid positions."""

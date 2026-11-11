@@ -24,6 +24,7 @@ and STATUS Open problems). Plain asserts, run with
     python3 tests/test_arch_modes.py
 """
 import os
+import re
 import sys
 import tempfile
 
@@ -38,6 +39,9 @@ from spin_gnn.sudoku_tokens import Vocab  # noqa: E402
 from spin_gnn.train_sudoku_transformer import load_checkpoint, save_checkpoint  # noqa: E402
 
 D_MODEL, N_LAYERS, N_HEAD, FF, MAX_LEN, VOCAB = 16, 3, 2, 32, 24, 29
+
+# encoder.layers.1 and up: the blocks a tied stack does not have.
+_HIGHER_BLOCK = re.compile(r"encoder\.layers\.[1-9]")
 
 
 def build(mode, seed=0):
@@ -64,9 +68,24 @@ def test_same_initialization_across_modes():
     ref = build("full").state_dict()
     for mode in ARCH_MODES:
         sd = build(mode).state_dict()
-        assert set(sd) == set(ref), f"{mode} changed the state_dict keys"
+        if mode == "tied_no_mlp":
+            # A tied stack holds ONE block for a depth of N_LAYERS, so its key
+            # set is full's with blocks 1.. removed; it cannot equal full's.
+            # This test predates the mode and had been failing on that alone --
+            # not on anything wrong in the model, and not loudly either, since
+            # the file is one of the ten that `import pytest` at module level
+            # and so had never been collected on this machine.
+            #
+            # What the test is FOR still has to hold, and is what gets asserted
+            # instead: the shared block is the same draw as full's block 0, so
+            # a tied cell differs from its untied twin by sharing weights and
+            # by nothing else.
+            assert set(sd) == {k for k in ref if not _HIGHER_BLOCK.match(k)}, (
+                "a tied stack must drop the higher blocks and nothing else")
+        else:
+            assert set(sd) == set(ref), f"{mode} changed the state_dict keys"
         for k, v in sd.items():
-            if mode == "no_mlp" and "linear2" in k:
+            if mode in ("no_mlp", "tied_no_mlp") and "linear2" in k:
                 continue  # deliberately zeroed, checked in its own test
             assert torch.equal(v, ref[k]), f"{mode} initializes {k} differently from full"
 

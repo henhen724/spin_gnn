@@ -40,6 +40,8 @@ that node's neighbors and their colors).
 import numpy as np
 import torch
 
+from .sat_transformer2 import applied_blocks
+
 
 def solve_with_dd_provenance(adj, colors, hints, n_colors):
     """Same algorithm/return shape as sudoku_trace.solve_with_dd_trace, plus:
@@ -176,17 +178,23 @@ def forward_capture_attention(model, x):
     fast path, which never exposes attention weights), so each layer's
     self_attn is called directly with need_weights=True.
 
-    Returns (logits, attn_maps): attn_maps is a list of length num_layers,
-    each a (num_heads, L, L) tensor (batch dim squeezed, since x has batch
-    size 1): attn_maps[layer][head, i, j] = how much query position i
-    attends to key position j (0 for j > i, causal)."""
+    Returns (logits, attn_maps): attn_maps is a list of length
+    model_depth(model), each a (num_heads, L, L) tensor (batch dim squeezed,
+    since x has batch size 1): attn_maps[layer][head, i, j] = how much query
+    position i attends to key position j (0 for j > i, causal).
+
+    The loop is over applied_blocks, one entry per APPLICATION, because this
+    function replicates forward() rather than calling it: a tied cell holds one
+    module in encoder.layers and applies it n_iters times, so iterating
+    encoder.layers would have returned ONE map and logits from a depth-1
+    network -- a different model than the checkpoint, scored silently."""
     assert x.shape[0] == 1, "one instance at a time (batch dim squeezed in the returned attn maps)"
     l = x.shape[1]
     h = model.token_embed(x) + model.pos_embed[:l]
     causal_mask = torch.triu(torch.ones(l, l, dtype=torch.bool, device=x.device), diagonal=1)
     attn_maps = []
     with torch.no_grad():
-        for layer in model.encoder.layers:
+        for layer in applied_blocks(model):
             if model.norm_first:
                 sa_out, attn_w = _sa_block(layer, layer.norm1(h), causal_mask)
                 h = h + sa_out

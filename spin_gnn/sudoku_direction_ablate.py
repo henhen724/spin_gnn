@@ -46,6 +46,7 @@ between conditions:
 import numpy as np
 import torch
 
+from .sat_transformer2 import ApplicationHooks, model_depth
 from .sudoku_activations import collect_dataset
 from .sudoku_probes import auroc, average_precision, fit_linear_probe
 
@@ -96,45 +97,54 @@ def spectrum_fraction(w_raw, k):
 
 
 class SubspaceAblation:
-    """Project a per-layer subspace out of each block's output.
+    """Project a per-layer subspace out of each block APPLICATION's output.
 
     bases: {layer_index -> (k, d) orthonormal array}, with the SAME 1-based
-    indexing the probes use -- layer i is the output of encoder block i-1, and
+    indexing the probes use -- layer i is the output of application i-1, and
     layer 0 (the embedding) cannot be hooked here, so a key of 0 is rejected
     rather than silently ignored.
 
-    Entering with an empty dict is the `clean` condition and installs no
-    hooks, so the control path runs the identical code.
+    The axis is the application index, so a tied block is ablated at the round
+    the caller named and left alone in the others. Keying by module would have
+    put every requested layer's projection into EVERY round of a tied cell at
+    once (and silently dropped any key above 1), turning a per-layer ablation
+    into an all-layer one while the rho_50 curve downstream still carried a
+    layer label. Unlike a weight-space head ablation, which cannot be made
+    per-round on shared weights at all (sudoku_circuits._require_untied), this
+    one is an activation-space edit and the application index is exactly the
+    right hook.
+
+    Entering with an empty dict is the `clean` condition: the hook fires but
+    returns None at every application, so the control path runs the identical
+    code.
     """
 
     def __init__(self, model, bases, device="cpu"):
         self.model = model
-        n_layers = len(model.encoder.layers)
+        n_layers = model_depth(model)
         bad = [i for i in bases if not 1 <= i <= n_layers]
         if bad:
             raise ValueError(f"layer indices {bad} outside 1..{n_layers}; layer 0 is the "
                              f"embedding and is not a block output")
         self.bases = {i: torch.as_tensor(b, dtype=torch.float32, device=device)
                       for i, b in bases.items()}
-        self._handles = []
+        self._hooks = None
 
     def __enter__(self):
-        def mk(basis):
-            def hook(_mod, _inp, out):
-                # out: (B, T, d). Remove the component inside span(basis).
-                return out - (out @ basis.T) @ basis
-            return hook
-
-        for i, block in enumerate(self.model.encoder.layers):
+        def ablate(i, out):
             basis = self.bases.get(i + 1)
-            if basis is not None:
-                self._handles.append(block.register_forward_hook(mk(basis)))
+            if basis is None:
+                return None
+            # out: (B, T, d). Remove the component inside span(basis).
+            return out - (out @ basis.T) @ basis
+
+        self._hooks = ApplicationHooks(self.model, ablate)
+        self._hooks.__enter__()
         return self
 
     def __exit__(self, *exc):
-        for h in self._handles:
-            h.remove()
-        self._handles = []
+        self._hooks.__exit__(*exc)
+        self._hooks = None
         return False
 
 

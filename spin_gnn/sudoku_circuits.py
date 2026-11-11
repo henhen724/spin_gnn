@@ -55,6 +55,7 @@ import numpy as np
 import torch
 
 from .config import SudokuReasoningConfig
+from .sat_transformer2 import is_tied as _is_tied, model_depth as _depth
 from .sudoku_tokens import encode_instance
 from .train_sudoku_transformer import build_instances, load_checkpoint
 
@@ -148,25 +149,11 @@ def run_behavior(model, vocab, device, cases):
     return rows
 
 
-def _is_tied(model):
-    return bool(getattr(model, "tied", False))
-
-
-def _depth(model):
-    """How many times a block is APPLIED, which is the layer axis every
-    intervention here indexes.
-
-    For an untied stack that is len(encoder.layers). For arch_mode
-    "tied_no_mlp" it is NOT: nn.TransformerEncoder holds a single copy and
-    sat_transformer2.forward applies it model.n_iters times, so
-    len(encoder.layers) is 1 where the depth is 16. Reading the length would
-    have silently reduced every per-layer analysis on a tied checkpoint to its
-    first round. n_iters is set for every arch_mode, tied or not, so it is the
-    right field in both cases; the length is only a fallback for a model
-    predating the field.
-    """
-    n = getattr(model, "n_iters", None)
-    return int(n) if n else len(model.encoder.layers)
+# _is_tied and _depth are imported from sat_transformer2, where the model sets
+# `tied` and `n_iters`. They were defined here first, for this module's own
+# fix, and four other analysis modules then had to be given the same rule --
+# which is how a second copy becomes a second chance to be wrong. One
+# definition now, next to the attributes it reads.
 
 
 def _require_untied(model, what):

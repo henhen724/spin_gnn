@@ -35,6 +35,7 @@ import torch
 
 from scripts.n96_fallscan_analysis import rho_50
 from scripts.rho_transition_eval import cfg_from_checkpoint
+from spin_gnn.sat_transformer2 import is_tied, model_depth
 from spin_gnn.sudoku_direction_ablate import (
     ABLATION_TARGETS, SubspaceAblation, build_bases, fit_probes_all_layers, raw_directions,
     readback, spectrum_fraction,
@@ -116,8 +117,11 @@ def main():
     model, vocab, config = load_checkpoint(args.checkpoint, device=device)
     sudoku_cfg = cfg_from_checkpoint(config)
     d_model = int(config["d_model"])
+    # model_depth, not len(encoder.layers): on a tied checkpoint the latter
+    # prints 1 for a depth-16 network, and this line is the first thing a
+    # reader checks the run against.
     print(f"checkpoint {os.path.basename(args.checkpoint)}  device {device}  "
-          f"d_model {d_model}  blocks {len(model.encoder.layers)}")
+          f"d_model {d_model}  depth {model_depth(model)}  tied {is_tied(model)}")
 
     t0 = time.time()
     packs, clean_metrics, test_inst, n_layers = fit_probes_all_layers(
