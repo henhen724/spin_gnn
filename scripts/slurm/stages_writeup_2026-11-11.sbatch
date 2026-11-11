@@ -77,27 +77,38 @@ if [ -n "$staged" ]; then
     done <<< "$PATHS"
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
         commit -q -F - <<'MSG'
-Stage S write-up: an unchanged path is not an ignored one
+Stage S write-up: seven defects the PNG read-back found
 
-Whatever of the three paths below has changed since HEAD is in this commit;
-the builders themselves went in as 41e49e4 and 33a01bd, from the two runs of
-this job that committed and then died in the renderer (51905177 on a missing
-matplotlib, 51919478 on a points page with four bullets where slides.py caps
-at three).
+The deck rendered clean (19 pages, 185 KB, exit 0) and seven of its pages
+were wrong anyway. None of this is visible to a lint that counts words, and
+none of it raised: a deck is checked by LOOKING at every page.
 
-That second death is what this fixes. The staging guard required every listed
-path to appear in `git diff --cached --name-only`, which is true of a path
-that CHANGED and false of a path that is merely identical to HEAD -- so run
-51922718 failed closed in 6 seconds on notebooks/build_stages_nb.py, a file
-that was already committed and correct. The guard's real target is an IGNORED
-path, where `git add` succeeds and stages nothing, and `git ls-files
---error-unmatch` is what tells the two apart.
+  p1   the subtitle ran off the right edge at "d192 -> d320 -> d448, ap".
+       _claim_text wraps a title; title_page's subtitle is one fig.text that
+       does not. Broken by hand into two lines, nothing cut.
+  p4   "... 1 further rounds", in notebooks/deck_tokenization.py, on every
+       instance that elides exactly one round.
+  p5   "untied d192" struck through "tied d320": the two curves end 0.04 of
+       solve rate apart and label_line writes at the curve's own end. New
+       declutter() converts one line of 11pt type into this axes' data units
+       and pushes the lower label down; draw_nll uses it too.
+  p8   "1.6646 / 1.6721 / 1.6681 0/3" -- table_page gives every column the
+       same 0.84/ncol, and at four columns that string overruns its share.
+       The plateau column is dropped: it was 1.64 in every row and is in the
+       note underneath.
+  p9   the J2 line struck its own annotation through. The offset was 0.0015
+       of accuracy, under two pixels at that y range; it is 5 points now.
+  p13  "tied d320" sat under its 11pt marker. dx 6 -> 12.
+  p18  "What stage S does not show" is a LABEL -- it could head any stage's
+       limitations page. Now "Stage S speaks only for N=48 at train depth
+       16", which could not.
 
 Both builders read every number through the registered scorer's own functions
 (scripts/stages_score.py, committed by register job 51846608 before the first
 cell trained) and share their figures: the notebook imports the deck's
 module-level draw_* functions rather than redrawing, so the two cannot
-disagree about what a curve looks like.
+disagree about what a curve looks like -- the five plot fixes above land in
+the notebook without the notebook being touched.
 MSG
     echo "commit rc=$?"
 else

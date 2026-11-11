@@ -199,11 +199,34 @@ def tied_cells(resids, key):
 # Module-level and taking a bare axes, so the results notebook calls exactly
 # what the deck calls.
 
+def declutter(ax, ys, min_pts=13.0):
+    """Right-hand label heights pushed apart to one line of clearance.
+
+    label_line writes at the curve's own end, which is the honest place for it
+    and the wrong place when two curves end together. The first render had
+    "untied d192" struck through "tied d320" on the rho page: both end within
+    0.04 of solve rate, which is less than one line of 11pt type. slides.py
+    does not de-collide, so the separation is enforced here and converted from
+    points into THIS axes' data units, so it holds whatever the y range is.
+    Call it after set_ylim: the conversion reads the transform as it stands.
+    """
+    inv = ax.transData.inverted()
+    px = min_pts * ax.figure.dpi / 72.0
+    gap = abs(inv.transform((0.0, px))[1] - inv.transform((0.0, 0.0))[1])
+    out = list(ys)
+    order = sorted(range(len(ys)), key=lambda i: -ys[i])
+    for above, i in zip(order, order[1:]):
+        if out[above] - out[i] < gap:
+            out[i] = out[above] - gap
+    return out
+
+
 def draw_curves(ax, by, keys, labels):
     """Solve rate against REALIZED rho. Realized, never requested: below an
     ensemble's rho_min the requested points all collapse onto the floor and a
     flat tail there is one point drawn many times."""
     cols = series_colors(len(keys))
+    ends = []
     for col, key, lbl in zip(cols, keys, labels):
         cs = cell_curves(by, key)
         for rho, solve, seed in cs:
@@ -211,12 +234,14 @@ def draw_curves(ax, by, keys, labels):
                     rasterized=True)
         if cs:
             rho, solve, _ = cs[-1]
-            label_line(ax, rho[-1], solve[-1], lbl, color=col)
+            ends.append((rho[-1], solve[-1], lbl, col))
     ax.axhline(0.5, color="0.3", linestyle="--", linewidth=1.2)
     ax.text(0.345, 0.52, "rho_50 crossing", size=11, color="0.3")
     ax.set_xlabel("realized hint density rho")
     ax.set_ylabel("solve rate")
     ax.set_ylim(-0.02, 1.02)
+    for (x, _, lbl, col), yy in zip(ends, declutter(ax, [e[1] for e in ends])):
+        label_line(ax, x, yy, lbl, color=col)
     style_axes(ax)
 
 
@@ -224,13 +249,16 @@ def draw_nll(ax, hists, labels):
     """Final-epoch train NLL is one number; the trajectory is what says whether
     a seed escaped the plateau or sat on it."""
     cols = series_colors(len(hists))
+    ends = []
     for col, hs, lbl in zip(cols, hists, labels):
         for seed, ep, nll, _ in hs:
             ax.plot(ep, nll, "-", color=col, linewidth=1.8, alpha=0.85,
                     rasterized=True)
         if hs:
             ep, nll = hs[-1][1], hs[-1][2]
-            label_line(ax, ep[-1], nll[-1], lbl, color=col)
+            ends.append((ep[-1], nll[-1], lbl, col))
+    for (x, _, lbl, col), yy in zip(ends, declutter(ax, [e[1] for e in ends])):
+        label_line(ax, x, yy, lbl, color=col)
     ax.axhline(PLATEAU, color="0.3", linestyle="--", linewidth=1.2)
     ax.text(2, PLATEAU + 0.012, "plateau %.2f" % PLATEAU, size=11, color="0.3")
     ax.set_xlabel("epoch")
@@ -266,8 +294,11 @@ def draw_accuracy(ax, widths, accs, j2_acc):
                 "from the line)" % n_div, transform=ax.transAxes, size=10,
                 color="0.3")
     ax.axhline(j2_acc, color="0.3", linestyle="--", linewidth=1.2)
-    ax.text(widths[0], j2_acc + 0.0015, "untied twin J2  %.4f" % j2_acc,
-            size=11, color="0.3")
+    # Offset in POINTS, not in accuracy: 0.0015 of accuracy is under two pixels
+    # on this y range, and the dashed line struck the text through.
+    ax.annotate("untied twin J2  %.4f" % j2_acc, xy=(widths[0], j2_acc),
+                xytext=(0, 5), textcoords="offset points", size=11,
+                color="0.3", va="bottom", ha="left")
     ax.set_xticks(widths)
     ax.set_xlabel("d_model (one shared block, applied 16 times)")
     ax.set_ylabel("validation token accuracy")
@@ -311,7 +342,9 @@ def draw_s4(ax, ref, fit, tied):
         ax.plot([r["acc"], r["acc"]], [r["pred"], r["mean_solve"]],
                 "-", color=SERIES[0], linewidth=1.2)
     r = tied[-1]
-    label_line(ax, r["acc"], r["mean_solve"], "tied d320", color=SERIES[0])
+    # dx past the marker's own radius: markersize 11 is 5.5pt of it, and
+    # label_line's default 6 left the "t" sitting under the dot.
+    label_line(ax, r["acc"], r["mean_solve"], "tied d320", color=SERIES[0], dx=12)
     ax.text(0.345, 0.52, "grey = the depth ladder, the reference curve",
             size=11, color="0.4")
     ax.set_xlabel("validation token accuracy")
@@ -399,8 +432,11 @@ def main():
 
         d.title_page(
             "One shared block does direct deduction, 0.011 less accurately",
+            # Broken by hand: _claim_text wraps a title, title_page's subtitle
+            # is one fig.text that does not, so the first render ran off the
+            # right edge at "d192 -> d320 -> d448, ap".
             subtitle="Stage P's censored tied cell, re-run at three widths with the "
-                     "sharing held fixed: d192 -> d320 -> d448, applied 16 times.")
+                     "sharing held fixed:\nd192 -> d320 -> d448, applied 16 times.")
 
         d.points_page(
             "Stage P could not tell a damaged algorithm from a small one",
@@ -440,11 +476,16 @@ def main():
             note="S1, read before any level: d192 sits on the plateau for all 50 epochs, "
                  "d320 escapes it in every seed.")
 
+        # Three columns, not four. table_page gives every column the same
+        # 0.84/ncol of the page, and at four columns "1.6646 / 1.6721 / 1.6681"
+        # is wider than its share: the first render printed it hard against the
+        # escapes cell, as "1.6681 0/3". The column dropped is the plateau,
+        # which was 1.64 in every row and is in the note underneath anyway.
         d.table_page(
             "Every d320 seed escapes the plateau; no d192 seed does",
-            ["cell", "final train NLL by seed", "escapes", "plateau"],
+            ["cell", "final train NLL by seed", "escapes"],
             [[D[k]["label"], " / ".join("%.4f" % v for v in D[k]["nll"]),
-              "%d/%d" % (D[k]["n_esc"], D[k]["s"]["n"]), "%.2f" % PLATEAU]
+              "%d/%d" % (D[k]["n_esc"], D[k]["s"]["n"])]
              for k in TIED],
             note="The plateau bar %.2f was frozen in stage C and is reused here, not "
                  "refrozen around this run." % PLATEAU)
@@ -527,8 +568,11 @@ def main():
              "If the block is an iterable operator, T>16 should hold quality",
              "If depth 16 is a trained schedule, quality should peak at 16"])
 
+        # "What stage S does not show" was a LABEL: it could head any stage's
+        # limitations page, which is the test the title rule applies. The scope
+        # is itself a finding, so it is stated as one.
         d.points_page(
-            "What stage S does not show",
+            "Stage S speaks only for N=48 at train depth 16",
             ["Only N=48: the N=96 bars are a different size and appear nowhere",
              "Only T=16 at train time; no tied cell was trained at another depth",
              "No counterfactual audit of the tied cell; Q/R ran on untied"])
