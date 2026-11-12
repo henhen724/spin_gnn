@@ -1,4 +1,4 @@
-# STATUS — spin_gnn, branch `sudoku-dd` (2026-11-12 05:15; S, T, U, V shipped, W running)
+# STATUS — spin_gnn, branch `sudoku-dd` (2026-11-12 07:30; S, T, U, V shipped, W running)
 
 **`FINDINGS.md` archives findings 1–54 in full** (grep it, never read it whole; it has lagged since stage K). **Findings 55–65 live in `LOG.md`** — search it, never read it in full — and in the decks. This file is the handoff and is deliberately short.
 
@@ -21,8 +21,10 @@
 
 ## Running
 
-- **STAGE W, array `52053221` tasks 0–2, `-p sganguli`, 1 GPU each, `--time=40:00:00`.** Started 04:30, epoch 2/100 at 05:12, 0 restarts — healthy. **Twice the training budget: 100 epochs at constant 1e-3, k=1, T=16, d320 `tied_no_mlp`, 613,818 trainable** — the arm V-f registered in advance, at the k that branch names. Scorer registered `beedf66` by `52053220` at 04:29, array `--dependency=afterok` on it. Score with `python3 -u -m scripts.stagew_score`, **W-a first** (final val acc ≥ **0.4841** in ≥2/3, the bar IMPORTED from `stagev_score`, not retyped).
-- **ETA ≈ 2026-11-13 04:00–10:00** at the current ~14 min/epoch. **Watch the rate:** the 40 h limit covers up to ~24 min/epoch, and stage S ran at ~25 min/epoch under contention, so a slowdown would wall-clock out around epoch 96.
+- **STAGE W, array `52053221` tasks 0–2, `-p sganguli`, 1 GPU each, `--time=40:00:00`.** Started 04:30, **epoch 17/100 at 07:15, 0 restarts — healthy**. **Twice the training budget: 100 epochs at constant 1e-3, k=1, T=16, d320 `tied_no_mlp`, 613,818 trainable** — the arm V-f registered in advance, at the k that branch names. Scorer registered `beedf66` by `52053220` at 04:29 (its own **dry check PASSED**, loaders exercised with no cells on disk), array `--dependency=afterok` on it. Score with `python3 -u -m scripts.stagew_score`, **W-a first** (final val acc ≥ **0.4841** in ≥2/3, the bar IMPORTED from `stagev_score`, not retyped).
+- **Rate measured, not projected: 9.6 / 9.6 / 10.2 min per epoch → 16–17 h, ETA ≈ 2026-11-12 20:30–22:00 (TONIGHT, not 11-13).** The 40 h limit covers up to 24 min/epoch, a **2.4× margin** — no wall-clock risk left to watch.
+- **Mid-run health, paired at epoch 16 against each seed's OWN 50-epoch control** (constant lr, so nothing before epoch 50 should differ): train NLL 1.5981 / 1.6156 / 1.6690 against the control's 1.5956 / 1.6087 / 1.6474, val acc 0.4819 / 0.4802 / 0.4576 against 0.4823 / 0.4823 / 0.4604. **Seed 2 is the laggard in the control too** and still finished acc 0.4833, `rho_50` 0.765 — its high NLL is that seed's trajectory, not a fault. Nothing to debug.
+- **Eval is the control's eval:** `rho_transition_eval.py:65` takes `shuffle_adj`/`fall` from the checkpoint's own config, and the training step asserts both True, so the 14-point × 400 grid is leak-free and directly comparable to S1's 0.757.
 - **Nothing else of mine is running.** Other sganguli jobs (e.g. `52053210`) belong to other sessions — don't touch.
 
 ## Open problems
@@ -37,7 +39,7 @@
 
 ## Next steps
 
-1. **Poll `52053221` sparingly** — ≥60 s apart, ≤10 per wait, and at this runtime 20–30 min or a dependency, not a loop. Check the epoch rate against the 40 h limit before anything else; three cells at ~14 min/epoch is fine, ~25 would not be.
+1. **`52053221` lands TONIGHT ~20:30–22:00.** The rate question is settled (9.6–10.2 min/epoch, 2.4× margin) — do not re-derive it. Poll sparingly if at all: ≥60 s apart, ≤10 per wait, 20–30 min intervals, never a loop.
 2. **When it lands: `sacct -j 52053221 -X`, then `python3 -u -m scripts.stagew_score`.** Read **W-a first** — if it misses in 2 of 3 the budget route is dead on the statistic that cannot censor, and no reading of `rho_50` rescues it. Then W-b gate, W-c within-run loss, W-d loss→accuracy with its stated confound, W-e the matched pair against S1 at 50 epochs, W-f what runs next.
 3. **Then stage W's deck replaces stage V's** in the same gated project (re-publishing keeps `sapling-yarrow-69`; stage V's pages stay in the slides repo's history). Builder template is `notebooks/make_stagev_web.py` — it re-derives nothing, calling the scorers' own loaders and asserting every published number in `check_claims()` before a page is written. **Read every page back as a PNG, twice:** across S, T, U and V the read-backs caught seventeen defects, **seven of them wrong *claims*** on decks that rendered clean (stage V alone: two false titles, and a figure drawing 0.763 under a title saying 0.769).
 4. Do **not** submit stage V tasks 3–5 (T=32). V-a is falsified and V-f names the budget, not more applications, as the next arm.
