@@ -257,7 +257,10 @@ def draw_solve_T(dbest, fbest):
             # at either end of the list: labelling xs[-1] stacked both labels on
             # the shallow end, on top of each other.
             j = max(range(len(xs)), key=lambda k: xs[k])
-            label_line(ax, xs[j], ys[j], name, color=SERIES[i])
+            # The unconstrained curve stops where the fall curve is still
+            # descending through, so lift its label off that line.
+            label_line(ax, xs[j], ys[j], name, color=SERIES[i],
+                       dy=12 if i == 0 else 0)
         ax.set_ylim(0.0, 1.05)
         style_axes(ax, "mean deduction rounds in the bin",
                    "fraction of puzzles solved")
