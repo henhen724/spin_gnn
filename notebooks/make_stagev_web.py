@@ -6,12 +6,16 @@ of 16, which costs ZERO parameters. Array 51962715 tasks 0-2, registered scorer
 scripts/stagev_score.py committed ca11c2b by job 51962711 BEFORE the first cell
 landed.
 
-THE RESULT THIS DECK HAS TO CARRY HONESTLY: the registered adjudicator V-a is
-FALSIFIED -- no seed reaches the accuracy the gate needs -- and the cell is
-WORSE than the control on the statistic that cannot censor as well as on the one
-that can. One seed stopped crossing 0.5 at any density on the grid. This is a
-negative, it was named as a possible outcome in writing before any cell landed,
-and the deck's last page leaves the standing minimum exactly where it was.
+THE RESULT THIS DECK HAS TO CARRY HONESTLY, and the shape of it matters: V-a is
+FALSIFIED 0/3, but NOT because the cell got worse. Two seeds land at 0.4833 and
+0.4834 against the control's 0.4830 -- unchanged -- and the registered bar needed
++0.0011. The third seed never trained: accuracy 0.4612, train NLL 1.6334, the
+easy end collapsed to 0.065, rho_50 censored. So the honest headline is "does not
+help, and destabilizes", not "makes it worse": the median rho_50 does move the
+wrong way, 0.757 -> 0.769, but one broken seed moved it, and the page titles say
+so. A title claiming every seed got worse would be false -- seed 2 is 0.757
+against its own control's 0.765 -- and an earlier draft of this builder said
+exactly that until the numbers were read back against it.
 
 NOTHING IS RE-DERIVED HERE. The rungs, the control, every level and every
 accuracy come from the scorer's own load_pooled / rung / summarize / acc_of; the
@@ -411,6 +415,20 @@ def main():
     easy16, easy24 = worst_easy(c16), worst_easy(c24)
     assert len(easy16) == len(ctrl) and len(easy24) == len(v1)
     n_easy = sum(1 for v in easy24.values() if v >= EASY_BAR)
+    assert 1 <= 3 - n_easy <= 2, (
+        "the easy-end page's title assumes a minority of seeds collapsed", n_easy)
+    # The per-seed table's claim: ONE seed carries the whole failure. Asserted as
+    # a conjunction, because the sentence says "every bar" -- and the same seed
+    # has to be the one the training-curve page points at, or the deck is telling
+    # two stories about two different seeds.
+    worst_seed = min(v1, key=lambda r: r["acc"])["seed"]
+    worst = [r for r in v1 if r["seed"] == worst_seed][0]
+    assert worst["acc"] < ACC_BAR, worst["acc"]
+    assert not worst["ok"], "the worst-accuracy seed is not the censored one"
+    assert easy24[worst_seed] < EASY_BAR, easy24[worst_seed]
+    assert worst_seed == high, (
+        "the worst-accuracy seed is not the one that missed the training floor",
+        worst_seed, high)
     grid, y16 = _median_curve(c16)
     g24, y24 = _median_curve(c24)
     assert len(grid) == len(g24) == 14, (len(grid), len(g24))
@@ -425,12 +443,17 @@ def main():
             "h4 tied_no_mlp k=1, 50 epochs, lr 1e-3 constant, seeds 0/1/2, 14 "
             "densities x 400 instances, --shuffle-adj --fall." % args.commit)
 
-    d = WebDeck(args.out,
-                "A longer trained schedule makes the shared block worse, not "
-                "better", "hshunt", "2026-11-12", prov)
+    # The honest headline, and it is NOT "a longer schedule is worse". Two of the
+    # three seeds land within 0.0004 of the control's accuracy -- they did not
+    # get worse, they just did not get BETTER, and the registered bar needed
+    # +0.0011. The third seed never trained. "Does not help, and destabilizes"
+    # is what those three numbers say; "makes it worse" would overclaim from a
+    # median that one broken seed moved.
+    TITLE = "A longer trained schedule does not help, and destabilizes training"
+    d = WebDeck(args.out, TITLE, "hshunt", "2026-11-12", prov)
 
     d.title_page(
-        "A longer trained schedule makes the shared block worse, not better",
+        TITLE,
         subtitle="One shared block trained at twenty-four applications instead "
                  "of sixteen, at identical parameter count. Three seeds, one "
                  "pooled grid of fourteen densities, no code change.")
@@ -491,14 +514,15 @@ def main():
              "rate at any density, so its rho_50 is only a bound.")
 
     d.table_page(
-        "Every T=24 seed is worse than the control it was matched against",
+        "The worst T=24 seed misses every bar: accuracy, level and easy end",
         ["arm", "seed", "rho_50", "mean solve", "token acc", "train NLL"],
         [[lbl, str(r["seed"]),
           "%.3f" % r["rho50"] if r["ok"] else ">%.3f" % r["rho50"],
           "%.4f" % r["mean_solve"], "%.4f" % r["acc"], "%.4f" % r["nll"]]
          for lbl, rows in (("T=16", ctrl), ("T=24", v1)) for r in rows],
-        note="Lower rho_50 is better. Same parameters, same data, same grid, "
-             "same optimizer: the application count is the only difference.")
+        note="Lower rho_50 is better. The other two T=24 seeds sit within %.4f "
+             "of the control's accuracy: unchanged, not improved."
+             % max(abs(r["acc"] - S1_ACC) for r in v1 if r["seed"] != worst_seed))
 
     d.claim_page(
         "%s of three seeds never reached the floor the rest found" % WORD[n_high],
@@ -509,14 +533,16 @@ def main():
                 " and ".join("%.4f" % r["nll"] for r in v1 if r["seed"] != high)))
 
     d.claim_page(
-        "At %d of %d densities the longer schedule solves fewer puzzles"
-        % (n_below, len(grid)),
+        "Mean solve rate fell from %.4f to %.4f across the grid"
+        % (S1_MEAN_SOLVE, vs["mean_solve"]),
         lambda ax: draw_solve(ax, c16, c24), "solve",
         note="Median over three seeds at each realized density, 400 instances "
-             "per bin. The loss is at both ends, not only the sparse one.")
+             "per bin. The T=24 curve is the lower one at %d of %d densities."
+             % (n_below, len(grid)))
 
     d.table_page(
-        "%s of three seeds hold the easy end above %.2f" % (WORD[n_easy], EASY_BAR),
+        "Training at the length fixes the easy end, except %s %s"
+        % (WORD[3 - n_easy].lower(), plural(3 - n_easy, "seed", "seeds")),
         ["arm", "worst easy-bin solve rate, per seed", "registered bar"],
         [["T=16 trained and run (control)",
           " / ".join("%.3f" % easy16[s] for s in sorted(easy16)),

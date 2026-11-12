@@ -65,13 +65,21 @@ git add notebooks/make_stagev_web.py scripts/slurm/stagev_deck_2026-11-12.sbatch
 git diff --cached --name-only | sed 's/^/  staged /'
 if ! git diff --cached --quiet; then
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
-        commit -q -m "Stage V's deck: a longer trained schedule makes the shared block worse
+        commit -q -m "Stage V's deck: a longer trained schedule does not help, and destabilizes
 
-The registered adjudicator V-a is falsified -- 0/3 seeds reach 0.4841, the bar
-stagev_score.py derived from S4's steepness before any cell landed -- and the
-cell is worse than the T=16 control on accuracy, which cannot censor, as well as
-on rho_50, which can: one seed never crossed 0.5 at any density on the grid. The
-seed spread went from 0.0010 to twenty-odd times that.
+V-a is falsified 0/3 against 0.4841, the bar stagev_score.py derived from S4's
+steepness before any cell landed. The shape of the failure is the finding: two
+seeds land at 0.4833 and 0.4834 against the control's 0.4830 -- unchanged, not
+worse -- while the third never trained (0.4612, train NLL 1.6334, easy end 0.065,
+rho_50 censored). The median rho_50 does move the wrong way, 0.757 -> 0.769, but
+one broken seed moved it, and the seed spread went from 0.0010 to 0.0222.
+
+The first render of this deck asserted its way out of two wrong titles: 'every
+T=24 seed is worse than its control' is false (seed 2 is 0.757 against 0.765),
+and the frozen-at-24 comparison tripped a guard because stage T reports a level
+as the median over CROSSING seeds (0.819) where summarize() is bound-aware
+(0.875). The pair page now draws one estimator everywhere and footnotes the
+other; the claim holds under both.
 
 The builder re-derives nothing. Rungs, levels and accuracies come from the
 scorer's own load_pooled / rung / summarize / acc_of; per-bin curves are
