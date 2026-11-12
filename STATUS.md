@@ -25,7 +25,8 @@
 - **Rate measured, not projected: 9.6 / 9.6 / 10.2 min per epoch → 16–17 h, ETA ≈ 2026-11-12 20:30–22:00 (TONIGHT, not 11-13).** The 40 h limit covers up to 24 min/epoch, a **2.4× margin** — no wall-clock risk left to watch.
 - **Mid-run health, paired at epoch 16 against each seed's OWN 50-epoch control** (constant lr, so nothing before epoch 50 should differ): train NLL 1.5981 / 1.6156 / 1.6690 against the control's 1.5956 / 1.6087 / 1.6474, val acc 0.4819 / 0.4802 / 0.4576 against 0.4823 / 0.4823 / 0.4604. **Seed 2 is the laggard in the control too** and still finished acc 0.4833, `rho_50` 0.765 — its high NLL is that seed's trajectory, not a fault. Nothing to debug.
 - **Eval is the control's eval:** `rho_transition_eval.py:65` takes `shuffle_adj`/`fall` from the checkpoint's own config, and the training step asserts both True, so the 14-point × 400 grid is leak-free and directly comparable to S1's 0.757.
-- **Nothing else of mine is running.** Other sganguli jobs (e.g. `52053210`) belong to other sessions — don't touch.
+- **STAGE W SCORING, job `52062829`, PENDING on `--dependency=afterok:52053221`** (`scripts/slurm/stagew_score_2026-11-12.sbatch`, 30 min, no GPU). Fires itself when all three cells land and writes `stagewScore_52062829.out` — **that file is the stage's scoring record**, produced whether or not a session is awake. Stage V had none and its scorer had to be re-run inside the deck job. If it never runs, a cell did not exit 0: read `sacct -j 52053221 -X` before anything else.
+- **Nothing else of mine is running.** Other sganguli jobs (e.g. `52053210`) belong to other sessions — don't touch. `ListAgents` 07:15: no peer session is on spin_gnn.
 
 ## Open problems
 
@@ -40,6 +41,6 @@
 ## Next steps
 
 1. **`52053221` lands TONIGHT ~20:30–22:00.** The rate question is settled (9.6–10.2 min/epoch, 2.4× margin) — do not re-derive it. Poll sparingly if at all: ≥60 s apart, ≤10 per wait, 20–30 min intervals, never a loop.
-2. **When it lands: `sacct -j 52053221 -X`, then `python3 -u -m scripts.stagew_score`.** Read **W-a first** — if it misses in 2 of 3 the budget route is dead on the statistic that cannot censor, and no reading of `rho_50` rescues it. Then W-b gate, W-c within-run loss, W-d loss→accuracy with its stated confound, W-e the matched pair against S1 at 50 epochs, W-f what runs next.
+2. **When it lands, `52062829` has already scored it — read `stagewScore_52062829.out`** rather than re-running the scorer (re-run only to re-derive something it did not print). Read **W-a first** — if it misses in 2 of 3 the budget route is dead on the statistic that cannot censor, and no reading of `rho_50` rescues it. Then W-b gate, W-c within-run loss, W-d loss→accuracy with its stated confound, W-e the matched pair against S1 at 50 epochs, W-f what runs next.
 3. **Then stage W's deck replaces stage V's** in the same gated project (re-publishing keeps `sapling-yarrow-69`; stage V's pages stay in the slides repo's history). Builder template is `notebooks/make_stagev_web.py` — it re-derives nothing, calling the scorers' own loaders and asserting every published number in `check_claims()` before a page is written. **Read every page back as a PNG, twice:** across S, T, U and V the read-backs caught seventeen defects, **seven of them wrong *claims*** on decks that rendered clean (stage V alone: two false titles, and a figure drawing 0.763 under a title saying 0.769).
 4. Do **not** submit stage V tasks 3–5 (T=32). V-a is falsified and V-f names the budget, not more applications, as the next arm.
