@@ -151,6 +151,23 @@ def sufficiency():
     return ref, fit, bar, res
 
 
+def ok_median(ms):
+    """Stage T's own level rule: the median over the CROSSING seeds only.
+
+    staget_score.py:216 reports a T as median([m["rho50"] for m in ok]) when a
+    majority crossed, which is NOT summarize()'s bound-aware median: with two
+    crossing seeds and one censored, stage T's rule averages the two (0.819) and
+    the bound-aware rule returns the worse of them (0.875). Both are honest; they
+    are different estimators, and a figure that mixed them across its own three
+    points would be the exact defect the read-backs exist to catch. This deck
+    draws the bound-aware number everywhere, because that is what stage V's
+    registered scorer reports, and reproduces stage T's rule only to CHECK that
+    the right cells were loaded.
+    """
+    ok = [m for m in ms if m["flag"] == "ok"]
+    return median([m["rho50"] for m in ok]) if len(ok) * 2 > len(ms) else float("nan")
+
+
 def worst_easy(by_seed):
     """Worst solve_rate in the easy bins, per seed -- V-c's statistic."""
     out = {}
@@ -161,7 +178,7 @@ def worst_easy(by_seed):
     return out
 
 
-def check_claims(ctrl, cs, v1, vs, fs, bar, res):
+def check_claims(ctrl, cs, v1, vs, froz, fs, bar, res):
     """Every sentence this deck publishes, asserted against the data first.
 
     A web deck is a URL: a stale number here keeps serving. If a grid is
@@ -203,14 +220,19 @@ def check_claims(ctrl, cs, v1, vs, fs, bar, res):
     # recomputed here and checked against stage T's published number.
     assert FROZEN24 != V1, FROZEN24
     assert fs, "stage T's frozen-at-24 curves are not on disk"
-    assert abs(fs["rho50"] - T24_RHO50) < 5e-4, (
-        "this build's frozen-at-24 median disagrees with stage T's",
-        fs["rho50"], T24_RHO50)
+    assert len(froz) == len(v1), (len(froz), len(v1))
+    # Loaded the right cells: stage T's OWN rule, applied to these rows,
+    # reproduces the number stage T published.
+    assert abs(ok_median(list(froz.values())) - T24_RHO50) < 5e-4, (
+        "stage T's crossing-seed median over these rows is not its published one",
+        ok_median(list(froz.values())), T24_RHO50)
     assert fs["n_cross"] == T24_CROSS, (fs["n_cross"], T24_CROSS)
     assert fs["trainable"] == vs["trainable"], (fs["trainable"], vs["trainable"])
-    assert vs["rho50"] < T24_RHO50, (
+    # And the page's claim holds under BOTH estimators, so the sentence does not
+    # depend on which one the reader has in mind.
+    assert vs["rho50"] < min(fs["rho50"], T24_RHO50), (
         "trained-at-24 did not beat frozen-at-24, which V-e predicted it would",
-        vs["rho50"], T24_RHO50)
+        vs["rho50"], fs["rho50"], T24_RHO50)
 
     # 6. the sufficiency bar is the registered one
     assert abs(bar - LOO_BAR) < 5e-4, (bar, LOO_BAR)
@@ -369,7 +391,7 @@ def main():
     froz = frozen24()
     fs = summarize(list(froz.values())) if froz else None
     ref, fit, bar, res = sufficiency()
-    spread_v = check_claims(ctrl, cs, v1, vs, fs, bar, res)
+    spread_v = check_claims(ctrl, cs, v1, vs, froz, fs, bar, res)
 
     arms = {16: ctrl, 24: v1}
     j2ms = rung(cells, J2)
@@ -509,9 +531,9 @@ def main():
     d.claim_page(
         "Trained at 24 beats frozen weights there, and still loses to 16",
         lambda ax: draw_pair(ax, cs, fs, vs), "pair",
-        note="Same architecture, same %s parameters, same 24 applications, same "
-             "grid. Only the trained-for schedule differs."
-             % format(vs["trainable"], ","))
+        note="All three medians bound-aware. Stage T published %.3f for the "
+             "middle point under its crossing-seed rule; 24-trained wins under "
+             "both." % T24_RHO50)
 
     d.claim_page(
         "%s of three seeds %s on the accuracy-to-solve curve"
@@ -593,9 +615,10 @@ def main():
     print("V-c: worst easy bin %s (bar %.2f at rho %.2f), control %s"
           % ("/".join("%.3f" % easy24[s] for s in sorted(easy24)), EASY_BAR,
              EASY_RHO, "/".join("%.3f" % easy16[s] for s in sorted(easy16))))
-    print("V-e: trained-24 %.3f (%d/3) vs frozen-24 %.3f (%d/3, stage T "
-          "published %.3f)" % (vs["rho50"], vs["n_cross"], fs["rho50"],
-                              fs["n_cross"], T24_RHO50))
+    print("V-e: trained-24 %.3f (%d/3) vs frozen-24 %.3f bound-aware / %.3f by "
+          "stage T's crossing-seed rule (%d/3, published %.3f)"
+          % (vs["rho50"], vs["n_cross"], fs["rho50"],
+             ok_median(list(froz.values())), fs["n_cross"], T24_RHO50))
     print("curves: control floor %.4f, T=24 %s, %d seed(s) above floor+0.03"
           % (ctrl_floor, "/".join("%.4f" % r["nll"] for r in v1), n_high))
     print("solve: T=24 below the control at %d of %d densities"
