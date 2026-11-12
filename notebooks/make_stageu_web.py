@@ -462,8 +462,8 @@ def main():
     d.claim_page(
         "The basin seeds track a plateau seed, then break away in steps",
         lambda ax: draw_curves(ax, recs), "curves",
-        note="They leave their siblings for good at epochs %s. Two plateau seeds "
-             "step as sharply, at %s; what differs is where it lands."
+        note="Leaving their siblings for good at epochs %s. Two plateau seeds "
+             "step as sharply (%s); where it lands differs."
              % (" and ".join(str(brk[key]) for key in sorted(brk)),
                 " and ".join(str(e) for _, e in steps)))
 
