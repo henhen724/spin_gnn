@@ -491,11 +491,22 @@ def main():
             "A fixed stack has to fit that into its layers somehow",
             "So sweep the depth with everything else held fixed"])
 
+    # "Score improves with depth" was false across the whole ladder: L=3 scores
+    # 0.757 against L=4's 0.763, both failing, and the next page's table shows
+    # it. threshold() only guards monotone pass/fail, so the score claim is
+    # narrowed to the passing rungs and asserted here.
+    _pass_by_L = sorted((r for r in depth_ladder(rungs) if r["free"]),
+                        key=lambda r: r["L"])
+    assert all(a["rho50"] > b["rho50"]
+               for a, b in zip(_pass_by_L, _pass_by_L[1:])), \
+        "rho_50 no longer falls with every added layer: %r" % [
+            (r["L"], r["rho50"]) for r in _pass_by_L]
     d.claim_page(
-        "Score improves with depth, and below %d layers nothing passes" % L_PASS,
+        "Every layer added above %d improves the score further" % L_PASS,
         draw_depth(rungs), "depth",
-        note="Standard blocks, width 256, three seeds each. Open triangles never "
-             "solved half the puzzles at any density, so they have no rho_50.")
+        note="Standard blocks, width 256, three seeds each. Below %d layers nothing "
+             "passes; open triangles never solved half the puzzles at any density."
+             % L_PASS)
 
     depth_rows = []
     for r in sorted(depth_ladder(rungs), key=lambda x: -x["L"]):

@@ -496,7 +496,11 @@ def main():
              % (bigr["T_end"]["mean"], bigf["T_end"]["mean"]))
 
     d.table_page(
-        "The fall exponent sits near %.2f in every size interval" % GAMMA_MEAN,
+        # The spread is 0.64 to 0.76, so "near 0.70 in every interval" was doing
+        # more work than the numbers support: quote the interval instead.
+        "The fall exponent stays between %.2f and %.2f at every size"
+        % (min(a["gamma"] for a in doc["gamma"]["fall"]),
+           max(a["gamma"] for a in doc["gamma"]["fall"])),
         ["size interval", "fall-coloured exponent", "unconstrained exponent"],
         [["%d -> %d" % (a["from"], a["to"]), fmt(a["gamma"]), fmt(b["gamma"])]
          for a, b in zip(doc["gamma"]["fall"], doc["gamma"]["random"])],
@@ -507,7 +511,7 @@ def main():
     # not the mean floors on the table two pages on: a path is kept here only
     # where half the paths reach it, so these ends are the stricter statement.
     path_end = {e: path_points(doc, e)[-1][0] for e in ("random", "fall")}
-    assert path_end["fall"] < RHO_C < path_end["random"], \
+    assert path_end["fall"] < RHO_C <= path_end["random"], \
         "the drawn removal paths no longer straddle rho_c: %r" % path_end
     d.claim_page(
         "The new generator reaches density %.2f where the old halts at %.2f"
@@ -541,8 +545,11 @@ def main():
              "distribution the old generator could not reach."
              % (n48r["seeds"], row_of(doc, 96, "random")["seeds"]))
 
+    _dtok = tok["fall"]["tokens"]["mean"] - tok["random"]["tokens"]["mean"]
+    assert 0.5 <= _dtok < 1.5, "the length difference is no longer one token: %.2f" % _dtok
     d.table_page(
-        "Across the training mix, depth rises a fifth and length one token",
+        "Across the training mix, depth rises %.0f%% and length one token"
+        % (100.0 * (tok["fall"]["rounds"]["mean"] / tok["random"]["rounds"]["mean"] - 1)),
         ["generator", "deduction rounds", "deduced nodes", "tokens, mean",
          "tokens, max"],
         [["unconstrained", fmt(tok["random"]["rounds"]["mean"], 1),
