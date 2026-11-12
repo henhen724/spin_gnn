@@ -272,13 +272,17 @@ def check_claims(rows, rungs, hub, j2, s1):
     assert sizes == {48}, "more than one puzzle size in the ladder: %s" % sizes
 
     # 1. The gate is the hub plus the frozen spread, and the hub reads 0.592.
-    assert abs(hub["rho50"] - HUB_RHO50) < 1e-9, \
+    #    HUB_RHO50 and FREE are both the REGISTERED THREE-DECIMAL PRINTS of
+    #    their quantities (the hub's across-seed median is 0.5918 and the gate
+    #    is 0.7402), so the tolerance here is half a unit in the last place of
+    #    what was written down, not machine epsilon.
+    assert abs(hub["rho50"] - HUB_RHO50) < 5e-4, \
         "the hub moved: %.4f vs the registered %.3f" % (hub["rho50"], HUB_RHO50)
     assert hub["trainable"] == HUB_TRAINABLE, "the hub's parameter count moved"
-    assert abs((HUB_RHO50 + S_STAR) - FREE) < 1e-9, "gate arithmetic broke"
+    assert abs((HUB_RHO50 + S_STAR) - FREE) < 5e-4, "gate arithmetic broke"
 
     # 2. J2 is the standing minimum: free, and no free rung is a simpler object.
-    assert j2["free"] and abs(j2["rho50"] - 0.580) < 1e-9, \
+    assert j2["free"] and abs(j2["rho50"] - 0.580) < 5e-4, \
         "J2 is no longer 0.580 / free: %s" % txt(j2)
     free = [r for r in rungs if r["free"]]
     assert all(r["arch"] in ("full", "no_mlp") for r in free), \
@@ -397,7 +401,8 @@ def main():
         ["quantity", "value", "what it is"],
         [["reference model", "%.3f" % HUB_RHO50, "6 standard blocks, width 256"],
          ["seed spread s*", "%.4f" % S_STAR, "largest gap between seeds, same architecture"],
-         ["**pass mark**", "**%.3f**" % FREE, "**reference + spread: still learns the task**"]],
+         ["**pass mark**", "**%.3f**" % FREE,
+          "**the two added, rounded: still learns the task**"]],
         note="Two identical models trained from different seeds differ by %.3f, so "
              "anything inside that of the reference counts as the same answer." % S_STAR)
 
