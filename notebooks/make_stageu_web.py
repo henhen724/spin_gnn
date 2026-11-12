@@ -165,11 +165,15 @@ def breakaway(recs, k, seed, gap=0.01):
     return e if e < len(diffs) else None
 
 
-def biggest_step(r, first=2):
+def biggest_step(r, first=5):
     """(drop, epoch) of the sharpest one-epoch fall in train NLL.
 
-    From epoch `first` on, because epoch 0 -> 1 is the initial collapse off the
-    uniform predictor in every cell and swamps everything after it.
+    From epoch `first` on, because the initial collapse off the uniform
+    predictor swamps everything after it -- and it does not finish at epoch 1.
+    With first=2 this returned epoch 2 for every plateau seed (a fall of about
+    0.055, the tail of that collapse), and the deck printed 'two plateau seeds
+    step as sharply (2 and 2)' while the figure showed their steps near epochs 8
+    and 23. By epoch 5 the collapse is over and what is left is a step.
     """
     nll = [e["train_nll"] for e in r["h"]]
     return max((nll[e - 1] - nll[e], e) for e in range(first, len(nll)))
