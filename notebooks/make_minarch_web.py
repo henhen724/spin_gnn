@@ -130,11 +130,20 @@ def ladder(boot=1):
         # "k2" or an epoch count can sit at index 3 on a short key). So the
         # shape block is only present when indices 3..5 are all ints.
         has_v = len(rung) > 5 and all(isinstance(rung[i], int) for i in (3, 4, 5))
+        tail = tuple(rung[6:]) if has_v else tuple(rung[3:])
         out.append({
             "rung": rung, "label": rung_label(*rung).strip(),
             "arch": rung[2], "L": rung[0], "nhead": rung[1],
             "d_model": rung[3] if has_v else 256,
             "ff": rung[4] if has_v else 1024,
+            "warmup": rung[5] if has_v else 0,
+            # A sweep page must show ONE row per setting of the axis it sweeps,
+            # and two rungs that differ only in warmup or epochs render as the
+            # same row with two different scores -- which is what the first
+            # render of this deck did, twice. Only canonical rungs (no warmup,
+            # no epoch or k or eval-T tail) go on the sweep pages; the others
+            # are still in the ladder, the escape figure and the gate counts.
+            "tail": tail, "canonical": not tail and (rung[5] if has_v else 0) == 0,
             "k": next((int(el[1:]) for el in rung
                        if isinstance(el, str) and el.startswith("k")), 1),
             "rho50": bm["rho50_bm"], "readable": bm["bm_readable"],
@@ -173,13 +182,45 @@ def num(n):
     return "{:,}".format(int(n))
 
 
+def depth_ladder(rungs, arch="full"):
+    """One rung per depth, at the standard width and four heads."""
+    return [r for r in rungs if r["arch"] == arch and r["nhead"] == 4
+            and r["d_model"] == 256 and r["ff"] == 1024 and r["canonical"]]
+
+
+def width_sweep(rungs, L, arch="no_mlp"):
+    """One rung per width, at a fixed depth."""
+    return [r for r in rungs if r["arch"] == arch and r["L"] == L
+            and r["ff"] == 1024 and r["nhead"] == 4 and r["canonical"]]
+
+
+def threshold(pts, axis):
+    """The lowest setting of `axis` that still clears the gate, and the highest
+    one below it that does not.
+
+    Every claim on a sweep page is of the form "X passes and the next one down
+    does not", so it has to be read off the data rather than typed, and the
+    sweep has to be MONOTONE in the axis for the sentence to be true at all. A
+    non-monotone sweep raises here instead of shipping a page whose own table
+    contradicts it.
+    """
+    xs = sorted(pts, key=lambda r: r[axis])
+    passing = [r for r in xs if r["free"]]
+    if not passing:
+        raise SystemExit("nothing clears the gate on the %s axis" % axis)
+    lo = min(r[axis] for r in passing)
+    if any(not r["free"] for r in xs if r[axis] > lo):
+        raise SystemExit("the %s sweep is not monotone: %s"
+                         % (axis, [(r[axis], r["free"]) for r in xs]))
+    below = [r for r in xs if r[axis] < lo]
+    return lo, (max(r[axis] for r in below) if below else None), passing, below
+
+
 # ---------------------------------------------------------------- figures
 
 def draw_depth(rungs):
     """The depth ladder at the standard block: rho_50 against layer count."""
-    pts = sorted([r for r in rungs if r["arch"] == "full" and r["nhead"] == 4
-                  and r["d_model"] == 256 and r["ff"] == 1024],
-                 key=lambda r: r["L"])
+    pts = sorted(depth_ladder(rungs), key=lambda r: r["L"])
     def go(ax):
         xs = [r["L"] for r in pts if r["readable"]]
         ys = [r["rho50"] for r in pts if r["readable"]]
@@ -200,8 +241,7 @@ def draw_width(rungs):
     series = [(16, "16 layers"), (12, "12 layers")]
     def go(ax):
         for i, (L, name) in enumerate(series):
-            pts = sorted([r for r in rungs if r["arch"] == "no_mlp" and r["L"] == L
-                          and r["ff"] == 1024], key=lambda r: r["d_model"])
+            pts = sorted(width_sweep(rungs, L), key=lambda r: r["d_model"])
             if not pts:
                 continue
             xs = [r["d_model"] for r in pts if r["readable"]]
@@ -337,6 +377,23 @@ def main():
             raise SystemExit("the %s rung is not on disk" % name)
     free, big_dead = check_claims(rows, rungs, hub, j2, s1)
 
+    # Every threshold sentence in the deck is read off the sweep it describes,
+    # and `threshold` refuses a sweep that is not monotone in its axis -- so a
+    # page cannot claim "X passes, the next one down does not" while its own
+    # table shows otherwise. That is the failure the first render shipped on
+    # three separate pages.
+    WIDE_L = (16, 12)
+    L_PASS, L_FAIL, _lp, _lb = threshold(depth_ladder(rungs), "L")
+    L_NOTRAIN = min(r["L"] for r in depth_ladder(rungs) if r["escapes"] > 0)
+    NM_PASS, _nmf, _np, _nb = threshold(depth_ladder(rungs, arch="no_mlp"), "L")
+    W_PASS, W_FAIL, _wp, _wb = threshold(width_sweep(rungs, WIDE_L[0]), "d_model")
+    W_PASS_12, _w12f, _w12p, _w12b = threshold(width_sweep(rungs, WIDE_L[1]), "d_model")
+    print("  depth: pass from L=%d, L=%d fails, no seed trains below L=%d"
+          % (L_PASS, L_FAIL, L_NOTRAIN))
+    print("  no_mlp passes from L=%d; width passes from %d at L=%d, %d at L=%d"
+          % (NM_PASS, W_PASS, WIDE_L[0], W_PASS_12, WIDE_L[1]))
+    S1_GAP = s1["rho50"] - FREE   # how far the shared block misses, never typed
+
     cells = [c for c in collect(ALL_DIRS) if c["acc"] == c["acc"]]
     ref = [c for c in cells if is_reference(c["rung"])]
     held = [c for c in cells if not is_reference(c["rung"])]
@@ -432,24 +489,22 @@ def main():
             "So sweep the depth with everything else held fixed"])
 
     d.claim_page(
-        "Six layers are enough; at two the model stops learning the task",
+        "Score improves with depth, and below %d layers nothing passes" % L_PASS,
         draw_depth(rungs), "depth",
         note="Standard blocks, width 256, three seeds each. Open triangles never "
              "solved half the puzzles at any density, so they have no rho_50.")
 
     depth_rows = []
-    for r in sorted([x for x in rungs if x["arch"] == "full" and x["nhead"] == 4
-                     and x["d_model"] == 256 and x["ff"] == 1024],
-                    key=lambda x: -x["L"]):
+    for r in sorted(depth_ladder(rungs), key=lambda x: -x["L"]):
         depth_rows.append([r["L"], num(r["trainable"]), txt(r),
                            r["crossing"], "%d/%d" % (r["escapes"], r["n_seeds"]),
                            "pass" if r["free"] else "fail"])
     d.table_page(
-        "Depth buys score smoothly, then falls off a cliff below four layers",
+        "%d layers pass the mark, %d and fewer do not" % (L_PASS, L_FAIL),
         ["layers", "trainable", "rho_50", "seeds crossing", "seeds trained", "gate"],
         depth_rows,
         note="'Seeds trained' counts seeds whose training loss left the 1.64 "
-             "plateau. At two layers and below, none did.")
+             "plateau. Below %d layers, no seed did." % L_NOTRAIN)
 
     # -- what is in a layer
     d.points_page(
@@ -472,15 +527,14 @@ def main():
         note="All at six layers, width 256. Frozen attention leaves 14,906 trainable "
              "weights and solves nothing at any density.")
 
-    nm = sorted([r for r in rungs if r["arch"] == "no_mlp" and r["d_model"] == 256
-                 and r["ff"] == 1024], key=lambda r: r["L"])
+    nm = sorted(depth_ladder(rungs, arch="no_mlp"), key=lambda r: r["L"])
     d.table_page(
-        "Deleting the MLP costs nothing once the stack is twelve layers deep",
+        "Without the MLP the stack needs %d layers, not %d" % (NM_PASS, L_PASS),
         ["layers", "trainable", "rho_50", "seeds crossing", "gate"],
         [[r["L"], num(r["trainable"]), txt(r), r["crossing"],
           "pass" if r["free"] else "fail"] for r in nm],
-        note="Attention-only stacks at width 256. The MLP is not doing something "
-             "attention cannot; it is buying depth cheaply.")
+        note="Attention-only stacks at width 256, three seeds each. Deleting the "
+             "MLP costs score, but the task survives it.")
 
     # -- width
     d.points_page(
@@ -490,14 +544,15 @@ def main():
             "Sweep width at 12 and 16 layers, three seeds each"])
 
     d.claim_page(
-        "Below width 192 the attention-only stack stops training entirely",
+        "At %d layers width %d passes and width %d does not" % (WIDE_L[0], W_PASS, W_FAIL),
         draw_width(rungs), "width",
-        note="Open triangles never crossed. The jump is not gradual: 192 passes at "
-             "both depths and 176 misses, at the same shape.")
+        note="Attention-only. At %d layers the pass point is width %d instead; open "
+             "triangles never crossed." % (WIDE_L[1], W_PASS_12))
 
     # -- heads and sharing
     head_rows = []
-    for r in sorted([x for x in rungs if x["nhead"] == 1], key=lambda x: x["L"]):
+    for r in sorted([x for x in rungs if x["nhead"] == 1 and x["canonical"]],
+                    key=lambda x: x["L"]):
         ctrl = find(rungs, rung=(r["L"], 4, "full"))
         head_rows.append([r["L"], num(r["trainable"]), txt(r), r["crossing"],
                           txt(ctrl) if ctrl else "--"])
@@ -516,7 +571,7 @@ def main():
 
     tie = [r for r in rungs if r["arch"] == "tied_no_mlp" and r["readable"]]
     d.table_page(
-        "One shared block does the task, 0.017 short of the pass mark",
+        "One shared block does the task, %.3f short of the mark" % S1_GAP,
         ["cell", "distinct blocks", "trainable", "rho_50", "seeds crossing"],
         [["attention-only, width %d, applied %d times" % (r["d_model"], r["L"]),
           r["k"], num(r["trainable"]), txt(r), r["crossing"]]
@@ -555,7 +610,7 @@ def main():
          ["trainable", num(hub["trainable"]), num(j2["trainable"]), num(s1["trainable"])],
          ["rho_50", txt(hub), txt(j2), txt(s1)],
          ["seeds crossing", hub["crossing"], j2["crossing"], s1["crossing"]],
-         ["gate at %.3f" % FREE, "pass", "pass", "fail by 0.017"]],
+         ["gate at %.3f" % FREE, "pass", "pass", "fail by %.3f" % S1_GAP]],
         note="Lower rho_50 is better and the standing minimum is also the better "
              "solver here, which is a coincidence the gate deliberately ignores.")
 
@@ -586,6 +641,14 @@ def main():
     for r in free:
         print("    free: %-44s %9s  rho_50 %s  %s"
               % (r["label"], num(r["trainable"]), txt(r), r["crossing"]))
+    print("\n  the whole ladder, as the pages read it:")
+    print("    %-44s %9s %6s %5s %5s %4s"
+          % ("rung", "trainable", "rho_50", "cross", "train", "gate"))
+    for r in rungs:
+        print("    %-44s %9s %6s %5s %5s %4s"
+              % (r["label"], num(r["trainable"]), txt(r), r["crossing"],
+                 "%d/%d" % (r["escapes"], r["n_seeds"]),
+                 "pass" if r["free"] else "fail"))
 
 
 if __name__ == "__main__":
