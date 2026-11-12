@@ -242,14 +242,18 @@ def draw_escapes(rungs):
     return go
 
 
-def draw_curve(cells, ref, held):
-    """Solve rate against token accuracy, with the reference's own fit."""
+def draw_curve(cells, ref, held, fit):
+    """Solve rate against token accuracy, with the reference's own fit.
+
+    `predict` returns (y, out_of_range, coverage) and is CLAMPED outside the
+    reference's accuracy range on purpose, so the drawn curve stops where the
+    standard blocks stop and does not extrapolate under the held-out points.
+    """
     xs = [c["acc"] for c in ref]
     ys = [c["mean_solve"] for c in ref]
-    fit = pava(xs, ys)
     grid = [min(xs) + i * (max(xs) - min(xs)) / 200.0 for i in range(201)]
     def go(ax):
-        ax.plot(grid, [predict(fit, x) for x in grid], color=MUTED, lw=2.0, zorder=2)
+        ax.plot(grid, [predict(fit, x)[0] for x in grid], color=MUTED, lw=2.0, zorder=2)
         ax.plot(xs, ys, marker="o", ms=7, lw=0, color=SERIES[0], zorder=3)
         ax.plot([c["acc"] for c in held], [c["mean_solve"] for c in held],
                 marker="s", ms=7, lw=0, color=SERIES[1], zorder=3)
@@ -336,8 +340,22 @@ def main():
     cells = [c for c in collect(ALL_DIRS) if c["acc"] == c["acc"]]
     ref = [c for c in cells if is_reference(c["rung"])]
     held = [c for c in cells if not is_reference(c["rung"])]
-    fit = pava([c["acc"] for c in ref], [c["mean_solve"] for c in ref])
-    resid = rms([c["mean_solve"] - predict(fit, c["acc"]) for c in held])
+    if len(ref) < 4:
+        raise SystemExit("only %d standard-block cells with a readable history" % len(ref))
+    fit = pava([(c["acc"], c["mean_solve"]) for c in ref])
+    # The bar is what a reference cell's OWN distance from the curve looks like:
+    # refit without it and predict it. Anything smaller than this is noise, so
+    # the held-out residual is only meaningful against it.
+    bar = rms([c["mean_solve"] - predict(
+        pava([(o["acc"], o["mean_solve"]) for j, o in enumerate(ref) if j != i]),
+        c["acc"])[0] for i, c in enumerate(ref)])
+    assert abs(bar - LOO_BAR) < 5e-4, \
+        "the leave-one-out bar moved: %.4f vs the registered %.4f" % (bar, LOO_BAR)
+    # Out-of-range cells are clamped, not scored: there is no reference cell at
+    # their accuracy to compare them against.
+    scored = [(c, predict(fit, c["acc"])) for c in held]
+    resid = rms([c["mean_solve"] - p for c, (p, oor, _cov) in scored if not oor])
+    n_scored = sum(1 for _c, (_p, oor, _cov) in scored if not oor)
 
     prov = ("%d rungs over %d scan directories, %d scored density curves, "
             "N=48 degree 5 four colours, 14 densities x 400 puzzles, "
@@ -522,9 +540,9 @@ def main():
 
     d.claim_page(
         "Almost every architecture lands on one accuracy-to-solve curve",
-        draw_curve(cells, ref, held), "curve",
-        note="Fit on standard blocks only, then everything else dropped onto it: "
-             "residual %.4f against a leave-one-out bar of %.4f." % (resid, LOO_BAR))
+        draw_curve(cells, ref, held, fit), "curve",
+        note="Fit on standard blocks alone, then %d other cells dropped onto it: "
+             "residual %.4f against a noise bar of %.4f." % (n_scored, resid, bar))
 
     # -- the answer
     d.table_page(

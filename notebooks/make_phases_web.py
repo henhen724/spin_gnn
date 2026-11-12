@@ -461,7 +461,7 @@ def main():
              "across intervals is what makes it a power law, not curvature.")
 
     d.claim_page(
-        "At N=48 the new generator reaches 0.33 where the old halts at 0.47",
+        "The new generator reaches density 0.33 where the old halts at 0.47",
         draw_path(doc), "path",
         note="Mean over %d removal paths per ensemble, plotted where at least half "
              "the paths reach that density." % doc["path"]["seeds"])
