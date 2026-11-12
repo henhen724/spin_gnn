@@ -257,36 +257,40 @@ def _arms_axis(ax, ylabel):
     style_axes(ax, "applications of the one shared block", ylabel)
 
 
-def _seed_dots(ax, arms, field, only_ok=False):
-    shown = None
+def _seed_dots(ax, arms, field, meds, only_ok=False):
+    """Seeds as dots, with the median bar the PAGE TITLE quotes.
+
+    `meds` is passed in rather than computed here. The first render drew the
+    median of the crossing seeds (0.763) under a title that said 0.769, because
+    rho_50's median is bound-aware and includes the censored seed's bound while
+    a median over the plotted dots cannot. A figure must draw the number its own
+    title names.
+    """
     for t, rows in arms.items():
-        vals = []
         for r in rows:
             ok = r["ok"] or not only_ok
             ax.plot([XS[t]], [r[field]], "o" if ok else "^", ms=8,
                     color=SERIES[0], mfc=SERIES[0] if ok else "white", mew=1.7,
                     zorder=4)
-            if ok:
-                vals.append(r[field])
-        if vals:
-            m = median(vals)
-            ax.plot([XS[t] - 0.17, XS[t] + 0.17], [m, m], "-", color=SERIES[1],
-                    lw=2.6, zorder=3)
-            if t == 24:
-                shown = m
-    if shown is not None:
-        label_line(ax, 1.33, shown, "median", color=SERIES[1])
+        ax.plot([XS[t] - 0.17, XS[t] + 0.17], [meds[t]] * 2, "-",
+                color=SERIES[1], lw=2.6, zorder=3)
+    label_line(ax, 1.33, meds[24], "median", color=SERIES[1])
 
 
-def draw_acc(ax, arms):
-    _seed_dots(ax, arms, "acc")
+def draw_acc(ax, arms, meds):
+    _seed_dots(ax, arms, "acc", meds)
     ax.axhline(ACC_BAR, ls="--", lw=1.2, color=MUTED, zorder=1)
-    label_line(ax, 1.6, ACC_BAR, "what the gate needs\n%.4f" % ACC_BAR, color=MUTED)
+    label_line(ax, 1.6, ACC_BAR, "gate needs\n%.4f" % ACC_BAR, color=MUTED)
+    # Explicit, because the one broken seed is far below the other five and
+    # matplotlib's autoscale put it exactly on the bottom spine.
+    vals = [r["acc"] for rows in arms.values() for r in rows] + [ACC_BAR]
+    pad = 0.12 * (max(vals) - min(vals))
+    ax.set_ylim(min(vals) - pad, max(vals) + pad)
     _arms_axis(ax, "validation token accuracy")
 
 
-def draw_level(ax, arms):
-    _seed_dots(ax, arms, "rho50", only_ok=True)
+def draw_level(ax, arms, meds):
+    _seed_dots(ax, arms, "rho50", meds, only_ok=True)
     for y, ls, txt in ((FREE, "--", "free line %.3f" % FREE),
                        (J2_RHO50, ":", "J2 %.3f" % J2_RHO50)):
         ax.axhline(y, ls=ls, lw=1.2, color=MUTED, zorder=1)
@@ -353,7 +357,9 @@ def draw_pair(ax, cs, fs, vs):
         ax.plot([i], [y], "o", ms=11, color=c, zorder=4)
         label_line(ax, i, y, "%.3f" % y, color=c, dy=14)
     ax.axhline(FREE, ls="--", lw=1.2, color=MUTED, zorder=1)
-    label_line(ax, 2.1, FREE, "free line %.3f" % FREE, color=MUTED)
+    # At the xlim edge, not inside it: at x=2.1 the dashed line ran through the
+    # text and read as a strikethrough.
+    label_line(ax, 2.45, FREE, "free line %.3f" % FREE, color=MUTED)
     ax.set_xticks([0, 1, 2])
     ax.set_xticklabels([p[0] for p in pts])
     ax.set_xlim(-0.4, 2.45)
@@ -376,7 +382,7 @@ def draw_fit(ax, ref, fit, bar, res):
         r = res[seed]
         ax.plot([r["acc"]], [r["solve"]], "o", ms=10, color=SERIES[0], zorder=5)
         label_line(ax, r["acc"], r["solve"], "seed %d  %+.4f" % (seed, r["res"]),
-                   color=SERIES[0], dy=(14, -16, 26)[i % 3])
+                   color=SERIES[0], dy=(-2, -20, 36)[i % 3])
     style_axes(ax, "validation token accuracy", "mean solve rate over the grid")
 
 
@@ -398,6 +404,11 @@ def main():
     spread_v = check_claims(ctrl, cs, v1, vs, froz, fs, bar, res)
 
     arms = {16: ctrl, 24: v1}
+    # The medians the figures draw are the ones the titles and tables quote:
+    # accuracy's over all three seeds, rho_50's bound-aware from the scorer.
+    acc_meds = {16: median([r["acc"] for r in ctrl]),
+                24: median([r["acc"] for r in v1])}
+    lvl_meds = {16: cs["rho50"], 24: vs["rho50"]}
     j2ms = rung(cells, J2)
     assert j2ms, "the standing minimum J2 is not on disk; the last page needs it"
     j2 = summarize(j2ms)
@@ -488,7 +499,7 @@ def main():
     # Accuracy first, as registered: it cannot censor, and here it adjudicates.
     d.claim_page(
         "%s of three seeds reach the accuracy the gate needs" % WORD[n_clear],
-        lambda ax: draw_acc(ax, arms), "acc",
+        lambda ax: draw_acc(ax, arms, acc_meds), "acc",
         note="Registered in advance: %.4f in at least two of three seeds, the "
              "control's %.4f plus the %.4f the gate needs."
              % (ACC_BAR, S1_ACC, NEED))
@@ -509,7 +520,7 @@ def main():
         "rho_50 rose from %s to %.3f and %s %s stopped crossing"
         % (S1_RHO50, vs["rho50"], WORD[n_stopped].lower(),
            plural(n_stopped, "seed", "seeds")),
-        lambda ax: draw_level(ax, arms), "level",
+        lambda ax: draw_level(ax, arms, lvl_meds), "level",
         note="Per seed, not pooled. The open triangle never reached a 0.5 solve "
              "rate at any density, so its rho_50 is only a bound.")
 
