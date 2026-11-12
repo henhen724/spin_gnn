@@ -8,7 +8,7 @@
 
 - **Unchanged by the new objective:** free line 0.740, `s*` 0.1484 / 0.2918, the 14-point grid (floor 0.33, 400/bin), plateau 1.64, LOO bar 0.0423, 3 seeds with the spread quoted, every seed must cross.
 - **Non-negotiables, every stage:** `--shuffle-adj`; 3 seeds, spread quoted; **validation token accuracy FIRST** (never censors); register the scorer before the first cell lands, array `--dependency=afterok` on it; **read every deck page back as a PNG, twice**; one knob at a time, each run in its own dated directory; decks carry example traces and the tokenization.
-- **Delivery is a password-gated WEB DECK, PDF ask-only** (`~/CLAUDE.md`): source in `~/slides/decks/<project>/`, published with `claude-slides-publish.sh`. **Stage U is live** at `https://slides-hshunt.pages.dev/spin-gnn/` (18 pages, commit `084409b`, published `b579821`); `bash ~/slides/tools/check-gate.sh spin-gnn` prints **gate holds** (figures 401 without the cookie, the test that matters). `~/slides` is shared with other sessions — the publisher stages only `decks/spin-gnn`, so never `git add -A` there.
+- **Delivery is a password-gated WEB DECK, PDF ask-only** (`~/CLAUDE.md`): source in `~/slides/decks/<project>/`, published with `claude-slides-publish.sh`. **Stage U is live** at `https://slides-hshunt.pages.dev/spin-gnn/` (18 pages, commit `e8d173e`, published `b579821`); `bash ~/slides/tools/check-gate.sh spin-gnn` prints **gate holds** (figures 401 without the cookie, the test that matters). `~/slides` is shared with other sessions — the publisher stages only `decks/spin-gnn`, so never `git add -A` there.
 
 ## Current best result
 
