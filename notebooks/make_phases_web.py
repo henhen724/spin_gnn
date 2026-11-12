@@ -351,17 +351,30 @@ def main():
     tok = doc["tokens"]
     d5 = [r for r in doc["degrees"] if r["degree"] == 5][0]
 
-    prov = ("Ensemble measurements: job 52042656, 2026-11-12, commit %s. Model "
+    # The job id is read off the measurement directory, not typed: this dump was
+    # rewritten by a second, higher-seed run (52042907) and a hand-typed id would
+    # still credit the first one.
+    outs = sorted(glob.glob(os.path.join(os.path.dirname(MEASURED), "measure_*.out")),
+                  key=os.path.getmtime)
+    mjob = os.path.basename(outs[-1])[len("measure_"):-len(".out")] if outs else "unknown"
+    prov = ("Ensemble measurements: job %s, 2026-11-12, commit %s. Model "
             "grids: 50760252 and 50760297, scored 2026-11-02, 400 instances per "
             "density bin, --shuffle-adj. N=48, degree 5, 4 colours."
-            % args.commit)
+            % (mjob, args.commit))
+    # Two numbers that appear in page titles, so they are computed, not typed:
+    # how far inclusion-exclusion misses the measured undeducible fraction at
+    # its worst degree, and the mean local exponent of the fall branch.
+    DEG_ERR = max(abs(r["random"]["mean"] - r["predicted"]) for r in doc["degrees"])
+    GAMMA_MEAN = (sum(g["gamma"] for g in doc["gamma"]["fall"])
+                  / len(doc["gamma"]["fall"]))
+    tdeep = n48f["T_end"]["mean"] / n48r["T_end"]["mean"]
+    headline = ("Harder puzzles raised reasoning depth %.1fx at the same token cost"
+                % tdeep)
 
-    d = WebDeck(args.out,
-                "Harder puzzles doubled the reasoning depth at the same token cost",
-                "hshunt", "2026-11-12", prov)
+    d = WebDeck(args.out, headline, "hshunt", "2026-11-12", prov)
 
     d.title_page(
-        "Harder puzzles doubled the reasoning depth at the same token cost",
+        headline,
         subtitle="Every instance this project trained on before 2026-11-02 was in "
                  "the easy phase of its own task, and could not have been anywhere "
                  "else. What changed when that was fixed.")
@@ -428,7 +441,7 @@ def main():
             "Their count is fixed by the degree and colour count alone"])
 
     d.table_page(
-        "Counting those nodes predicts the floor to three decimals",
+        "Counting those nodes predicts the undeducible fraction within %.3f" % DEG_ERR,
         ["degree", "predicted density", "measured, unconstrained",
          "measured, fall-coloured", "removal floor"],
         [[r["degree"], fmt(r["predicted"]), fmt(r["random"]["mean"]),
@@ -453,7 +466,7 @@ def main():
              % (bigr["T_end"]["mean"], bigf["T_end"]["mean"]))
 
     d.table_page(
-        "Two independent size intervals agree on the exponent",
+        "The fall exponent sits near %.2f in every size interval" % GAMMA_MEAN,
         ["size interval", "fall-coloured exponent", "unconstrained exponent"],
         [["%d -> %d" % (a["from"], a["to"]), fmt(a["gamma"]), fmt(b["gamma"])]
          for a, b in zip(doc["gamma"]["fall"], doc["gamma"]["random"])],
@@ -533,7 +546,7 @@ def main():
         if k in fcells:
             by_depth[L] = hist(fcells[k][0])
     d.claim_page(
-        "On the hard set, four layers never leave the plateau",
+        "At the matched budget, four layers never leave the plateau",
         draw_train(by_depth), "train",
         note="Training NLL at one matched budget, 240k puzzles by 50 epochs. Four "
              "layers end where they began; twelve are past it within three epochs.")
@@ -558,7 +571,8 @@ def main():
              "seed 0 throughout.")
 
     d.table_page(
-        "At matched parameters, 2.9x the width buys nothing without depth",
+        "At matched parameters, %dx the feedforward width buys nothing"
+        % (wide[1] // deep[1]),
         ["cell", "parameters", "solved at rho 0.94", "solved at rho 0.50",
          "solved at rho 0.33"],
         [["%d layers, feedforward %d" % (k[0], k[1]), "{:,}".format(int(fcells[k][0]["n_params"])),
@@ -567,13 +581,16 @@ def main():
                      if abs(float(r["realized_rho"]) - 0.50) < 0.01][0]["solve_rate"])),
           fmt(float(fcells[k][0]["solve_rate"]))]
          for k in (wide, deep)],
-        note="Both at 120k puzzles by 100 epochs, seed 0, within 0.15%% of the same "
-             "parameter count. Depth is doing the work.", highlight_row=1)
+        note="Both at 120k puzzles by 100 epochs, seed 0, within %.2f%% of the same "
+             "parameter count. Depth is doing the work."
+             % (100.0 * abs(int(fcells[wide][0]["n_params"])
+                            - int(fcells[deep][0]["n_params"]))
+                / int(fcells[deep][0]["n_params"])), highlight_row=1)
 
     d.points_page(
         "What this deck cannot say, stated plainly", [
             "The two grids are different task distributions, never differenced",
-            "One seed per cell on the hard grid; seed spread here is 0.16",
+            "One seed per cell on the hard grid; seed spread elsewhere is 0.15",
             "The deepest bins truncate 0.5% of traces, so they are lower bounds"])
 
     d.table_page(

@@ -24,7 +24,10 @@ THREE THINGS THIS DECK HAS TO SAY HONESTLY:
 
   1. rho_50 CENSORS. A cell that never solves half the puzzles at any density
      has no crossing, and prints as a bound, never as a number at the grid
-     edge. Fifteen of the rungs here are censored and the figures mark them.
+     edge. A third of the rungs here are censored; the figures mark them with
+     open triangles and the tables print the bound, and the count is printed
+     at the end of a render rather than written down here, where it would
+     drift the next time a stage lands.
   2. TRAINABILITY IS NOT CAPACITY. A rung whose three seeds never left finding
      44's 1.64 training plateau did not train at this budget; it is not a proof
      that the architecture cannot represent deduction. The deck uses that
