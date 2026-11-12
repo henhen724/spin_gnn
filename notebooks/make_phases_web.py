@@ -484,12 +484,12 @@ def main():
           "%.4f +- %.4f" % (r["rho_min"]["mean"], r["rho_min"]["sd"]),
           "%.1f +- %.1f" % (r["T_end"]["mean"], r["T_end"]["sd"])]
          for r in (n48r, n48f, row_of(doc, 96, "random"), row_of(doc, 96, "fall"))],
-        note="%d and %d greedy paths per row. This is the hard end of the training "
-             "distribution, which is the end the old generator could not reach."
+        note="%d and %d greedy paths per row, at the hard end of the training "
+             "distribution the old generator could not reach."
              % (n48r["seeds"], row_of(doc, 96, "random")["seeds"]))
 
     d.table_page(
-        "Across the whole training mix, depth rises a fifth and length one token",
+        "Across the training mix, depth rises a fifth and length one token",
         ["generator", "deduction rounds", "deduced nodes", "tokens, mean",
          "tokens, max"],
         [["unconstrained", fmt(tok["random"]["rounds"]["mean"], 1),
@@ -510,13 +510,13 @@ def main():
 
     # -- the model side
     d.points_page(
-        "What the harder training set does to a trained model, in two parts", [
+        "What the harder training set does to a trained model", [
             "Performance: can it still solve puzzles below the old floor",
             "Training: does the same architecture still learn the task",
             "Both read off grids of 14 densities by 400 puzzles"])
 
     d.claim_page(
-        "A model trained on the hard set keeps solving past the old floor",
+        "A model trained on the hard set solves past the old floor",
         draw_solve_rho(dbest, fbest), "solve_rho",
         note="Best cell of each grid, %d layers. The old grid simply stops at "
              "0.47: those puzzles cannot be generated." % dkey[0])
@@ -554,8 +554,8 @@ def main():
         "Depth, not budget, decides whether the hard end is reached at all",
         ["layers", "budget", "final train NLL", "solved at rho 0.94",
          "solved at rho 0.33"], rows,
-        note="Equal token budgets: 30k x 400 epochs = 120k x 100 = 240k x 50. Seed 0 "
-             "throughout. Only the deepest cell carries the hard end.")
+        note="Equal token budgets: 30k x 400 epochs = 120k x 100 = 240k x 50, "
+             "seed 0 throughout.")
 
     d.table_page(
         "At matched parameters, 2.9x the width buys nothing without depth",
@@ -577,7 +577,7 @@ def main():
             "The deepest bins truncate 0.5% of traces, so they are lower bounds"])
 
     d.table_page(
-        "Against the previous best, the hard end is new ground, not an improvement",
+        "Against the previous best, the hard end is new ground",
         ["quantity", "previous best, unconstrained", "best on the fall-coloured set"],
         [["architecture", "%d layers, 240k x 100 epochs" % dkey[0],
           "%d layers, 240k x 50 epochs" % fkey[0]],

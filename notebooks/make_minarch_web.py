@@ -403,7 +403,7 @@ def main():
             "Count the parts instead: operations per layer, weights shared"])
 
     d.points_page(
-        "So every test here removes one part and asks if the task survives", [
+        "Every test removes one part and asks if the task survives", [
             "Fewer layers, no MLP, frozen weights, one head, one shared block",
             "One knob per experiment, three seeds, same budget throughout",
             "The question each time is pass or fail, not better or worse"])
@@ -453,7 +453,7 @@ def main():
 
     # -- what is in a layer
     d.points_page(
-        "Second test: a layer has two halves, and one of them may be dead weight", [
+        "Second test: is the MLP inside each layer dead weight?", [
             "Attention mixes information between nodes along the graph",
             "A two-layer MLP then transforms each position on its own",
             "The MLP holds most of the parameters, so try deleting it"])
@@ -522,7 +522,7 @@ def main():
           r["k"], num(r["trainable"]), txt(r), r["crossing"]]
          for r in sorted(tie, key=lambda r: r["trainable"])],
         note="Smallest object on the ladder by a factor of four, and it misses by "
-             "less than a seed spread. Three stages have tried to close the gap.")
+             "less than one seed spread.")
 
     # -- trainability
     d.points_page(
