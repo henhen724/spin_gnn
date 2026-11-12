@@ -48,6 +48,10 @@ for b in notebooks/make_minarch_web.py notebooks/make_phases_web.py \
     python3 -m py_compile "$b" || { echo "py_compile FAILED: $b"; exit 1; }
 done
 
+# Cheaper than finding out inside slides.py on page 19 of 27.
+python3 scripts/deck_lint.py notebooks/make_minarch_web.py \
+        notebooks/make_phases_web.py || { echo "deck_lint FAILED"; exit 1; }
+
 # -- commit the builders, so --commit below names real code
 if [ -e .git/index.lock ]; then
     echo "FAILING CLOSED: .git/index.lock exists. Nothing staged or committed."
@@ -55,7 +59,7 @@ if [ -e .git/index.lock ]; then
 fi
 git add notebooks/make_minarch_web.py notebooks/make_phases_web.py \
         scripts/fastslow_measure.py scripts/slurm/fastslow_measure_2026-11-12.sbatch \
-        scripts/slurm/decks_render_2026-11-12.sbatch
+        scripts/slurm/decks_render_2026-11-12.sbatch scripts/deck_lint.py
 git diff --cached --name-only | sed 's/^/  staged /'
 if ! git diff --cached --quiet; then
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \

@@ -59,6 +59,8 @@ from slides import MUTED, SERIES, label_line, style_axes
 
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
 from notebooks.make_staget_web import WebDeck
+# One registered plateau for both decks, rather than 1.64 typed twice.
+from scripts.minarch_analysis import PLATEAU
 
 ROOT = "/scratch/users/hshunt/spin_gnn"
 DECK = "/home/users/hshunt/slides/decks/spin-gnn-phases"
@@ -148,6 +150,7 @@ def fmt(x, n=4):
 def draw_floors(doc):
     """Where greedy hint removal stops, against the transition it has to cross."""
     def go(ax):
+        anchor = None
         for i, ens in enumerate(("random", "fall")):
             rows = sorted([r for r in doc["sizes"] if r["ensemble"] == ens],
                           key=lambda r: r["N"])
@@ -159,9 +162,13 @@ def draw_floors(doc):
             label_line(ax, xs[-1], ys[-1],
                        "fall-coloured" if ens == "fall" else "unconstrained",
                        color=SERIES[i])
+            if ens == "random":
+                anchor = xs[min(2, len(xs) - 1)]
         ax.axhline(RHO_C, color=MUTED, ls="--", lw=1.2, zorder=1)
-        ax.annotate("rho_c ~ %.2f" % RHO_C, xy=(doc["sizes"][0]["N"], RHO_C),
-                    xytext=(0, 5), textcoords="offset points", color=MUTED, size=11)
+        # below the line and a few sizes in: at N=48 the label collided with the
+        # unconstrained marker and its error bar.
+        ax.annotate("rho_c ~ %.2f" % RHO_C, xy=(anchor, RHO_C),
+                    xytext=(0, -16), textcoords="offset points", color=MUTED, size=11)
         ax.set_xscale("log")
         ax.set_ylim(0.25, 0.55)
         style_axes(ax, "number of nodes N", "hint density where removal halts")
@@ -186,23 +193,32 @@ def draw_depth(doc):
     return go
 
 
+def path_points(doc, ens):
+    """The part of a removal path at least half the paths reach: a mean over the
+    three luckiest paths is not a curve, it is a tail."""
+    p = doc["path"]
+    out = []
+    for rho, t, n in zip(p["rho"], p[ens]["T_mean"], p[ens]["n_reaching"]):
+        if t is not None and n >= p["seeds"] // 2:
+            out.append((rho, t))
+    return out
+
+
 def draw_path(doc):
     """T along one removal path at the training size, averaged over 200 paths."""
-    p = doc["path"]
     def go(ax):
         for i, ens in enumerate(("random", "fall")):
-            xs, ys = [], []
-            for rho, t, n in zip(p["rho"], p[ens]["T_mean"], p[ens]["n_reaching"]):
-                # Only where at least half the paths reach: a mean over the three
-                # luckiest paths is not a curve, it is a tail.
-                if t is not None and n >= p["seeds"] // 2:
-                    xs.append(rho)
-                    ys.append(t)
+            pts = path_points(doc, ens)
+            xs = [a for a, _ in pts]
+            ys = [b for _, b in pts]
             ax.plot(xs, ys, color=SERIES[i], lw=2.2, zorder=3)
             label_line(ax, xs[-1], ys[-1],
                        "fall-coloured" if ens == "fall" else "unconstrained",
                        color=SERIES[i])
         ax.axvline(RHO_C, color=MUTED, ls="--", lw=1.2, zorder=1)
+        ax.annotate("rho_c ~ %.2f" % RHO_C, xy=(RHO_C, 0.06), color=MUTED, size=11,
+                    xycoords=("data", "axes fraction"), xytext=(6, 0),
+                    textcoords="offset points")
         ax.invert_xaxis()
         style_axes(ax, "hint density rho (harder to the right)",
                    "deduction rounds T at N=48")
@@ -216,8 +232,13 @@ def draw_solve_rho(dbest, fbest):
                                         (fbest, "trained on fall-coloured"))):
             xs, ys = curve(rs, "realized_rho", "solve_rate")
             ax.plot(xs, ys, color=SERIES[i], marker="o", ms=4, lw=2.0, zorder=3)
-            label_line(ax, xs[0], ys[0], name, color=SERIES[i])
+            # The unconstrained curve ends where the fall curve is still passing
+            # through, so lift its label clear of the other line.
+            label_line(ax, xs[0], ys[0], name, color=SERIES[i], dy=14 if i == 0 else 0)
         ax.axvline(RHO_C, color=MUTED, ls="--", lw=1.2, zorder=1)
+        ax.annotate("rho_c ~ %.2f" % RHO_C, xy=(RHO_C, 0.06), color=MUTED, size=11,
+                    xycoords=("data", "axes fraction"), xytext=(6, 0),
+                    textcoords="offset points")
         ax.set_ylim(0.0, 1.05)
         ax.invert_xaxis()
         style_axes(ax, "hint density rho (harder to the right)",
@@ -232,7 +253,11 @@ def draw_solve_T(dbest, fbest):
                                         (fbest, "fall-coloured"))):
             xs, ys = curve(rs, "dd_mean_T", "solve_rate")
             ax.plot(xs, ys, color=SERIES[i], marker="o", ms=4, lw=2.0, zorder=3)
-            label_line(ax, xs[-1], ys[-1], name, color=SERIES[i])
+            # Sorted by density, so the deepest bin is wherever x is largest, not
+            # at either end of the list: labelling xs[-1] stacked both labels on
+            # the shallow end, on top of each other.
+            j = max(range(len(xs)), key=lambda k: xs[k])
+            label_line(ax, xs[j], ys[j], name, color=SERIES[i])
         ax.set_ylim(0.0, 1.05)
         style_axes(ax, "mean deduction rounds in the bin",
                    "fraction of puzzles solved")
@@ -247,6 +272,11 @@ def draw_train(by_depth):
             ys = [e["train_nll"] for e in h]
             ax.plot(xs, ys, color=SERIES[i], lw=2.0, zorder=3)
             label_line(ax, xs[-1], ys[-1], "%d layers" % L, color=SERIES[i])
+        # The claim is about this line, so draw it.
+        ax.axhline(PLATEAU, color=MUTED, ls="--", lw=1.2, zorder=1)
+        ax.annotate("plateau %.2f" % PLATEAU, xy=(0.02, PLATEAU), color=MUTED, size=11,
+                    xycoords=("axes fraction", "data"), xytext=(0, 5),
+                    textcoords="offset points")
         style_axes(ax, "epoch", "training NLL")
     return go
 
@@ -473,16 +503,26 @@ def main():
         note="Local slope of T against N between consecutive sizes. Agreement "
              "across intervals is what makes it a power law, not curvature.")
 
+    # The two numbers in the title are the ends of the two curves actually drawn,
+    # not the mean floors on the table two pages on: a path is kept here only
+    # where half the paths reach it, so these ends are the stricter statement.
+    path_end = {e: path_points(doc, e)[-1][0] for e in ("random", "fall")}
+    assert path_end["fall"] < RHO_C < path_end["random"], \
+        "the drawn removal paths no longer straddle rho_c: %r" % path_end
     d.claim_page(
-        "The new generator reaches density 0.33 where the old halts at 0.47",
+        "The new generator reaches density %.2f where the old halts at %.2f"
+        % (path_end["fall"], path_end["random"]),
         draw_path(doc), "path",
         note="Mean over %d removal paths per ensemble, plotted where at least half "
              "the paths reach that density." % doc["path"]["seeds"])
 
     ex_fall = example_instance(n_nodes=48, degree=5, n_colors=4, rho=0.30,
                                rho_max=0.95, shuffle_adj=True, fall=True, pick="deep")
+    # Both traces are 90th-percentile draws from their own generator, so the two
+    # counts are comparable; "far more rounds" was not, for 13 against 10.
     d.expect("trace_fall",
-             "A hard instance of the same size runs for far more rounds",
+             "The same size and vocabulary, %d deduction rounds instead of %d"
+             % (len(ex_fall.trace["rounds"]), len(ex_random.trace["rounds"])),
              note="The fall-coloured generator, same N=48 and same vocabulary. Only "
                   "the first rounds are drawn; this trace has %d."
              % len(ex_fall.trace["rounds"]))
@@ -545,11 +585,19 @@ def main():
         k = (L, 1024, 240000, 50, 0)
         if k in fcells:
             by_depth[L] = hist(fcells[k][0])
+    # Read off the curves rather than typed: an earlier draft said four layers
+    # "never leave the plateau" and "end where they began", and its own figure
+    # showed them starting at 2.06 and descending onto 1.64.
+    final = {L: h[-1]["train_nll"] for L, h in by_depth.items()}
+    assert abs(final[4] - PLATEAU) < 0.01, \
+        "four layers no longer stall on the plateau: %.4f vs %.2f" % (final[4], PLATEAU)
+    assert max(final[L] for L in final if L > 4) < PLATEAU - 0.05, \
+        "the deeper stacks no longer clear the plateau: %r" % final
     d.claim_page(
-        "At the matched budget, four layers never leave the plateau",
+        "Four layers stall at %.2f while deeper stacks keep descending" % final[4],
         draw_train(by_depth), "train",
-        note="Training NLL at one matched budget, 240k puzzles by 50 epochs. Four "
-             "layers end where they began; twelve are past it within three epochs.")
+        note="Training NLL at 240k puzzles by 50 epochs, seed 0. Four layers flatten "
+             "onto the %.2f line; the deeper stacks cross it." % PLATEAU)
 
     budget = sorted({(k[2], k[3]) for k in fcells if k[1] == 1024 and k[4] == 0})
     rows = []
