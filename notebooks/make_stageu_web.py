@@ -143,19 +143,36 @@ def residuals(arms, held, fit, bar):
 
 
 def breakaway(recs, k, seed, gap=0.01):
-    """First epoch at which a basin seed's train NLL leaves its own siblings.
+    """Epoch from which a basin seed's train NLL stays below its own siblings.
 
     Compared against the MEAN of the two plateau seeds in the SAME arm, so the
     reference is the same architecture, the same recipe and the same budget --
     the only difference left is the draw.
+
+    PERSISTENT separation, scanned from the last epoch backwards, not the first
+    epoch the gap is exceeded: at epoch 0 the arms differ by their draw alone
+    (2.13 against 2.37 in one case), which is initialisation and not a
+    breakaway. The first read of this deck printed 'epoch 0' for k=4 seed 1 and
+    that is what it was reporting.
     """
     me = [r for r in recs[k] if r["seed"] == seed][0]
     sibs = [r for r in recs[k] if r["seed"] != seed]
-    for e in range(len(me["h"])):
-        ref = sum(s["h"][e]["train_nll"] for s in sibs) / len(sibs)
-        if ref - me["h"][e]["train_nll"] > gap:
-            return e
-    return None
+    diffs = [sum(s["h"][e]["train_nll"] for s in sibs) / len(sibs)
+             - me["h"][e]["train_nll"] for e in range(len(me["h"]))]
+    e = len(diffs)
+    while e > 0 and diffs[e - 1] > gap:
+        e -= 1
+    return e if e < len(diffs) else None
+
+
+def biggest_step(r, first=2):
+    """(drop, epoch) of the sharpest one-epoch fall in train NLL.
+
+    From epoch `first` on, because epoch 0 -> 1 is the initial collapse off the
+    uniform predictor in every cell and swamps everything after it.
+    """
+    nll = [e["train_nll"] for e in r["h"]]
+    return max((nll[e - 1] - nll[e], e) for e in range(first, len(nll)))
 
 
 def check_claims(arms, recs, res, bar):
@@ -231,7 +248,7 @@ def _arms_axis(ax, ylabel):
     style_axes(ax, "distinct blocks, applied 16/k times each", ylabel)
 
 
-def _seed_dots(ax, recs, field, med_label_y):
+def _seed_dots(ax, recs, field, med_label_y, lx=2.19):
     for k in (1, 2, 4):
         for r in recs[k]:
             c = SERIES[0] if r["basin"] else MUTED
@@ -241,7 +258,7 @@ def _seed_dots(ax, recs, field, med_label_y):
         m = median([r[field] for r in recs[k]])
         ax.plot([XS[k] - 0.19, XS[k] + 0.19], [m, m], "-",
                 color=SERIES[1], lw=2.6, zorder=3)
-    label_line(ax, 2.19, med_label_y, "median", color=SERIES[1])
+    label_line(ax, lx, med_label_y, "median", color=SERIES[1])
 
 
 def draw_level(ax, recs):
@@ -253,12 +270,15 @@ def draw_level(ax, recs):
     for k, s in ((2, 2), (4, 1)):
         r = [x for x in recs[k] if x["seed"] == s][0]
         label_line(ax, XS[k], r["rho50"], "seed %d  %.3f" % (s, r["rho50"]),
-                   color=SERIES[0], dy=-14)
+                   color=SERIES[0], dy=-15)
+    vals = [r["rho50"] for k in recs for r in recs[k]] + [FREE, J2_RHO50]
+    # Headroom below, or the lower label rides the axis spine (first read-back).
+    ax.set_ylim(min(vals) - 0.022, max(vals) + 0.008)
     _arms_axis(ax, "rho_50  (lower is better)")
 
 
 def draw_acc(ax, recs):
-    _seed_dots(ax, recs, "acc", median([r["acc"] for r in recs[4]]))
+    _seed_dots(ax, recs, "acc", median([r["acc"] for r in recs[1]]), lx=0.21)
     y = S1_ACC + NEED
     ax.axhline(y, ls="--", lw=1.2, color=MUTED, zorder=1)
     label_line(ax, 2.5, y, "what the gate needs\n%.4f" % y, color=MUTED)
@@ -273,10 +293,10 @@ def draw_curves(ax, recs):
             nll = [e["train_nll"] for e in r["h"]][1:]
             if r["basin"]:
                 c = SERIES[i]
-                i += 1
                 ax.plot(ep, nll, "-", color=c, lw=2.3, zorder=3)
-                label_line(ax, ep[-1], nll[-1],
-                           "k=%d seed %d" % (k, r["seed"]), color=c)
+                label_line(ax, ep[-1], nll[-1], "k=%d seed %d" % (k, r["seed"]),
+                           color=c, dy=(7, -7)[i])
+                i += 1
             else:
                 ax.plot(ep, nll, "-", color=MUTED, lw=1.0, alpha=0.6, zorder=1)
                 last.append(nll[-1])
@@ -295,7 +315,12 @@ def draw_u4(ax, ref, fit, res, basins, bar):
                     color=MUTED, alpha=0.13, lw=0, zorder=1)
     ax.plot([c["acc"] for c in ref], [c["mean_solve"] for c in ref], "o",
             ms=5, color=MUTED, mfc="white", mew=1.2, zorder=3)
-    label_line(ax, xs[-1], ys[-1], "depth ladder\n+- its own LOO bar", color=MUTED)
+    # On the flat left shelf, where there is room inside the axes. At the fit's
+    # right-hand end it floated above the plot box (first read-back).
+    flat = [p for p in fit if p[0] <= 0.470][-1]
+    label_line(ax, flat[0], flat[1], "depth ladder\n+- its own LOO bar",
+               color=MUTED, dy=26)
+    plateau = []
     for (k, s), r in sorted(res.items()):
         if (k, s) in basins:
             ax.plot([r["acc"]], [r["solve"]], "o", ms=10, color=SERIES[0], zorder=5)
@@ -305,6 +330,10 @@ def draw_u4(ax, ref, fit, res, basins, bar):
         else:
             ax.plot([r["acc"]], [r["solve"]], "s", ms=6, color=SERIES[2],
                     mfc="white", mew=1.6, zorder=4)
+            plateau.append(r)
+    lo = min(plateau, key=lambda r: r["acc"])
+    label_line(ax, lo["acc"], lo["solve"], "the seven plateau seeds",
+               color=SERIES[2], dy=20, dx=-60)
     ax.set_xlim(0.455, 0.503)
     ax.set_ylim(0.0, 0.62)
     style_axes(ax, "validation token accuracy", "mean solve rate over the grid")
@@ -328,6 +357,14 @@ def main():
     brk = {key: breakaway(recs, *key) for key in basins}
     best = min(r["rho50"] for k, s in basins for r in recs[k] if r["seed"] == s)
     plateau_slopes = [r["slope"] for k in recs for r in recs[k] if not r["basin"]]
+    # The two sharpest one-epoch drops among the PLATEAU seeds: the steps in the
+    # learning curves are not what the basin seeds have and the others lack.
+    steps = sorted(sorted((biggest_step(r) for k in recs for r in recs[k]
+                           if not r["basin"]), reverse=True)[:2],
+                   key=lambda t: t[1])
+    assert steps[0][0] >= 0.5 * max(biggest_step(r)[0] for k, s in basins
+                                    for r in recs[k] if r["seed"] == s), (
+        "the plateau seeds do not step as sharply; that sentence would be wrong")
 
     prov = ("Array 51922710, six cells, scored 52000549, curve 52025112, commit "
             "%s. d320 ff1024 h4 tied_no_mlp, 16 applications, 50 epochs, lr 1e-3 "
@@ -396,7 +433,9 @@ def main():
         [[arms[k]["label"].split("  ")[1], "{:,}".format(arms[k]["s"]["trainable"]),
           rho_txt(arms[k]["s"]),
           "%d/%d" % (arms[k]["s"]["n_cross"], arms[k]["s"]["n"]),
-          "--" if k == 1 else "%+.3f" % (meds[k] - meds[1])]
+          # Against the control's FROZEN median, which is what the scorer
+          # differenced, so the deck and job 52000549 print the same deltas.
+          "--" if k == 1 else "%+.3f" % (meds[k] - float(S1_RHO50))]
          for k in (1, 2, 4)],
         highlight_row=0,
         note="Lower rho_50 is better. Both new arms land within 0.01 of the "
@@ -423,9 +462,10 @@ def main():
     d.claim_page(
         "The basin seeds track a plateau seed, then break away in steps",
         lambda ax: draw_curves(ax, recs), "curves",
-        note="The gap to their own arm's siblings passes 0.01 only at epochs %s, "
-             "after tracking them almost exactly."
-             % " and ".join(str(brk[key]) for key in sorted(brk)))
+        note="They leave their siblings for good at epochs %s. Two plateau seeds "
+             "step as sharply, at %s; what differs is where it lands."
+             % (" and ".join(str(brk[key]) for key in sorted(brk)),
+                " and ".join(str(e) for _, e in steps)))
 
     d.table_page(
         "Both basin seeds were still descending when the budget ended",
@@ -445,15 +485,22 @@ def main():
              % (" and ".join("%+.4f" % res[key]["res"] for key in sorted(brk)),
                 bar))
 
+    # Grouped the way scripts.acc_vs_solve groups them -- well-determined cells
+    # apart from weakly determined ones -- so these rows are the rows job
+    # 52025112 printed, rather than a pooled mean that agrees with nothing.
     d.table_page(
         "Every arm is explained by its token accuracy, within the bar",
-        ["arm", "cells", "mean residual", "against bar %.4f" % bar],
-        [[arms[k]["label"].split("  ")[1], len(recs[k]),
-          "%+.4f" % (sum(res[(k, r["seed"])]["res"] for r in recs[k]
-                         if (k, r["seed"]) in res)
-                     / max(1, sum(1 for r in recs[k] if (k, r["seed"]) in res))),
-          "EXPLAINED by token accuracy"]
-         for k in (1, 2, 4)],
+        ["arm", "cells", "bracket", "mean residual", "verdict"],
+        [[arms[k]["label"].split("  ")[1], len(g),
+          "weakly determined" if weak else "well determined",
+          "%+.4f" % (sum(r["res"] for r in g) / len(g)),
+          "EXPLAINED by token accuracy"
+          if abs(sum(r["res"] for r in g) / len(g)) <= bar else "OFF the curve"]
+         for k in (1, 2, 4)
+         for weak in (False, True)
+         for g in [[res[(k, r["seed"])] for r in recs[k]
+                    if (k, r["seed"]) in res
+                    and res[(k, r["seed"])]["weak"] == weak]] if g],
         note="A cell off the curve would have been the headline over the gate: "
              "cycling blocks would change the relation, not the level. None is.")
 
@@ -461,7 +508,7 @@ def main():
         "What binds is which basin the optimizer finds, not the role count",
         ["Extra blocks did not move the floor the median reports",
          "They coincided with two escapes from it; k=1 had none in three seeds",
-         "Three seeds an arm cannot turn that coincidence into a rate"])
+         "With three seeds an arm that is a coincidence, not a rate"])
 
     d.points_page(
         "Stage U speaks for one width, one recipe, fifty epochs",
@@ -495,7 +542,8 @@ def main():
         ["quantity", "J2 untied d192 (standing)", "k=2 cycled", "k=4 cycled"],
         [["rho_50 median", "%.3f" % J2_RHO50, rho_txt(arms[2]["s"]),
           rho_txt(arms[4]["s"])],
-         ["best single seed", "--", "%.3f" % min(r["rho50"] for r in recs[2]),
+         ["best single seed", "%.3f" % min(m["rho50"] for m in rung(cells, J2)),
+          "%.3f" % min(r["rho50"] for r in recs[2]),
           "%.3f" % min(r["rho50"] for r in recs[4])],
          ["mean solve", "%.4f" % j2["mean_solve"],
           "%.4f" % arms[2]["s"]["mean_solve"], "%.4f" % arms[4]["s"]["mean_solve"]],
