@@ -129,6 +129,20 @@ def round0_rule_flip(arm, seed):
     return ratio(rows, "rule_valid", "rule_flips")
 
 
+def round0_guard(arm, seed):
+    """Findings 68/69's CONDITIONAL guard rate at this checkpoint.
+
+    POST-HOC. Added after the run, for the deck only -- nothing above reads it
+    and no registered verdict moves. It exists because the read-back noticed
+    that J2's chained guard rate (0.9903 / 0.8619 / 0.9830) is nowhere near its
+    round-0 one, which no registered hypothesis asked about. Read with the same
+    `ratio` call finding 69 published, so the two cannot drift.
+    """
+    rows = rows_of(os.path.join(DISSOC_RUN, "%s_s%d" % (arm, seed),
+                                "dissoc_behavior.csv"))
+    return ratio(rows, "clean_emits_v", "broken_emits_v")
+
+
 def main():
     print("=" * 78)
     print("CHAINING: ONE EDIT TO A FACT THE MODEL DERIVED")

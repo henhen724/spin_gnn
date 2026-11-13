@@ -29,7 +29,8 @@ from notebooks.deck_tokenization import example_instance, page_tokenization, pag
 from notebooks.make_staget_web import WebDeck
 
 from scripts.ddguard_score import ALPHA, ARMS, RULE_BAR, SEEDS, ratio, rows_of, truthy
-from scripts.chain_score import GAP_BAR, REVERT_BAR, RUN, cell_dir, round0_rule_flip
+from scripts.chain_score import (GAP_BAR, REVERT_BAR, RUN, cell_dir, round0_guard,
+                                 round0_rule_flip)
 from scripts.dissoc_score import FREED_BAR, fmean, sign_test
 from scripts.stagev_score import S1_RHO50_SEEDS, S1_TRAINABLE
 from scripts.stagej_score import PREDICTED_TRAINABLE
@@ -42,11 +43,14 @@ CELL_ORDER = [(arm, s) for arm in ARMS for s in SEEDS]
 # Same order as the same-edit deck, so the two can be flipped between. The
 # placebo gloss differs because this deck's placebo is another DEDUCTION, not a
 # hint -- that difference is the whole measurement.
+# The variant NAME is on the tick as well as the gloss: the notes under these
+# figures say "clean" and "placebo", and read-back caught that those words
+# appeared nowhere on the axis the reader was looking at.
 VARIANT_GLOSS = {
-    "clean": "no edit",
-    "placebo": "far deduction recoloured",
-    "rule": "$w \\rightarrow c$",
-    "broken": "$w \\rightarrow b$",
+    "clean": "clean\nno edit",
+    "placebo": "placebo\nfar deduction recoloured",
+    "rule": "rule\n$w \\rightarrow c$",
+    "broken": "broken\n$w \\rightarrow b$",
 }
 
 
@@ -68,7 +72,8 @@ def load_cells():
         # Two denominators, kept apart on purpose, for the reason finding 69's
         # read-back caught twice in one day: the figures use the unconditional
         # rate so the four variants share a denominator, the tables use the
-        # conditional one and every header that shows it says "broken | clean".
+        # conditional one and every header that shows it names its own
+        # denominator in words rather than by column number.
         d["emits_cond_broken"], d["clean_n"] = ratio(rows, "clean_emits_v",
                                                      "broken_emits_v")
         d["rule_flips"] = fmean(rows, "rule_flips")[0]
@@ -85,6 +90,8 @@ def load_cells():
         d["flip_clash1_n"], d["flip_clash2_n"] = len(one), len(many)
         d["round0"], d["round0_n"] = round0_rule_flip(arm, s)
         d["gap"] = d["round0"] - d["rule_flips"]
+        # post-hoc, deck only: the same conditional guard rate on round-0 cases
+        d["round0_guard"], _ = round0_guard(arm, s)
         # the depth profile: rule-flip rate by the round v was deduced in
         by = {}
         for r in rows:
@@ -128,16 +135,18 @@ def check_claims(cells):
 # --------------------------------------------------------------------------- #
 # figures
 # --------------------------------------------------------------------------- #
-def _stack(ax, ends, labels, colors, x, span=0.085, lo=0.10, hi=0.98):
+def _stack(ax, ends, labels, colors, x, span=0.085, lo=0.10, hi=0.98, dx=6):
     """Right-hand labels at guaranteed-separated heights, ordered by their own y.
 
     Fixed dy offsets collided on the same-edit deck when two endpoints happened
-    to be 0.06 apart, so the separation is computed rather than assumed.
+    to be 0.06 apart, so the separation is computed rather than assumed. `dx`
+    has to clear the marker: with ms=15 the default 6pt put the first letter
+    on top of the open circle, which read-back caught on the positions figure.
     """
     base = min(max(sum(ends) / len(ends), lo), hi)
     rank = {i: r for r, i in enumerate(sorted(range(len(ends)), key=ends.__getitem__))}
     for i, text in enumerate(labels):
-        label_line(ax, x, base + (rank[i] - 1) * span, text, color=colors[i])
+        label_line(ax, x, base + (rank[i] - 1) * span, text, color=colors[i], dx=dx)
 
 
 def draw_variants(ax, cells, arm):
@@ -161,12 +170,17 @@ def draw_provenance(ax, cells):
     xs = list(range(len(CELL_ORDER)))
     given = [cells[k]["round0"] for k in CELL_ORDER]
     derived = [cells[k]["rule_flips"] for k in CELL_ORDER]
-    for ys, color in ((given, SERIES[0]), (derived, SERIES[1])):
-        ax.plot(xs[:3], ys[:3], "o-", ms=11, lw=2, color=color, zorder=3)
-        ax.plot(xs[3:], ys[3:], "o-", ms=11, lw=2, color=color, zorder=3)
+    # Different marker size and dash so the two stay readable when they land on
+    # the same value -- which is exactly the outcome the page may have to show.
+    for ys, color, ms, ls, z in ((given, SERIES[0], 15, "--", 3),
+                                 (derived, SERIES[1], 8, "-", 4)):
+        ax.plot(xs[:3], ys[:3], "o", ls=ls, ms=ms, lw=2, color=color,
+                mfc="none" if ms > 10 else color, mew=2, zorder=z)
+        ax.plot(xs[3:], ys[3:], "o", ls=ls, ms=ms, lw=2, color=color,
+                mfc="none" if ms > 10 else color, mew=2, zorder=z)
     _stack(ax, [given[-1], derived[-1]],
            ["given fact (round 0)", "derived fact (chained)"],
-           [SERIES[0], SERIES[1]], xs[-1], span=0.10)
+           [SERIES[0], SERIES[1]], xs[-1], span=0.10, dx=16)
     ax.axhline(RULE_BAR, color=MUTED, lw=1.5, ls="--", zorder=2)
     label_line(ax, xs[-1], RULE_BAR, "bar %.2f" % RULE_BAR, color=MUTED, dy=9)
     ax.axhline(0.25, color=MUTED, lw=1, ls=":", zorder=1)
@@ -199,23 +213,53 @@ def draw_rounds(ax, cells):
 
 
 def draw_positions(ax, cells):
-    """The two readouts under the SAME broken edit, on one 0-1 scale."""
+    """The NODE readout with and without the edit.
+
+    The first version plotted the node and colour readouts both under the
+    broken edit, and the page claimed the node readout does not move -- which
+    that figure cannot show, because it had nothing to not-move from. Read-back
+    caught it. The clean series is the missing baseline; how far the colour
+    readout moves is the variants page's job.
+    """
     xs = list(range(len(CELL_ORDER)))
-    series = (("names $v$ (node position)", "emits_broken", SERIES[0]),
-              ("$p_{\\mathrm{freed}}$ (colour position)", "freed_broken", SERIES[1]))
+    series = (("names $v$, no edit", "emits_clean", SERIES[0]),
+              ("names $v$, broken edit", "emits_broken", SERIES[1]))
     ends = []
     for i, (label, key, color) in enumerate(series):
         ys = [cells[k][key] for k in CELL_ORDER]
-        ax.plot(xs[:3], ys[:3], "o-", ms=12 - 3 * i, lw=2, color=color, zorder=3 + i)
-        ax.plot(xs[3:], ys[3:], "o-", ms=12 - 3 * i, lw=2, color=color, zorder=3 + i)
+        ax.plot(xs[:3], ys[:3], "o", ls=("--", "-")[i], ms=(15, 8)[i], lw=2,
+                color=color, mfc=("none", color)[i], mew=2, zorder=3 + i)
+        ax.plot(xs[3:], ys[3:], "o", ls=("--", "-")[i], ms=(15, 8)[i], lw=2,
+                color=color, mfc=("none", color)[i], mew=2, zorder=3 + i)
         ends.append(ys[-1])
-    _stack(ax, ends, [s[0] for s in series], [s[2] for s in series], xs[-1], span=0.10)
+    _stack(ax, ends, [s[0] for s in series], [s[2] for s in series], xs[-1],
+           span=0.10, dx=16)
     ax.axvline(2.5, color=MUTED, lw=1, ls=":", zorder=1)
     ax.set_xticks(xs)
     ax.set_xticklabels([cell_label(*k) for k in CELL_ORDER], fontsize=11)
     ax.set_xlim(-0.4, len(CELL_ORDER) + 1.6)
     ax.set_ylim(-0.06, 1.08)
-    style_axes(ax, xlabel=None, ylabel="probability")
+    style_axes(ax, xlabel=None, ylabel="fraction of cases naming $v$")
+
+
+def draw_guard(ax, cells):
+    """POST-HOC: the conditional guard rate, round-0 cases against chained ones."""
+    xs = list(range(len(CELL_ORDER)))
+    r0 = [cells[k]["round0_guard"] for k in CELL_ORDER]
+    ch = [cells[k]["emits_cond_broken"] for k in CELL_ORDER]
+    for ys, color, ms, ls, mfc in ((r0, SERIES[0], 15, "--", "none"),
+                                   (ch, SERIES[1], 8, "-", None)):
+        for lo, hi in ((0, 3), (3, 6)):
+            ax.plot(xs[lo:hi], ys[lo:hi], "o", ls=ls, ms=ms, lw=2, color=color,
+                    mfc=mfc or color, mew=2, zorder=3)
+    _stack(ax, [r0[-1], ch[-1]], ["given fact (round 0)", "derived fact (chained)"],
+           [SERIES[0], SERIES[1]], xs[-1], span=0.11, dx=16)
+    ax.axvline(2.5, color=MUTED, lw=1, ls=":", zorder=1)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([cell_label(*k) for k in CELL_ORDER], fontsize=11)
+    ax.set_xlim(-0.4, len(CELL_ORDER) + 1.4)
+    ax.set_ylim(-0.06, 1.08)
+    style_axes(ax, xlabel=None, ylabel="still names $v$ under the broken edit")
 
 
 # --------------------------------------------------------------------------- #
@@ -259,6 +303,13 @@ that no earlier one did.
 
 Cases here run from round 1 upward; the round each case sits in is recorded and
 one page plots the result against it.
+
+**Two different things are called $T$ in this deck,** and neither page can be
+changed without breaking a figure shared with other decks, so they are named
+here instead. The trace figure's $T$ is the *instance's* reasoning depth, its
+number of rounds, median 5 and reaching 19. The architecture page's $T = 16$ is
+the number of times the network applies its one block. They are not matched to
+each other, and no result here depends on their relation.
 """
 
 QUAD = """## Four one-token variants, three of them at the same reasoning index
@@ -323,7 +374,8 @@ So the edit does not avoid the clash. It **minimises** it, **records** it, and
 **matches the placebo to it**.
 """
 
-BLIND = """## The construction was amended before any model was run
+def blind_page(js):
+    return """## The construction was amended before any model was run
 
 The zero-yield census is a property of the instance generator: it builds the
 case list and stops, with **no forward pass and no checkpoint output**. So the
@@ -332,8 +384,8 @@ is scored moved.
 
 What changed: the edit minimises its visible clashes instead of forbidding them,
 the count is recorded, the placebo is matched on it, and cases are capped per
-**round** rather than per instance so the depth axis spans rounds 1 to 10
-instead of being mostly round 1.
+**round** rather than per instance so the cases span rounds %d to %d instead of
+being mostly round 1.
 
 What did not change: every bar, every hypothesis, every verdict branch. They
 were fixed at commit `968c355` before the first submission and are quoted on a
@@ -343,7 +395,7 @@ The clash count is also read as a control of its own: if the model were
 reacting to *how visibly broken* the prefix looks rather than to *what the edit
 says*, the flip rate would depend on the clash count. One page reports that
 split.
-"""
+""" % (js["round_min"], js["round_max"])
 
 CAVEAT = """## Editing a derived fact makes the prefix inconsistent, and that is a confound
 
@@ -371,6 +423,27 @@ is ambiguous. Two things bound it:
 A **high** flip rate has no such ambiguity. It can only mean the edited fact was
 used.
 """ % REVERT_BAR
+
+GUARD = """## The guard is the other half of direct deduction: knowing when NOT to write
+
+Direct deduction has two parts, and the four variants separate them.
+
+- **The rule.** Given that $v$ is forced, which colour does it get? Read at the
+  **colour position**.
+- **The guard.** Is $v$ forced at all? Under the broken edit it is **not** — it
+  has two candidates $\\{c, a\\}$ — so an algorithm running direct deduction
+  would decline to write a colour for $v$ at this point and move on. Read at the
+  **node position**, as whether the model still names $v$.
+
+An earlier result on this project (finding 68, round-0 cases only) found the two
+architectures split exactly here: the tied model has the rule and **not** the
+guard, naming $v$ anyway in 1.0000 of cases, while the untied model guards, in
+2 of its 3 seeds.
+
+"**Still names $v$**" is reported on the denominator those findings published:
+only the cases where the **unedited** prompt named $v$. A model that was not
+going to name $v$ anyway tells you nothing about guarding.
+"""
 
 PAIRING = """## The comparison against round 0 is between cells, not between cases
 
@@ -509,6 +582,10 @@ SCOPE = """## What this measurement does not establish
 - **No localisation.** These are decision-level readouts. Nothing here says
   *where* in the network the behaviour lives, and on a tied model the usual
   per-layer ablation is not even defined.
+- **The guard page is POST-HOC.** No hypothesis asked whether the untied
+  model's guard survives the move off round 0; the read-back noticed it in a
+  table built for something else. It is a lead for a registered test, not a
+  result on the same footing as the five that were registered.
 """
 
 
@@ -563,7 +640,10 @@ def main():
         if page is deck_explain.FIGURE_SLOT:
             d.expect("tokenization",
                      "Every token is one categorical id in a %d-symbol vocabulary"
-                     % ex.vocab.size)
+                     % ex.vocab.size,
+                     note="The leak the figure names is the order of node ids "
+                          "within a row; a later page shows how every eval "
+                          "here closes it.")
             page_tokenization(d, ex)
             d.expect("trace",
                      "A deduction fires when a node sees all three other colours",
@@ -573,16 +653,20 @@ def main():
         else:
             d._add(page)
 
-    own = (PROVENANCE, ROUNDK, QUAD, PLACEBOPAGE, THEOREM, BLIND, POSITIONS,
-           PFREED, SIGNTEST, CAVEAT, PAIRING, hypotheses_page(), arms_page())
+    own = (PROVENANCE, ROUNDK, QUAD, PLACEBOPAGE, THEOREM, blind_page(js), POSITIONS,
+           PFREED, GUARD, SIGNTEST, CAVEAT, PAIRING, hypotheses_page(),
+           arms_page())
     for page in own:
         d._add(page)
     n_explain = (len([p for p in shared if p is not deck_explain.FIGURE_SLOT])
                  + 2 + len(own))
 
     # ---- C4, the null, before anything that needs it
+    max_drift = max(abs(cells[k]["drift"]) for k in CELL_ORDER)
     d.table_page(
-        "An edit far from $v$ moves the freed colour by thousandths",
+        "An edit far from $v$ changes $p_{\\mathrm{freed}}$ by at most %.4f"
+        % max_drift if js["C4"] else
+        "The placebo moves the freed colour, so there is no null",
         ["cell", "clean", "placebo", "difference"],
         [[cell_label(*k), "%.4f" % cells[k]["freed_clean"],
           "%.4f" % cells[k]["freed_placebo"], "%+.4f" % cells[k]["drift"]]
@@ -605,25 +689,35 @@ def main():
         note=("Bar %.2f, chance 0.250. A gap counts at more than %.2f in two "
               "seeds of an arm." % (RULE_BAR, GAP_BAR)))
 
+    # Both series can land on exactly the same value, and do. The figure keeps
+    # them apart by marker and dash, but the right-hand labels then sit off
+    # their own lines, so the note says where the lines actually are.
+    pinned = min(min(cells[k]["round0"], cells[k]["rule_flips"])
+                 for k in CELL_ORDER) >= 0.99995
     d.claim_page(
         "Provenance %s the rate at which the rule is applied"
         % ("changes" if js["C5_gap_arms"] else "does not change"),
         lambda ax: draw_provenance(ax, cells), "provenance",
-        note=("Rule-flip rate at the same six checkpoints. The round-0 series is "
-              "finding 69's, over its own case list."))
+        note=("Rule-flip rate at the same six checkpoints; round 0 is finding "
+              "69's own case list."
+              + (" Both series sit at 1.0000; labels are offset." if pinned
+                 else "")))
 
+    flat_rounds = min(v[0] for s in SEEDS
+                      for v in cells[("S1", s)]["by_round"].values()) >= 0.99995
     d.claim_page(
         "The rule still fires on deductions made late in the trace"
         if js["C1"] else "Depth does not rescue the rule edit",
         lambda ax: draw_rounds(ax, cells), "rounds",
-        note=("Tied model, rule-flip rate split by the round $v$ was deduced in. "
-              "Rounds with under 10 cases in a seed are dropped."))
+        note=("Tied model, rule-flip rate by the round $v$ was deduced in. "
+              + ("All three seeds sit at 1.0000. " if flat_rounds else "")
+              + "Rounds under 10 cases dropped."))
 
     d.table_page(
         "Visible wrongness tracks the flip rate"
         if js["C6_tracks"] else
         "How visibly wrong the edit looks does not change the answer",
-        ["cell", "1 clash", "$n$", "2+ clashes", "$n$"],
+        ["cell", "flip, 1 clash", "cases", "flip, 2+ clashes", "cases"],
         [[cell_label(*k), "%.4f" % cells[k]["flip_clash1"],
           "%d" % cells[k]["flip_clash1_n"], "%.4f" % cells[k]["flip_clash2"],
           "%d" % cells[k]["flip_clash2_n"]] for k in CELL_ORDER],
@@ -631,9 +725,12 @@ def main():
               "the model reads corruption, not content; the bar is %.2f."
               % js["clash_bar"]))
 
+    max_revert = max(cells[k]["rule_reverts"] for k in CELL_ORDER)
     d.table_page(
         "The model reverts to its own answer under the edit"
         if js["C3_detects"] else
+        "The model never falls back on the colour it first wrote"
+        if max_revert == 0.0 else
         "The model rarely falls back on the colour it first wrote",
         ["cell", "flips to $a$", "reverts to $c$", "neither"],
         [[cell_label(*k), "%.4f" % cells[k]["rule_flips"],
@@ -655,7 +752,7 @@ def main():
             - sum(cells[("J2", s)]["freed_%s" % v] for s in SEEDS) / 3)
         for v in VARIANTS) <= 0.12
     d.claim_page(
-        "The untied model lands on the same four values"
+        "The untied model traces the same four-point profile"
         if same_profile else
         "The untied model splits the freed colour differently",
         lambda ax: draw_variants(ax, cells, "J2"), "variants_j2",
@@ -666,11 +763,11 @@ def main():
         "The freed colour rises under the broken edit in every seed"
         if js["C2"] else
         "The paired test does not clear the bar in the tied model",
-        ["seed", "$b$ up", "$c$ down", "median $\\Delta$", "exact $p$"],
+        ["seed", "$b$ up", "$c$ down", "median $\\Delta$", "raw $p$"],
         [["%d" % s, "%d" % cells[("S1", s)]["b"], "%d" % cells[("S1", s)]["c"],
           "%+.4f" % cells[("S1", s)]["median"], "%.3g" % cells[("S1", s)]["p"]]
          for s in SEEDS],
-        note=("Tied model only: C2 was registered for it alone. The bar is Holm "
+        note=("Tied model only. Raw $p$ shown; the bar is Holm-corrected "
               "$p < %.2f$ with median $\\ge$ %.2f." % (ALPHA, FREED_BAR)))
 
     d.table_page(
@@ -684,31 +781,48 @@ def main():
         note=("$c$ and $a$ are exactly $v$'s candidate set after the edit. The "
               "sum is the mass elimination did not leave elsewhere."))
 
-    node_shift = max(abs(cells[("S1", s)]["emits_broken"]
-                         - cells[("S1", s)]["emits_clean"]) for s in SEEDS)
+    # Scoped to the tied arm on purpose: J2 s1 drops about 0.10 here, so a
+    # title about "the model" would be refuted by its own figure. The note
+    # carries the untied number rather than leaving the reader to find it.
+    def shift(arm):
+        return max(abs(cells[(arm, s)]["emits_broken"]
+                       - cells[(arm, s)]["emits_clean"]) for s in SEEDS)
+
     d.claim_page(
-        "The colour readout moves and the node readout does not"
-        if node_shift <= 0.05 else
-        "The same edit moves both of the two adjacent readouts",
+        "The same edit leaves the tied model's node readout alone"
+        if shift("S1") <= 0.05 else
+        "The same edit moves the tied model's node readout too",
         lambda ax: draw_positions(ax, cells), "positions",
-        note=("Both series are under the SAME broken edit. Naming $v$ is over all "
-              "%d cases, not the conditional denominator." % n))
+        note=("Tied model moved $p_{\\mathrm{freed}}$ by about 0.48 under this "
+              "edit. Unconditional over %d cases; largest untied shift %.2f."
+              % (n, shift("J2"))))
+
+    # ---- POST-HOC. Not registered, and the pages say so.
+    g0 = [cells[("J2", s)]["round0_guard"] for s in SEEDS]
+    gc = [cells[("J2", s)]["emits_cond_broken"] for s in SEEDS]
+    d.claim_page(
+        "The untied model's guard does not survive the move off round 0"
+        if sum(1 for a, b in zip(g0, gc) if b - a > GAP_BAR) >= 2 else
+        "The untied model guards derived facts as it guards given ones",
+        lambda ax: draw_guard(ax, cells), "guard",
+        note=("POST-HOC, no hypothesis asked this. Conditional rate; higher means "
+              "it writes a colour for a $v$ that is no longer forced."))
 
     d.table_page(
         "The guard rate depends on which cases you count",
-        ["cell", "all %d cases" % n, "broken $\\mid$ clean", "clean cases"],
+        ["cell", "all %d cases" % n, "clean named $v$ only", "clean cases"],
         [[cell_label(*k), "%.4f" % cells[k]["emits_broken"],
           "%.4f" % cells[k]["emits_cond_broken"],
           "%d of %d" % (cells[k]["clean_n"], n)] for k in CELL_ORDER],
-        note=("Column 3 counts only cases where the clean prompt named $v$; "
-              "column 2 counts all. Findings 68 and 69 published column 3."))
+        note=("The second rate is the denominator findings 68 and 69 published: "
+              "only cases where the clean prompt named $v$."))
 
     d._add(SCOPE)
 
     closing = {
         "chains": ["The rule fires on a fact the model wrote, not only on hints.",
-                   "So finding 69's decomposition is not confined to round 0.",
-                   "Chaining is now a causal result, not read off accuracy."],
+                   "Chaining is now a causal result, not read off accuracy.",
+                   "Post-hoc: the untied model's guard may not survive the move."],
         "chains_weaker": ["The rule fires on a derived fact, above the bar.",
                           "It fires less often than on a given one.",
                           "Provenance costs something; it does not decide the outcome."],
