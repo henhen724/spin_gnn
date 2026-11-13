@@ -97,13 +97,22 @@ def fig_training_curves(outdir, fname="curves.png"):
             ax.plot([e for e, _ in pts], [n for _, n in pts],
                     color=color, linewidth=1.8, rasterized=True)
             label_line(ax, pts[-1][0], pts[-1][1], name, color=color, dy=dy)
+        # BOTH level lines, because the page's claim is which level a cell
+        # reached: with only the floor drawn, "reached the basin" was a sentence
+        # the reader had to take on trust from a figure that did not show 1.561.
         ax.axhline(FLOOR, color=MUTED, linewidth=1.0, linestyle=(0, (4, 3)))
+        ax.axhline(BASIN, color=MUTED, linewidth=1.0, linestyle=(0, (1, 2)))
         style_axes(ax, xlabel="epoch", ylabel="train NLL" if ax is axes[0] else None)
         ax.set_title("seed %d" % seed, color=MUTED, fontsize=13)
         ax.set_xlim(start, 128)
         ax.set_ylim(lo - pad, hi + pad)
-    # In the empty right half of the first facet, where no curve runs.
-    axes[0].annotate("floor 1.600", xy=(112, FLOOR), xytext=(0, 5),
+    # In the empty right half of the first facet, where no curve runs. The two
+    # labels sit on opposite sides of their lines so neither reads as belonging
+    # to the other: 1.600 above its line, 1.561 below its own.
+    axes[0].annotate("floor %.3f" % FLOOR, xy=(112, FLOOR), xytext=(0, 5),
+                     textcoords="offset points", color=MUTED, fontsize=11,
+                     ha="right")
+    axes[0].annotate("basin %.3f" % BASIN, xy=(112, BASIN), xytext=(0, -14),
                      textcoords="offset points", color=MUTED, fontsize=11,
                      ha="right")
     fig.tight_layout()

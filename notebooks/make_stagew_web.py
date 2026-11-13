@@ -73,6 +73,10 @@ DECK = "/home/users/hshunt/slides/decks/spin-gnn/budget"
 WORD = {0: "Zero", 1: "One", 2: "Two", 3: "Three"}
 CONTROL_EPOCHS = EPOCHS - ADDED_EPOCHS      # 50
 
+# step_epoch_census.level() returns STUCK for the level the LEVELS
+# explanation page calls the plateau. One level, one word, on every page.
+LEVEL_WORD = {"BASIN": "basin", "FLOOR": "floor", "STUCK": "plateau"}
+
 
 def sufficiency(target):
     """The N=48 accuracy-to-solve curve, by acc_vs_solve's own functions.
@@ -128,7 +132,7 @@ def within_run(rows, ms):
             raise SystemExit("nll_at() and history.json disagree at epoch %d"
                              % CONTROL_EPOCHS)
         out.append({"seed": r["seed"], "at50": at50, "end": r["nll"],
-                    "fall": at50 - r["nll"], "level": level(r["nll"])})
+                    "fall": at50 - r["nll"], "level": LEVEL_WORD[level(r["nll"])]})
     return out
 
 
@@ -340,7 +344,7 @@ def main():
     med_fall = median([r["fall"] for r in wc])
 
     prov = ("Array 52053221 tasks 0-2 (COMPLETED 0:0, 15h51m-15h56m each), "
-            "registered scorer committed f0f2bd3 before the first cell landed, "
+            "registered scorer committed beedf66 before the first cell landed, "
             "scored by job 52062829, builder commit %s. tied_no_mlp T=16 d320 "
             "ff1024 h4 k=1, %d epochs, lr 1e-3 constant, seeds 0/1/2, 14 "
             "densities x 400 instances, --shuffle-adj --fall."
@@ -391,9 +395,9 @@ def main():
     d.claim_page(
         "%s of three seeds reaches the accuracy the bar needs" % WORD[n_clear],
         lambda ax: draw_acc(ax, arms, acc_meds), "acc",
-        note="Registered in advance: %.4f in at least two of three seeds, the "
-             "control's %.4f plus the %.4f the gate needs."
-             % (ACC_BAR, S1_ACC, NEED))
+        note="Registered in advance: %.4f in at least two of three seeds -- "
+             "the control's %.4f plus a %.4f margin, fixed before any cell "
+             "landed." % (ACC_BAR, S1_ACC, NEED))
 
     d.table_page(
         "The seed spread is %.4f and the bar asked for %.4f" % (spread_w, NEED),
@@ -406,7 +410,7 @@ def main():
         highlight_row=0,
         note="One seed over the bar is not evidence when the spread between "
              "seeds is %.0f times the gain the bar asks for."
-             % (spread_w / NEED))
+             % (round(spread_w, 4) / round(NEED, 4)))
 
     d.table_page(
         "Training loss fell in all three seeds, by %.4f at the median" % med_fall,
@@ -414,7 +418,7 @@ def main():
          "at epoch %d" % EPOCHS, "fall", "bar %.4f" % NLL_BAR, "level reached"],
         [[str(r["seed"]), "%.4f" % r["at50"], "%.4f" % r["end"],
           "%.4f" % r["fall"], "clears" if r["fall"] >= NLL_BAR else "below",
-          r["level"].lower()] for r in wc],
+          r["level"]] for r in wc],
         note="Within each run, not across runs: the same cell at epoch %d and "
              "at epoch %d. The bar is stage S's measured tail slope."
              % (CONTROL_EPOCHS, EPOCHS))
@@ -440,13 +444,13 @@ def main():
     d.table_page(
         "The seed that reached the basin did not solve any better",
         ["arm", "seed", "train NLL", "level", "token acc", "rho_50"],
-        [[lbl, str(r["seed"]), "%.4f" % r["nll"], level(r["nll"]).lower(),
+        [[lbl, str(r["seed"]), "%.4f" % r["nll"], LEVEL_WORD[level(r["nll"])],
           "%.4f" % r["acc"],
           "%.3f" % r["rho50"] if r["ok"] else ">%.3f" % r["rho50"]]
          for lbl, rows in (("%d ep" % CONTROL_EPOCHS, ctrl),
                            ("%d ep" % EPOCHS, w1)) for r in rows],
-        note="Lower rho_50 is better. Seed %d is the first k=1 cell below %.3f, "
-             "and its rho_50 is %.3f against the control's %s."
+        note="Lower rho_50 is better. Seed %d is the first one-block cell to end "
+             "below %.3f, and its rho_50 is %.3f against the control's %s."
              % (basin["seed"], BASIN_NLL, best["rho50"], S1_RHO50))
 
     d.claim_page(
@@ -507,7 +511,7 @@ def main():
     print("steps: %s; plateau escapes %d/3; levels %s"
           % ("/".join("%s" % (steps[s] if steps[s] is not None else "none")
                       for s in sorted(steps)), n_esc,
-             "/".join(r["level"].lower() for r in wc)))
+             "/".join(r["level"] for r in wc)))
     print("solve: %d epochs below the control at %d of %d densities; mean_solve "
           "%.4f -> %.4f" % (EPOCHS, n_below, len(grid), S1_MEAN_SOLVE,
                             ws["mean_solve"]))

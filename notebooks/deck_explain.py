@@ -20,8 +20,8 @@ what is measured, then what counts as a pass -- a reader needs the quantity
 before the number:
 
     TASK, HINTS, DEDUCTION, [tokenization figure], [trace figure], GENERATION,
-    ARCHITECTURE, SOLVE_RATE, RHO50, CENSOR, GATE, ACCURACY, LEVELS, LEAK,
-    BASELINES
+    ARCHITECTURE, SOLVE_RATE, RHO50, CENSOR, GATE, ACCURACY, SUFFICIENCY,
+    LEVELS, LEAK, BASELINES
 
 The two figure pages stay in the stage builder because the PNGs are rendered
 per deck; everything else is here. PAGES is that list in that order, with a
@@ -136,10 +136,23 @@ $$\\text{acc} = \\frac{1}{|\\mathcal{V}|}\\sum_{p \\in \\mathcal{V}} \\mathbf{1}
 - Its absolute value is not interpretable on its own -- most positions are structural tokens that any trained cell gets right. So it is only ever read as a difference against a matched control, which is why the registered bar is the control's own accuracy plus a margin rather than a round number.
 """
 
+SUFFICIENCY = """## Solve rate follows token accuracy, to within a measured bar
+
+- Across every cell this project has trained, mean solve rate over the grid is an increasing function of validation token accuracy: a cell that predicts more tokens correctly solves more instances, largely regardless of how it was built.
+- The **reference ladder** is the family of cells that differ only in depth, at one width and one recipe. Fitting a monotone (isotonic) curve through their (accuracy, mean solve) pairs gives $\\hat{s}(\\text{acc})$, the mean solve rate a cell of that accuracy is expected to reach.
+- A cell's **residual** is how far it beats or misses that expectation:
+
+$$r = \\bar{s} - \\hat{s}(\\text{acc})$$
+
+  with $\\bar{s}$ the cell's own mean solve rate, averaged over the 14 densities.
+- The **leave-one-out bar** is how well the curve predicts a ladder cell it was not fitted on: refit without cell $i$, predict that cell, and take the root mean square of those errors across the ladder. It is **0.0423**, and it is the yardstick a residual is read against.
+- Why this page exists: a residual inside the bar means an arm changed *where* a cell sits on the existing relation, not the relation itself. Only a residual outside the bar is evidence that something architectural happened.
+"""
+
 LEVELS = """## Train NLL settles at one of three levels: plateau, floor, basin
 
 - Cells in this family do not land on a continuum. Training ends at one of three places, and which one is reached matters more than any architectural knob tested so far:
-- **Plateau**, above 1.600: the cell left its initial collapse and then stopped. Stage V's seed 1 ended at 1.6334 and never moved again.
+- **Plateau**, above 1.600: the cell left its initial collapse and then stopped. One cell on disk ended at 1.6334 and never moved again.
 - **Floor**, at or below 1.600, typically 1.585-1.592: where the recipe's healthy seeds land. Tight and reproducible.
 - **Basin**, at or below 1.561: below the floor, and rare. Two of the cells that reached it are the best $\\rho_{50}$ seeds the tied family has produced, which is why the level is tracked at all. Reaching it is not by itself a better model: the association is what makes the level worth watching, and it is not a guarantee.
 - A **step** is a move between levels: a one-epoch fall out of a flat stretch that keeps falling. It happens at one epoch rather than gradually, and it has been the event most associated with a cell ending up good.
@@ -166,7 +179,8 @@ BASELINES = """## The two reference points: J2 at 0.580, S1 at 0.757
 """
 
 PAGES = [TASK, HINTS, DEDUCTION, FIGURE_SLOT, GENERATION, ARCHITECTURE,
-         SOLVE_RATE, RHO50, CENSOR, GATE, ACCURACY, LEVELS, LEAK, BASELINES]
+         SOLVE_RATE, RHO50, CENSOR, GATE, ACCURACY, SUFFICIENCY, LEVELS, LEAK,
+         BASELINES]
 
 
 def check():
@@ -176,14 +190,15 @@ def check():
     py_compile of this module has to work without the scorer being importable.
     The deck job calls this with the project's modules loaded.
     """
-    from scripts.stagew_score import FREE, S1_RHO50, S1_TRAINABLE
+    from scripts.stagew_score import FREE, LOO_BAR, S1_RHO50, S1_TRAINABLE
 
     body = "".join(PAGES)
     failures = []
     for text, where in (("613,818", "ARCHITECTURE and BASELINES"),
                         ("0.740", "GATE"),
                         ("0.757", "GATE and BASELINES"),
-                        ("0.580", "GATE and BASELINES")):
+                        ("0.580", "GATE and BASELINES"),
+                        ("0.0423", "SUFFICIENCY")):
         if text not in body:
             failures.append("%s missing from %s" % (text, where))
     if "{:,}".format(S1_TRAINABLE) != "613,818":
@@ -199,6 +214,8 @@ def check():
         failures.append("scorer says S1 rho_50 is %.4f, prose says 0.757" % s1)
     if "%.3f" % (s1 - FREE) != "0.017":
         failures.append("S1 is %.4f above the gate, prose says 0.017" % (s1 - FREE))
+    if "%.4f" % LOO_BAR != "0.0423":
+        failures.append("the leave-one-out bar is %.4f, prose says 0.0423" % LOO_BAR)
     if "\\mathbb{1}" in body:
         failures.append("\\mathbb{1} is not in KaTeX; use \\mathbf{1}")
     for bad in ("\\(", "\\[", "\\bm", "\\mathscr", "\\mathbbm", "\\eqref"):
