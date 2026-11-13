@@ -30,7 +30,8 @@ from notebooks import deck_explain
 from notebooks.deck_tokenization import example_instance, page_tokenization, page_trace
 from notebooks.make_staget_web import WebDeck
 
-from scripts.ddguard_score import ALPHA, ARMS, RULE_BAR, SEEDS, rows_of, truthy
+from scripts.ddguard_score import (ALPHA, ARMS, RULE_BAR, SEEDS, ratio, rows_of,
+                                   truthy)
 from scripts.dissoc_score import FREED_BAR, RUN, cell_dir, fmean, sign_test
 from scripts.stagev_score import S1_RHO50_SEEDS, S1_TRAINABLE
 from scripts.stagej_score import PREDICTED_TRAINABLE
@@ -66,6 +67,12 @@ def load_cells():
             d["true_%s" % v] = fmean(rows, "%s_p_true" % v)[0]
             d["cand_%s" % v] = fmean(rows, "%s_p_cand" % v)[0]
             d["emits_%s" % v] = fmean(rows, "%s_emits_v" % v)[0]
+        # Two denominators, kept apart on purpose. The figures use the
+        # unconditional rate (one denominator, so the variants are comparable);
+        # the tables use the conditional one, which is finding 68's published
+        # statistic, and every header that shows it says "broken | clean".
+        d["emits_cond_broken"], d["clean_n"] = ratio(rows, "clean_emits_v",
+                                                     "broken_emits_v")
         n_valid = sum(1 for r in rows if truthy(r["rule_valid"]))
         d["rule_valid_n"] = n_valid
         d["rule_flips"] = (sum(1 for r in rows
@@ -93,6 +100,8 @@ def check_claims(cells):
                     "p_freed(%s) disagrees at %s s%d" % (v, arm, s)
             assert abs(js["emits"][arm][k] - c["emits_broken"]) < 1e-12, \
                 "broken_emits_v disagrees at %s s%d" % (arm, s)
+            assert abs(js["emits_cond"][arm][k] - c["emits_cond_broken"]) < 1e-12, \
+                "conditional broken|clean disagrees at %s s%d" % (arm, s)
             assert abs(js["placebo_drift"][arm][k] - c["drift"]) < 1e-12, \
                 "placebo drift disagrees at %s s%d" % (arm, s)
             sg = js["sign"]["%s_s%d" % (arm, s)]
@@ -223,6 +232,10 @@ Every variant below differs from the clean prompt in **exactly one token**, and
 that is asserted in code rather than intended. Let $v$ be a node whose colour is
 forced, $c$ that forced colour, $w$ the single hint neighbour holding colour $a$,
 and $b$ a colour some other neighbour already holds.
+
+A **candidate** for $v$ is a colour that no known neighbour of $v$ holds. $v$ is
+**forced** when it has exactly one candidate, and that is the only situation in
+which direct deduction may write a colour for $v$.
 
 | variant | the edit | what direct deduction then says |
 | --- | --- | --- |
@@ -394,7 +407,7 @@ def main():
     elif not h5:
         head = "This run disagrees with finding 68 on the same argmax"
     elif h2:
-        head = "One token frees a colour and leaves the node choice untouched"
+        head = "The tied model represents the ambiguity and schedules as if certain"
     else:
         head = "The tied model does not notice the edit at either position"
 
@@ -461,13 +474,13 @@ def main():
 
     # ---- the four-variant figures, one page per arm
     d.claim_page(
-        "The tied model's freed colour tracks the rule edit exactly",
+        "One token moves the freed colour from zero to one half",
         lambda ax: draw_variants(ax, cells, "S1"), "variants_s1",
-        note=("Mean $p_{\\mathrm{freed}}$ over %d cases. Clean and placebo sit at "
-              "the floor, the rule edit at the ceiling." % n))
+        note=("Tied model, mean $p_{\\mathrm{freed}}$ over %d cases. Clean and "
+              "placebo sit at the floor, the rule edit at the ceiling." % n))
 
     d.claim_page(
-        "The untied model shows the same four-variant shape",
+        "The untied model lands on the same four values",
         lambda ax: draw_variants(ax, cells, "J2"), "variants_j2",
         note=("Same axes as the previous page. Its broken column is teacher "
               "forced onto a node it would not have named."))
@@ -495,34 +508,48 @@ def main():
               "$p < %.2f$ with median $\\ge %.2f$." % (ALPHA, FREED_BAR)))
 
     d.table_page(
-        "Mean probability on each of $v$'s two candidate colours",
-        ["cell", "$p_{\\mathrm{true}}$ broken", "$p_{\\mathrm{freed}}$ broken",
-         "sum"],
+        "Under the broken edit the mass splits over exactly two colours",
+        ["cell", "$p_{\\mathrm{true}}$", "$p_{\\mathrm{freed}}$", "sum"],
         [[cell_label(*k), "%.4f" % cells[k]["true_broken"],
           "%.4f" % cells[k]["freed_broken"], "%.4f" % cells[k]["cand_broken"]]
          for k in CELL_ORDER],
-        note=("Under the broken hints these two colours are exactly the candidate "
-              "set. The sum says how much mass elimination left elsewhere."))
+        note=("$c$ and $a$ are exactly $v$'s candidate set after the edit. The sum "
+              "is the mass elimination did not leave elsewhere."))
+
+    d.points_page(
+        "Both architectures compute the same ambiguity; one acts on it",
+        ["Every cell splits near evenly over the two surviving colours.",
+         "The untied model then stops naming $v$; the tied model does not.",
+         "So the difference is in the schedule, not in the elimination."])
+
+    d.table_page(
+        "Whether $v$ is still named, on both denominators",
+        ["cell", "all %d cases" % n, "broken $\\mid$ clean", "clean cases"],
+        [[cell_label(*k), "%.4f" % cells[k]["emits_broken"],
+          "%.4f" % cells[k]["emits_cond_broken"],
+          "%d of %d" % (cells[k]["clean_n"], n)] for k in CELL_ORDER],
+        note=("The second column is finding 68's published statistic. The two "
+              "differ because they are over different case sets."))
 
     # ---- H5, the reproduction
     d.table_page(
         "The node readout reproduces finding 68 case by case",
-        ["cell", "agree", "here", "finding 68"],
+        ["cell", "agree", "broken $\\mid$ clean", "finding 68"],
         [[cell_label(*k),
           "%d of %d" % (js["reproduce"]["%s_s%d" % k]["agree"], n),
           "%.4f" % js["reproduce"]["%s_s%d" % k]["here"],
           "%.4f" % js["reproduce"]["%s_s%d" % k]["published"]]
          for k in CELL_ORDER],
-        note=("Same argmax, same position, same checkpoint, a separate job. This "
-              "is what makes the two decks' numbers comparable."))
+        note=("Same argmax, same position, same checkpoint, a separate job. Both "
+              "rate columns are conditional, so they are comparable."))
 
     d._add(SCOPE)
 
     # Last page by the project's own rule: the previous result on this eval.
     if h2:
         close = ["Finding 68 used two edits and could not rule out insensitivity.",
-                 "The same edit now moves one readout and not the other.",
-                 "Its headline stands: the rule is there, the schedule is not."]
+                 "One edit now splits the colour and leaves the node choice identical.",
+                 "So determinacy is computed, and then not consulted by the schedule."]
         claim = "This is the dissociation finding 68 could not make"
     else:
         close = ["Finding 68 claimed the tied model runs the rule, not the guard.",

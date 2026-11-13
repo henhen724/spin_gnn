@@ -120,11 +120,21 @@ def key_of(row):
     return tuple(str(row[k]) for k in CASE_KEY)
 
 
+def _num(x):
+    """Every CSV cell is a string, and the boolean columns arrive as 'True'.
+    float('True') raises, which is what killed job 52224240 after the whole
+    measurement had already succeeded."""
+    try:
+        return float(x)
+    except ValueError:
+        return float(truthy(x))
+
+
 def fmean(rows, key, cond=None):
     g = [r for r in rows if cond is None or truthy(r[cond])]
     if not g:
         return float("nan"), 0
-    return sum(float(r[key]) for r in g) / len(g), len(g)
+    return sum(_num(r[key]) for r in g) / len(g), len(g)
 
 
 def sign_test(rows, hi, lo):
@@ -199,19 +209,24 @@ def main():
         raise SystemExit(1)
 
     # ---- the 4x2 table ------------------------------------------------------
-    print("\n    mean p_freed by variant, and emits_v at the node position")
-    print("    cell     clean   placebo    rule   broken  |  emits_v broken")
+    # Both emits columns are printed because they have DIFFERENT DENOMINATORS and
+    # mixing them silently is this project's recurring deck bug: "uncond" is over
+    # all cases, "b|c" only over the cases the model named v on cleanly.
+    print("\n    mean p_freed by variant, and whether v is still named")
+    print("    cell     clean   placebo    rule   broken  | emits uncond   b|c")
     for arm in ARMS:
         for s in SEEDS:
             rows = cells[(arm, s)]
             vals = {v: fmean(rows, "%s_p_freed" % v)[0]
                     for v in ("clean", "placebo", "rule", "broken")}
             ev = fmean(rows, "broken_emits_v")[0]
+            evc, _ = ratio(rows, "clean_emits_v", "broken_emits_v")
             out["freed"].setdefault(arm, {})[s] = vals
             out["emits"].setdefault(arm, {})[s] = ev
-            print("    %s s%d  %7.4f %8.4f %7.4f %8.4f  |  %7.4f"
+            out.setdefault("emits_cond", {}).setdefault(arm, {})[s] = evc
+            print("    %s s%d  %7.4f %8.4f %7.4f %8.4f  | %10.4f %7.4f"
                   % (arm, s, vals["clean"], vals["placebo"], vals["rule"],
-                     vals["broken"], ev))
+                     vals["broken"], ev, evc))
 
     # ---- H4, read BEFORE H2 because it is H2's null -------------------------
     print("\nH4  specificity: |placebo - clean| <= %.2f" % FREED_BAR)
@@ -273,13 +288,21 @@ def main():
             agree = sum(1 for a, b in zip(new, old)
                         if truthy(a["broken_emits_v"]) == truthy(b["corrupt_emits_v"]))
             published = ddg["guard"][arm][str(s)]
-            here = fmean(new, "broken_emits_v")[0]
+            # CONDITIONAL on the model naming v cleanly -- which is the statistic
+            # ddguard_score registered and published. Comparing it against this
+            # run's UNCONDITIONAL mean would be the denominator mistake the guard
+            # deck's read-back caught on 2026-11-13; the rates would differ by a
+            # third and look like a reproduction failure that is not one.
+            here, here_n = ratio(new, "clean_emits_v", "broken_emits_v")
+            uncond = fmean(new, "broken_emits_v")[0]
             ok = agree >= len(ref) - 1
             h5 = h5 and ok
             out["reproduce"]["%s_s%d" % (arm, s)] = {
-                "agree": agree, "n": len(ref), "published": published, "here": here}
-            print("    %s s%d  agree %d/%d   here %.4f  finding 68 %.4f  %s"
-                  % (arm, s, agree, len(ref), here, published,
+                "agree": agree, "n": len(ref), "published": published,
+                "here": here, "clean_n": here_n, "unconditional": uncond}
+            print("    %s s%d  agree %d/%d   broken|clean %.4f  finding 68 %.4f"
+                  "   (uncond %.4f over %d clean)  %s"
+                  % (arm, s, agree, len(ref), here, published, uncond, here_n,
                      "ok" if ok else "DISAGREES"))
             if not ok:
                 for i, (a, b) in enumerate(zip(new, old)):
