@@ -56,6 +56,7 @@ if [ -e .git/index.lock ]; then
 fi
 git add notebooks/make_determinism_web.py \
         scripts/noise_floor.py \
+        scripts/deck_lint.py \
         scripts/slurm/determinism_deck_2026-11-13.sbatch
 git diff --cached --name-only | sed 's/^/  staged /'
 if ! git diff --cached --quiet; then
@@ -104,6 +105,33 @@ H3's page title also now branches on the measured sign instead of asserting a
 cost in advance: the pinned cells came in at 34m37s and 34m39s against 32m14s
 and 32m3s unpinned, so the cost is real here, but the title had been written
 before any of those four numbers existed.
+
+Third attempt. The second (48bade3, job 52189773) died in slides.py on a
+points_page carrying 5 bullets against a cap of 3; deck_lint checked word
+counts per literal and not how many literals a page had, so three over-full
+pages passed the lint and the first of them cost a job. deck_lint now counts
+bullets per points_page, and the three pages are split rather than compressed.
+The existing stage builders still lint clean, so the new check does not
+retroactively condemn a published deck.
+
+Then the deck was rendered and read back twice on the login node before this
+submission, which found five more defects that a render cannot see:
+
+  - the spread figure's title, "Every run of this one cell lands somewhere
+    different after epoch 0", was refuted by its own figure -- the pinned pair
+    plots as one point, which IS the result. Now "Only the pinned pair lands
+    twice in the same place";
+  - that figure's x axis said det a / free a, this job's directory names,
+    defined nowhere in the deck, while every other page says pinned/unpinned;
+  - the LEAK explanation page had been dropped as unused, but the shared
+    tokenization figure asserts "THE ORDER WITHIN A ROW IS THE LEAK" in bold.
+    A term a FIGURE introduces is a term the deck has to define, so LEAK is
+    back and only CENSOR is dropped;
+  - the wall-clock table rounded to whole minutes, so a reader computing
+    (35 - 32) / 3 got 1.0 min per epoch while the note said 0.8. One decimal;
+  - "the count is out of reach: 562 GPU-hours at best" asserted that the
+    optimistic reading is unreachable. 562 GPU-hours is about three weeks of
+    one GPU -- expensive, not impossible. It now states both counts.
 MSG
     echo "commit rc=$?"
 fi

@@ -24,6 +24,12 @@ import sys
 # slides.py: CLAIM_MAX_WORDS, NOTE_MAX_WORDS, BULLET_MAX_WORDS.
 CAPS = {"claim": 12, "note": 25, "bullet": 14}
 PAGE_CALLS = ("claim_page", "table_page", "points_page", "title_page", "expect")
+# slides.py _check_points: a points_page carries at most this many bullets. The
+# word caps above are per literal, so a page of three short bullets passed the
+# lint and still died in the render -- that cost jobs 52183401 and 52189773 on
+# 2026-11-13. Counted here because the count is visible in the ast even when
+# the bullets themselves are computed strings.
+POINTS_MAX = 3
 
 
 def words(s):
@@ -61,6 +67,9 @@ def check(path):
         for a in node.args[first + 1:]:
             if isinstance(a, (ast.List, ast.Tuple)):
                 items += [("bullet", e) for e in a.elts]
+                if name == "points_page" and len(a.elts) > POINTS_MAX:
+                    bad.append((node.lineno, "points-per-page", len(a.elts),
+                                POINTS_MAX, "split this page"))
         for kw in node.keywords:
             if kw.arg == "note":
                 items.append(("note", kw.value))
@@ -74,11 +83,13 @@ def check(path):
             if kind == "claim" and n < 3:
                 bad.append((node.lineno, "claim-too-short", n, 3, s))
     for lineno, kind, n, cap, s in bad:
-        print("%s:%d  %s %d words (cap %d): %s" % (path, lineno, kind, n, cap, s))
+        unit = "bullets" if kind == "points-per-page" else "words"
+        print("%s:%d  %s %d %s (cap %d): %s"
+              % (path, lineno, kind, n, unit, cap, s))
     return len(bad)
 
 
 if __name__ == "__main__":
     total = sum(check(p) for p in sys.argv[1:])
-    print("%d over-length page literals" % total)
+    print("%d page-cap violations" % total)
     sys.exit(1 if total else 0)

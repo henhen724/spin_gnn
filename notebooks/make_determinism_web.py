@@ -13,9 +13,11 @@ measuring, then a stage's null is a statement about the instrument and not about
 the model. That belongs in front of hshunt in the same form the results do.
 
 PAGE SET. The shared explanation pages come from notebooks/deck_explain.py, minus
-CENSOR and LEAK, which this deck never uses -- every term that DOES appear here
-is defined here, including the ones a reader of the stage decks would already
-know. Five more explanation pages are specific to this question (what a seed
+CENSOR alone -- every term that appears here is defined here, including the ones
+a reader of the stage decks would already know. LEAK was dropped too until the
+second read-back found the shared tokenization figure asserting "THE ORDER
+WITHIN A ROW IS THE LEAK" in bold, with nothing in the deck saying what the leak
+is. A term a FIGURE introduces is a term the deck uses. Five more explanation pages are specific to this question (what a seed
 fixes, what a replicate is, what the flag pins, the replicate-count equation, and
 the hypotheses as they were written before the job ran). Then the results.
 
@@ -312,10 +314,15 @@ def main():
     args = ap.parse_args()
 
     deck_explain.check()
-    # CENSOR and LEAK go unused by this deck, so they are not emitted: every
-    # term that appears here is still defined here, which is the actual rule.
-    shared = [p for p in deck_explain.PAGES
-              if p not in (deck_explain.CENSOR, deck_explain.LEAK)]
+    # CENSOR goes unused by this deck -- nothing here is scored on a grid that
+    # could fail to clear 0.5 -- so it is not emitted.
+    #
+    # LEAK IS EMITTED, and dropping it was a defect the second read-back caught:
+    # the shared tokenization figure says, in bold, "THE ORDER WITHIN A ROW IS
+    # THE LEAK", so the term appears in this deck whether or not a stage result
+    # turns on it. Every term that appears here is defined here, and a figure
+    # counts as appearing.
+    shared = [p for p in deck_explain.PAGES if p is not deck_explain.CENSOR]
     n_explain = len([p for p in shared if p is not deck_explain.FIGURE_SLOT]) + 5
 
     hists, cfgs = {}, {}
@@ -366,11 +373,15 @@ def main():
     d.points_page(
         "Five stages reported a null without ever giving noise a number",
         ["Stages S, T, U, V and W each moved one knob and found nothing.",
-         "Stage W compared 100 epochs against 50 at matched seeds.",
-         "Its two arms already differed **before the extra epochs could act**.",
-         "That difference has no knob in it, so it measures the noise.",
+         "Each said *within noise* without noise ever having a number.",
          "The effect all five were reading is %.4f of validation token accuracy."
          % NEED])
+
+    d.points_page(
+        "Stage W handed over that number without meaning to",
+        ["Stage W compared 100 epochs against 50 at matched seeds.",
+         "Its two arms already differed **before the extra epochs could act**.",
+         "That difference has no knob in it, so it measures the noise."])
 
     ex = example_instance(n_nodes=48, degree=5, n_colors=4, shuffle_adj=True,
                           fall=True)
@@ -420,11 +431,13 @@ def main():
         "The answer is not more replicates, it is a lower floor",
         ["Three points estimate a standard deviation badly, hence the 20-fold "
          "range.",
-         "Under **either** reading the count is out of reach: %.0f GPU-hours at "
-         "best." % (required_n(sd_tight) * HOURS_PER_REPLICATE if sd_tight
-                    else required_n(sd_all) * HOURS_PER_REPLICATE),
-         "Every one of the three pairs differs by more than %.4f on its own."
-         % NEED,
+         # Was "out of reach: %.0f GPU-hours at best", which asserted that the
+         # optimistic 562 is unreachable. It is about three weeks of one GPU --
+         # expensive, not impossible. State both numbers and let them speak.
+         "Costs %.0f GPU-hours optimistically, %.0f under the honest reading."
+         % ((required_n(sd_tight) if sd_tight else required_n(sd_all))
+            * HOURS_PER_REPLICATE,
+            required_n(sd_all) * HOURS_PER_REPLICATE),
          "What is left is to make two replicates the same run."])
 
     # ---- H1
@@ -458,11 +471,19 @@ def main():
     # ---- the spread across every run of this configuration
     runs = [("stage W\n100 ep", at(w_hist[0], 0)[0], False),
             ("control\n50 ep", at(c_hist[0], 0)[0], False)]
-    runs += [(name.replace("_", " "), hists[name][0]["train_nll"],
-              True) for name, _ in CELLS if name in hists]
+    # The axis says "pinned a" / "unpinned a", not the cell's directory name
+    # "det_a" / "free_a". The second read-back caught that: "det" and "free" are
+    # this job's internal names and are defined nowhere in the deck, while
+    # "pinned" and "unpinned" are the words every other page already uses.
+    runs += [("%s %s" % ("pinned" if det else "unpinned", name.split("_")[-1]),
+              hists[name][0]["train_nll"], True)
+             for name, det in CELLS if name in hists]
     spread = max(r[1] for r in runs) - min(r[1] for r in runs)
     d.claim_page(
-        "Every run of this one cell lands somewhere different after epoch 0",
+        # Read-back caught the first title here, "Every run of this one cell
+        # lands somewhere different after epoch 0", being refuted by its own
+        # figure: det_a and det_b plot at ONE point, which is the whole result.
+        "Only the pinned pair lands twice in the same place",
         lambda ax: draw_spread(ax, runs), "spread",
         note=("Same architecture, same 240,000 instances, same seed 0. Blue is "
               "this job, grey is stage W's pair. Spread %.4f." % spread))
@@ -472,9 +493,12 @@ def main():
         pinned_walls = [walls[n] for n in PINNED if n in walls]
         free_walls = [walls[n] for n in UNPINNED if n in walls]
         rows = [["pinned", "%d" % len(pinned_walls),
-                 ", ".join("%.0f" % w for w in pinned_walls)],
+                 # One decimal, not zero: rounded to whole minutes the table
+                 # read 35, 35 against 32, 32, from which a reader computes
+                 # 1.0 min per epoch while the note says 0.8.
+                 ", ".join("%.1f" % w for w in pinned_walls)],
                 ["unpinned", "%d" % len(free_walls),
-                 ", ".join("%.0f" % w for w in free_walls)]]
+                 ", ".join("%.1f" % w for w in free_walls)]]
         note = ("Whole-cell wall clock; each cell pays about nineteen minutes of "
                 "instance building before epoch 0.")
         # H3's SIGN was not predicted, so its title is chosen from the number
@@ -502,14 +526,21 @@ def main():
     d._add(SCOPE)
 
     d.points_page(
+        "The flag is off by default, so no published number moves",
+        ["The flag is off by default, so every published number still "
+         "reproduces.",
+         "Stages S through W all ran unpinned; none of their numbers move.",
+         "A cross-run null describes the instrument until the floor drops."])
+
+    # Last page by the project's own rule: compare against the previous best on
+    # this eval, or state that there is none. Here there is none, because no
+    # earlier stage measured reproducibility at all.
+    d.points_page(
         "There is no previous measurement of this to compare against",
         ["This project has never measured its own reproducibility before.",
          "So there is no previous best on this eval, and nothing is displaced.",
          "J2 still clears the %.3f gate at $\\rho_{50} = %.3f$; S1 does not."
-         % (FREE, J2_RHO50),
-         "The flag is off by default, so every published number still "
-         "reproduces.",
-         "A cross-run null describes the instrument until the floor drops."])
+         % (FREE, J2_RHO50)])
 
     path = d.write()
     used = sorted(os.listdir(d.fig_dir))
