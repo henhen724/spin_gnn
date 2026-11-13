@@ -55,6 +55,7 @@ if [ -e .git/index.lock ]; then
     exit 1
 fi
 git add notebooks/make_determinism_web.py \
+        scripts/noise_floor.py \
         scripts/slurm/determinism_deck_2026-11-13.sbatch
 git diff --cached --name-only | sed 's/^/  staged /'
 if ! git diff --cached --quiet; then
@@ -87,6 +88,22 @@ which this deck never uses; five more are specific to the question -- what a
 seed fixes and what it does not, what a replicate is, what the flag pins, the
 replicate-count equation with every symbol defined, and the hypotheses as they
 were written before the job was submitted.
+
+Second attempt. The first (23a4b15, job 52183401) refused to render, and the
+refusal was correct: check_claims compares noise_floor's effect size against
+the scorer's to twelve digits and they disagreed by 4%, because noise_floor had
+0.0011 typed into it while stage V DERIVES 0.0010565 and 0.0011 is only the
+rounding this project publishes. noise_floor now imports NEED from the module
+that defines it, which costs that file its stdlib-only property -- the import
+chain reaches numpy, so it no longer runs on the login node's python 3.6.8.
+Every figure still prints 0.0011 at %.4f; the replicate counts grow about 8%
+because they divide by NEED squared: 1294 -> 1404 and 66 -> 71 replicates per
+arm. Both were already out of reach and still are.
+
+H3's page title also now branches on the measured sign instead of asserting a
+cost in advance: the pinned cells came in at 34m37s and 34m39s against 32m14s
+and 32m3s unpinned, so the cost is real here, but the title had been written
+before any of those four numbers existed.
 MSG
     echo "commit rc=$?"
 fi

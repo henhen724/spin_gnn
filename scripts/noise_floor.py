@@ -22,7 +22,9 @@ scripts.step_epoch_census, the module that registered them. MID_EP is the
 control's last epoch, 0-based the way the training log numbers epochs, which is
 the same convention the stage-W deck prints.
 
-Run it anywhere -- stdlib only, so the login node's python3 is enough:
+Needs the project's modules loaded, because NEED is imported from the scorer
+that defines it rather than retyped (see below) and that import chain reaches
+numpy:
     python3 scripts/noise_floor.py
 """
 
@@ -33,15 +35,21 @@ from statistics import mean, stdev
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from scripts.step_epoch_census import ROOT, config_of, history
+# What stage S is still short of the gate by, in validation token accuracy.
+# IMPORTED, not retyped: stage V derives it as ACC_GAP * (S1_RHO50 - FREE) /
+# RHO_GAP = 0.0010565, and 0.0011 is the rounding this project publishes. This
+# file hardcoded that rounding until 2026-11-13, when make_determinism_web's
+# check_claims refused to render -- it asserts the two modules agree to twelve
+# digits, and they disagreed by 4%. Every number below is quoted at %.4f, so it
+# still PRINTS 0.0011; what changes is the replicate count, which divides by
+# NEED squared and so grows about 8%.
+from scripts.stagev_score import NEED
 
 W_LOGS = "sud2N48BudgetW_52053221_%d.out"
 CONTROL_LOGS = "sud2N48TiedWidthS_51853969_%d.out"
 
 # The control ran 50 epochs; the log numbers them from 0, so its last is 49.
 MID_EP = 49
-# What stage S is still short of the gate by, in validation token accuracy
-# (S4's accuracy-to-solve curve converts 0.017 of rho_50 into this).
-NEED = 0.0011
 # Two-sided alpha 0.05 at 80% power, normal approximation: (1.96 + 0.8416)^2.
 # A t-based number would be larger, so this is the optimistic side of the
 # calculation and the conclusion below only gets stronger.
