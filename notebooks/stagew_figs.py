@@ -2,8 +2,11 @@
 """Stage W's training-curve figure, written and checked BEFORE the cells land.
 
 WHY NOW. The curve figure is the one page of stage W's deck whose content does
-not depend on how W turns out: it shows each 100-epoch cell against its own
-50-epoch control, and that comparison is defined whatever the verdict is. Every
+not depend on how W turns out: it shows each 100-epoch cell against the
+50-epoch cell at its seed, and that comparison is defined whatever the verdict
+is. (They are separate RUNS of one configuration -- a matched seed fixes the
+data and the init, not the trajectory, since nothing pins GPU kernel
+nondeterminism -- so the pairing is by seed and not a continuation.) Every
 other results page needs W-a's answer first. Across stages S-V the deck
 read-backs caught seventeen defects, four of them in figures that rendered
 clean, so rendering and reading this one a day early removes that risk from
@@ -33,7 +36,7 @@ import matplotlib.pyplot as plt
 
 from slides import MUTED, SERIES, label_line, style_axes
 from scripts.step_epoch_census import (BASIN, FLOOR, ROOT, config_of, history,
-                                       step_epoch)
+                                       onset, step_epoch)
 
 W_LOGS = "sud2N48BudgetW_52053221_%d.out"
 CONTROL_LOGS = "sud2N48TiedWidthS_51853969_%d.out"
@@ -57,7 +60,7 @@ def by_seed(pattern):
 
 
 def fig_training_curves(outdir, fname="curves.png"):
-    """One facet per seed: the 100-epoch cell against its own 50-epoch control.
+    """One facet per seed: the 100-epoch cell against the 50-epoch one at it.
 
     Three seeds would be three series in one axes, which the palette refuses
     above three and which would then have to carry two arms as well. Faceting is
@@ -102,6 +105,18 @@ def fig_training_curves(outdir, fname="curves.png"):
         # the reader had to take on trust from a figure that did not show 1.561.
         ax.axhline(FLOOR, color=MUTED, linewidth=1.0, linestyle=(0, (4, 3)))
         ax.axhline(BASIN, color=MUTED, linewidth=1.0, linestyle=(0, (1, 2)))
+        # The page's title names the epoch of the one visible fall, so the
+        # figure has to name it too -- from the same function, so the two can
+        # never disagree. The first read-back of this figure is what found the
+        # fall at all: the title then said "no step anywhere" over a plot that
+        # plainly showed one.
+        on = onset(w[seed])
+        if on is not None:
+            ax.axvline(on["epoch"], color=SERIES[0], linewidth=0.9,
+                       linestyle=(0, (2, 3)))
+            ax.annotate("epoch %d" % on["epoch"], xy=(on["epoch"], hi),
+                        xytext=(4, -2), textcoords="offset points",
+                        color=SERIES[0], fontsize=10, ha="left", va="top")
         style_axes(ax, xlabel="epoch", ylabel="train NLL" if ax is axes[0] else None)
         ax.set_title("seed %d" % seed, color=MUTED, fontsize=13)
         ax.set_xlim(start, 128)

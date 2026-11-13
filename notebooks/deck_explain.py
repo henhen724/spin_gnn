@@ -108,6 +108,7 @@ $$\\rho_{50} = \\rho_{i-1} + (0.5 - s_{i-1})\\,\\frac{\\rho_i - \\rho_{i-1}}{s_i
   where $s_i = \\text{solve}(\\rho_i)$ and $i$ is the first bin with $s_{i-1} < 0.5 \\le s_i$.
 - **Lower is better.** A smaller $\\rho_{50}$ means the model still solves half the instances when fewer hints are given, i.e. it sustains longer chains of deduction.
 - One number per seed. Three seeds are run per configuration and all three are quoted, because the spread between them has repeatedly been larger than the effect being tested.
+- A **seed** fixes the generated instances and the weight initialisation. It does **not** fix the arithmetic order of the GPU kernels, which nothing in the training script pins, so two runs of one configuration at one seed are independent runs that do not reproduce each other. A comparison **within** one run is therefore stronger evidence than the same comparison across two runs at a matched seed.
 """
 
 CENSOR = """## A censored $\\rho_{50}$ is a result, not a missing number
@@ -155,7 +156,11 @@ LEVELS = """## Train NLL settles at one of three levels: plateau, floor, basin
 - **Plateau**, above 1.600: the cell left its initial collapse and then stopped. One cell on disk ended at 1.6334 and never moved again.
 - **Floor**, at or below 1.600, typically 1.585-1.592: where the recipe's healthy seeds land. Tight and reproducible.
 - **Basin**, at or below 1.561: below the floor, and rare. Two of the cells that reached it are the best $\\rho_{50}$ seeds the tied family has produced, which is why the level is tracked at all. Reaching it is not by itself a better model: the association is what makes the level worth watching, and it is not a guarantee.
-- A **step** is a move between levels: a one-epoch fall out of a flat stretch that keeps falling. It happens at one epoch rather than gradually, and it has been the event most associated with a cell ending up good.
+- A **step** is a move between levels that happens at one epoch rather than gradually. It is registered as three tests that must all hold at the same epoch $e$, with $n_e$ the train NLL after epoch $e$:
+- **Flat run-in**: $n_{e-6} - n_{e-1} < 0.0125$, i.e. under 0.0025 per epoch over the preceding 5 epochs. **Drop**: $n_{e-1} - n_e \\ge 0.005$ in that one epoch. **Persistence**: $n_{e-1} - n_{e+5} \\ge 0.020$, i.e. it keeps falling over the following 5 epochs.
+- Only epochs $e \\ge 8$ are scanned, which is after the initial collapse out of initialisation has finished, so that collapse cannot be mistaken for a step.
+- A fall that passes the first two tests and misses persistence is reported as exactly that: a fall visible on the curve which the registered detector does not call a step. The three tests were fixed before these cells ran and are not relaxed to fit one.
+- A step has been the event most associated with a cell ending up good, which is why it is detected at all.
 """
 
 LEAK = """## Every eval shuffles the adjacency so the answer cannot leak
@@ -191,6 +196,8 @@ def check():
     The deck job calls this with the project's modules loaded.
     """
     from scripts.stagew_score import FREE, LOO_BAR, S1_RHO50, S1_TRAINABLE
+    from scripts.step_epoch_census import (BASIN, DROP, FLAT, FLOOR, MIN_EP,
+                                           PERSIST, RUNIN, WINDOW)
 
     body = "".join(PAGES)
     failures = []
@@ -201,6 +208,20 @@ def check():
                         ("0.0423", "SUFFICIENCY")):
         if text not in body:
             failures.append("%s missing from %s" % (text, where))
+    # The step's three tests are quoted with their numbers on the LEVELS page,
+    # because the curves page of at least one deck reports a fall that misses
+    # one of them by name. A reader cannot check "missed on persistence"
+    # against a bar the deck never states.
+    for text, owns in (("%.3f" % BASIN, "BASIN"), ("%.3f" % FLOOR, "FLOOR"),
+                       ("%.4f" % (FLAT * RUNIN), "FLAT x RUNIN"),
+                       ("%.4f" % FLAT, "FLAT"), ("%.3f" % DROP, "DROP"),
+                       ("%.3f" % PERSIST, "PERSIST"),
+                       ("n_{e-6}", "RUNIN=%d" % RUNIN),
+                       ("n_{e+5}", "WINDOW=%d" % WINDOW),
+                       ("e \\ge %d" % MIN_EP, "MIN_EP")):
+        if text not in LEVELS:
+            failures.append("LEVELS does not state %s (%s) as %r"
+                            % (owns, text, text))
     if "{:,}".format(S1_TRAINABLE) != "613,818":
         failures.append("scorer says S1 is %d trainable, prose says 613,818"
                         % S1_TRAINABLE)

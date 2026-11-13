@@ -21,6 +21,15 @@ definition and NLL levels from scripts/step_epoch_census.py. check_claims()
 re-asserts every sentence against the data: a web deck is a URL, and a stale
 number here keeps serving.
 
+TWO PAGES CAME FROM THE FIGURE READ-BACK, not from the registration. Reading
+curves.png back showed the 100-epoch arm and its 50-epoch control separating
+from epoch 0 at a matched seed -- by up to 0.24 train NLL -- so the two arrays
+are independent runs of one configuration, not one run continued. paired()
+measures that at the control's last epoch and two table pages report it. It is
+the reason the deck runs past the 10-25 page guideline, and it is not optional:
+without it the cross-run pages (W-a, W-b, W-e) read as cleaner evidence than
+they are, in both directions.
+
 Usage (in a job -- this imports torch, and $HOME I/O on the login node wedges):
     python3 -u -m notebooks.make_stagew_web --commit <sha> [--out <dir>]
 """
@@ -46,6 +55,7 @@ from notebooks.make_staget_web import WebDeck
 # The loaders are stage V's, unchanged: same cells table, same bound-aware
 # summary, same per-bin curves. Only the rung key and the arm differ.
 from notebooks.make_stagev_web import arm, curves, history, plural
+from notebooks.stagew_figs import CONTROL_LOGS, W_LOGS
 from notebooks.stagew_figs import by_seed as logs_by_seed
 from notebooks.stagew_figs import fig_training_curves
 
@@ -60,7 +70,8 @@ from scripts.stagep_score import CENSOR_FLOOR, SCAN_P
 from scripts.stages_score import SCAN_S
 from scripts.staget_score import SCAN_T
 from scripts.stageu_score import SCAN_U
-from scripts.step_epoch_census import BASIN, FLOOR, level, step_epoch
+from scripts.step_epoch_census import (BASIN, FLOOR, PERSIST, level, onset,
+                                       step_epoch)
 from scripts.stagev_score import SCAN_V
 from scripts.stagew_score import (ACC_BAR, ADDED_EPOCHS, BASELINE_DIRS,
                                   BASIN_NLL, EPOCHS, NEED, NLL_BAR, S1, S1_ACC,
@@ -136,7 +147,45 @@ def within_run(rows, ms):
     return out
 
 
-def check_claims(ctrl, cs, w1, ws, wc, steps, bar, res):
+def paired(w_hist, c_hist):
+    """Both arms read at the control's LAST epoch, per seed.
+
+    Why this exists. Every cross-run page of this deck compares a 100-epoch cell
+    against the 50-epoch cell of the same name, and the read-back of the curve
+    figure showed the two diverging from epoch 0 -- by up to 0.24 train NLL --
+    at a matched seed. The configs are byte-identical apart from the epoch count
+    (checked field by field off both cells' config.json), the data is identical
+    (the same stored majority-class baseline to 16 digits), and nothing in the
+    training script pins GPU kernel nondeterminism. So a matched seed fixes the
+    instances and the initialisation, not the trajectory: the two arrays are
+    INDEPENDENT RUNS of one configuration.
+
+    Reading both at the control's last epoch is what turns that from a worry
+    into a measurement -- at that epoch the extra budget has not happened yet,
+    so whatever separates them there is the run and not the knob.
+    """
+    last_c, last_w = CONTROL_EPOCHS - 1, EPOCHS - 1
+    out = []
+    for seed in sorted(set(w_hist) & set(c_hist)):
+        w = {e: (n, a) for e, n, a in w_hist[seed]}
+        c = {e: (n, a) for e, n, a in c_hist[seed]}
+        if c_hist[seed][-1][0] != last_c or w_hist[seed][-1][0] != last_w:
+            raise SystemExit("seed %d: arms end at epochs %d and %d, not %d/%d"
+                             % (seed, c_hist[seed][-1][0], w_hist[seed][-1][0],
+                                last_c, last_w))
+        out.append({"seed": seed,
+                    "nll_w": w[last_c][0], "nll_c": c[last_c][0],
+                    "d_nll": w[last_c][0] - c[last_c][0],
+                    "acc_mid": w[last_c][1], "acc_end": w[last_w][1],
+                    "d_acc": w[last_w][1] - w[last_c][1],
+                    "acc_c": c[last_c][1],
+                    "d_acc_run": w[last_c][1] - c[last_c][1]})
+    if len(out) != 3:
+        raise SystemExit("only %d seeds appear in both arms" % len(out))
+    return out
+
+
+def check_claims(ctrl, cs, w1, ws, wc, steps, bar, res, pairs, onsets, csteps):
     """Every sentence this deck publishes, asserted against the data first."""
     # 1. the control is still stage S's cell, exactly as the scorer froze it
     assert rho_txt(cs) == S1_RHO50, (rho_txt(cs), S1_RHO50)
@@ -193,9 +242,49 @@ def check_claims(ctrl, cs, w1, ws, wc, steps, bar, res):
         "the basin seed beat the control's rho_50 after all", best["rho50"])
     assert abs(BASIN - BASIN_NLL) < 5e-4, (BASIN, BASIN_NLL)
 
-    # 7. No cell stepped. The curves page says the basin was reached GRADUALLY,
-    # which is only a claim if the registered step detector agrees.
+    # 7. What the curve figure SHOWS, which is not what an earlier draft of its
+    # page said. No 100-epoch cell steps by the registered definition -- but the
+    # basin seed takes a plain, visible fall out of a flat stretch, and the
+    # control's seed 2 does step, at the epoch the census hand-read. "No step in
+    # either arm" was false on both counts; these are the assertions that
+    # replace it, one per clause of the published title and note.
     assert all(s is None for s in steps.values()), steps
+    assert sum(1 for s in csteps.values() if s is not None) == 1, (
+        "the control's step count changed; the curves page describes one arm "
+        "stepping and the other not", csteps)
+    fell = sorted(s for s, o in onsets.items() if o is not None)
+    assert fell == [basin[0]["seed"]], (
+        "the fall out of a flat stretch is no longer the basin seed's alone",
+        {s: o for s, o in onsets.items()})
+    on = onsets[basin[0]["seed"]]
+    assert on["epoch"] > CONTROL_EPOCHS, (
+        "the fall is inside the control's own budget, so the title is wrong",
+        on["epoch"])
+    assert not on["step"] and on["persist"] < PERSIST, (
+        "the fall now clears the persistence bar and IS a step", on)
+    # ...and it is the fall that crossed the basin line, which is the verb in
+    # the title. Without this the page could name an epoch where nothing
+    # changed level.
+    assert on["before"] > BASIN > on["after"], (
+        "the fall did not cross the basin line", on["before"], BASIN,
+        on["after"])
+
+    # 7b. The two arms are independent runs, not one continued -- the premise of
+    # the reproducibility page and the caveat every cross-run page inherits.
+    assert all(p["d_nll"] != 0 for p in pairs), (
+        "the arms agree exactly at the control's last epoch; they would then be "
+        "one run and the reproducibility page is wrong", pairs)
+    mid = {p["seed"]: p for p in pairs}
+    for r in wc:
+        assert abs(mid[r["seed"]]["nll_w"] - r["at50"]) < 5e-5, (
+            "the log and the scorer disagree on the 100-epoch cell at epoch %d"
+            % (CONTROL_EPOCHS - 1), r["seed"])
+    for r in w1:
+        assert abs(mid[r["seed"]]["acc_end"] - r["acc"]) < 5e-5, (
+            "the log's final accuracy is not the scorer's", r["seed"])
+    for r in ctrl:
+        assert abs(mid[r["seed"]]["acc_c"] - r["acc"]) < 5e-5, (
+            "the log's control accuracy is not the scorer's", r["seed"])
 
     # 8. the sufficiency bar is the registered one, and every seed is on the
     # curve -- which is what makes this a move ALONG the relation, not a change
@@ -205,7 +294,7 @@ def check_claims(ctrl, cs, w1, ws, wc, steps, bar, res):
     assert all(abs(r["res"]) <= bar for r in res.values()), (
         "a seed left the accuracy-to-solve curve; the fit page is wrong",
         {s: r["res"] for s, r in res.items()})
-    return n_clear, sw, basin[0], best
+    return n_clear, sw, basin[0], best, on
 
 
 # ---------------------------------------------------------------- figures
@@ -320,11 +409,14 @@ def main():
     wms = rung(cells, W1)
     c50, c100 = curves([SCAN_S], S1), curves([SCAN_W], W1)
     wc = within_run(w1, wms)
-    steps = {s: step_epoch(h) for s, h in logs_by_seed(
-        "sud2N48BudgetW_52053221_%d.out").items()}
+    w_hist, c_hist = logs_by_seed(W_LOGS), logs_by_seed(CONTROL_LOGS)
+    steps = {s: step_epoch(h) for s, h in w_hist.items()}
+    csteps = {s: step_epoch(h) for s, h in c_hist.items()}
+    onsets = {s: onset(h) for s, h in w_hist.items()}
+    pairs = paired(w_hist, c_hist)
     ref, fit, bar, res = sufficiency(W1)
-    n_clear, spread_w, basin, best = check_claims(ctrl, cs, w1, ws, wc, steps,
-                                                  bar, res)
+    n_clear, spread_w, basin, best, on = check_claims(
+        ctrl, cs, w1, ws, wc, steps, bar, res, pairs, onsets, csteps)
 
     arms = {CONTROL_EPOCHS: ctrl, EPOCHS: w1}
     acc_meds = {CONTROL_EPOCHS: median([r["acc"] for r in ctrl]),
@@ -357,11 +449,11 @@ def main():
     TITLE = "Twice the budget bought training loss, and solving did not follow"
     d = WebDeck(args.out, TITLE, "hshunt", "2026-11-12", prov)
 
-    # The subtitle carries what a separate "the arm" page would have said. The
-    # deck is at the 25-page cap with the explanation pages ~/CLAUDE.md now
-    # requires, and the title page's subtitle is the one place exempt from the
-    # body cap, so the setup goes here rather than costing a page the per-seed
-    # table needs more.
+    # The subtitle carries what a separate "the arm" page would have said: the
+    # deck is already past the page guideline with the explanation pages
+    # ~/CLAUDE.md now requires, and the title page's subtitle is the one place
+    # exempt from the body cap, so the setup goes here rather than costing a
+    # page the per-seed tables need more.
     d.title_page(
         TITLE,
         subtitle="One hundred epochs instead of fifty, at an identical "
@@ -369,7 +461,10 @@ def main():
                  "either way. Stage S's cells were still descending at epoch "
                  "fifty, which is why the budget was tried before more width, "
                  "decay or applications. Three seeds, one pooled grid of "
-                 "fourteen densities, no code change."
+                 "fourteen densities, no code change. The two arms are separate "
+                 "runs of that one configuration rather than one run continued, "
+                 "which two pages below measure and which qualifies every "
+                 "comparison made across them."
                  % format(ws["trainable"], ","))
 
     exi = example_instance(n_nodes=48, degree=5, n_colors=4, shuffle_adj=True,
@@ -412,6 +507,34 @@ def main():
              "seeds is %.0f times the gain the bar asks for."
              % (round(spread_w, 4) / round(NEED, 4)))
 
+    # These two pages were added after the figure read-back, and they are the
+    # reason the deck is over the page guideline. The curve figure showed the
+    # two arms separating from epoch 0 at a matched seed, which means every
+    # cross-run page above is reading a difference that partly belongs to the
+    # run. Suppressing that would leave the accuracy page overstating its own
+    # evidence in both directions.
+    d.table_page(
+        "Matched seeds do not reproduce: the arms differ at the control's end",
+        ["seed", "train NLL at epoch %d, %d-epoch arm" % (CONTROL_EPOCHS - 1,
+                                                          EPOCHS),
+         "the control there", "difference", "val accuracy difference"],
+        [[str(p["seed"]), "%.4f" % p["nll_w"], "%.4f" % p["nll_c"],
+          "%+.4f" % p["d_nll"], "%+.4f" % p["d_acc_run"]] for p in pairs],
+        note="Epoch %d is the control's last. Config and data match; nothing "
+             "pins the GPU's arithmetic order, so each run is independent."
+             % (CONTROL_EPOCHS - 1))
+
+    d.table_page(
+        "Within each run, the extra %d epochs moved accuracy by %+.4f"
+        % (ADDED_EPOCHS, median([p["d_acc"] for p in pairs])),
+        ["seed", "val accuracy at epoch %d" % (CONTROL_EPOCHS - 1),
+         "at epoch %d" % (EPOCHS - 1), "change", "the control's own final"],
+        [[str(p["seed"]), "%.4f" % p["acc_mid"], "%.4f" % p["acc_end"],
+          "%+.4f" % p["d_acc"], "%.4f" % p["acc_c"]] for p in pairs],
+        note="W-a was registered across runs and failed; measured within run "
+             "it is %s. The gate still did not move."
+             % " / ".join("%+.4f" % p["d_acc"] for p in pairs))
+
     d.table_page(
         "Training loss fell in all three seeds, by %.4f at the median" % med_fall,
         ["seed", "train NLL at epoch %d" % CONTROL_EPOCHS,
@@ -430,9 +553,11 @@ def main():
     fig_training_curves(d.fig_dir)
     d._add(d._fig_md(
         "curves",
-        "Seed %d reached the basin gradually, with no step anywhere" % basin["seed"],
-        "Each cell against its own %d-epoch control, same seed, same config. "
-        "No step fires in either arm." % CONTROL_EPOCHS))
+        "Seed %d reached the basin at epoch %d, past the control's end"
+        % (basin["seed"], on["epoch"]),
+        "A %.4f one-epoch fall out of a flat stretch, missing the registered "
+        "step bar only on persistence: %.4f against %.3f."
+        % (on["drop"], on["persist"], PERSIST)))
 
     d.claim_page(
         "rho_50 rose from %s to %.3f and one seed stopped crossing"
@@ -512,6 +637,17 @@ def main():
           % ("/".join("%s" % (steps[s] if steps[s] is not None else "none")
                       for s in sorted(steps)), n_esc,
              "/".join(r["level"] for r in wc)))
+    print("onset: seed %d at epoch %d, fall %.4f, run-in %.4f, persist %.4f "
+          "against %.3f -> step=%s; control steps %s"
+          % (basin["seed"], on["epoch"], on["drop"], on["runin"], on["persist"],
+             PERSIST, on["step"],
+             "/".join("%s" % (csteps[s] if csteps[s] is not None else "none")
+                      for s in sorted(csteps))))
+    print("reproducibility at epoch %d: dNLL %s, dacc %s; within-run dacc %s"
+          % (CONTROL_EPOCHS - 1,
+             "/".join("%+.4f" % p["d_nll"] for p in pairs),
+             "/".join("%+.4f" % p["d_acc_run"] for p in pairs),
+             "/".join("%+.4f" % p["d_acc"] for p in pairs)))
     print("solve: %d epochs below the control at %d of %d densities; mean_solve "
           "%.4f -> %.4f" % (EPOCHS, n_below, len(grid), S1_MEAN_SOLVE,
                             ws["mean_solve"]))

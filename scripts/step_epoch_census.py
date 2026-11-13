@@ -91,6 +91,42 @@ def step_epoch(h):
     return None
 
 
+def onset(h):
+    """The largest fall out of a FLAT run-in, with its persistence reported.
+
+    step_epoch() answers the registered question -- did a step happen -- and
+    returns the first epoch passing ALL THREE tests. This answers a different
+    one, asked by a deck page that has to describe what a plotted curve visibly
+    does: where is the biggest one-epoch fall out of a flat stretch, and did it
+    persist? A fall that clears DROP out of a flat run-in and then misses
+    PERSIST is invisible to step_epoch() and plainly visible to a reader, and a
+    page claiming "no step anywhere" over a figure showing one is the defect
+    this exists to prevent.
+
+    Returns None when no epoch clears DROP out of a flat run-in. Changes no
+    registered verdict: step_epoch() above is untouched and stays the
+    definition; `step` in the returned dict is its criterion, not a new one.
+    """
+    nll = [x[1] for x in h]
+    best = None
+    for e in range(MIN_EP, len(nll) - 1):
+        drop = nll[e - 1] - nll[e]
+        if drop < DROP:
+            continue
+        runin = nll[e - 1 - RUNIN] - nll[e - 1]
+        if runin >= FLAT * RUNIN:
+            continue
+        far = min(e + WINDOW, len(nll) - 1)
+        persist = nll[e - 1] - nll[far]
+        if best is None or drop > best["drop"]:
+            best = {"epoch": e, "drop": drop, "runin": runin,
+                    "persist": persist, "step": persist >= PERSIST,
+                    # the two endpoints of the fall, so a caller can ask which
+                    # level it crossed without re-indexing the history itself
+                    "before": nll[e - 1], "after": nll[e]}
+    return best
+
+
 def main():
     rows = []
     for name in sorted(os.listdir(ROOT)):
