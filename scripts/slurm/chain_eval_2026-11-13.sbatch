@@ -19,8 +19,10 @@
 # ONE JOB, five steps, because each is a couple of minutes and Scheduler
 # etiquette asks short tasks to be aggregated:
 #   0  the six checkpoint paths, read from the scorer's own table
-#   1  census: how many chained cases 1200 instances yield, and at what depths.
+#   1  census: how many chained cases the instances yield, and at what depths.
 #      Costs a minute; a thin yield stops the job before six cells pay for it.
+#      THIS GUARD ALREADY EARNED ITS KEEP: on the first submission it returned 0
+#      and stopped the job in 31 s, which is how the clash theorem was found.
 #   2  smoke: one cell at a small size, so every assert in build_quad_chain
 #      fires on real data before the measurement starts
 #   3  the six cells
@@ -46,8 +48,8 @@ export MPLBACKEND=Agg
 export PYTHONUNBUFFERED=1
 
 RUN=/scratch/users/hshunt/spin_gnn/runs/2026-11-13_chain
-N_INST=1200
-N_CASES=300
+N_INST=400
+N_CASES=500
 mkdir -p "$RUN"
 
 echo

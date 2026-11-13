@@ -42,17 +42,36 @@ with a deduced binding neighbour, so by construction they are different cases
 from finding 69's. Same checkpoints, same readout, same bars -- different case
 list, and nothing here may be reported as a paired difference.
 
+AMENDED 2026-11-13 AFTER THE CENSUS RETURNED ZERO, AND WHY THAT IS NOT P-HACKING.
+The first version required the edited node to stay LOCALLY PROPER, as finding 69
+does. Job 52231126's census found 0 cases in 1200 instances, and the reason is a
+theorem, not a thin tail: 1926 of 1997 candidate deductions reached that filter
+and every single one failed it. A node w is deduced to colour a precisely
+because its visible neighbours already cover every colour but a, so EVERY
+alternative colour for w is held by at least one neighbour of w, and later
+rounds only add more. Requiring the edited node to be derived and requiring it
+to stay locally proper are mutually exclusive. The set of locally consistent
+single-token edits to the reasoning section is EMPTY.
+
+The amendment is therefore forced, and it was made without seeing any model
+output: `--cases-only` runs no forward pass, so the census is a property of the
+instance generator alone and the amended construction cannot have been tuned to
+any checkpoint's behaviour. What changed is three lines -- the edit minimises
+its visible clashes instead of forbidding them, the count is recorded, and the
+PLACEBO IS MATCHED TO THAT COUNT. Everything scored stays as registered.
+
 HONEST CAVEAT, STATED UP FRONT AND CARRIED INTO THE DECK. Editing an emitted
 deduction shows the model a reasoning step it would not itself have written, so
-the prefix is globally inconsistent with the graph in a way a hint edit is not.
-Case selection removes the LOCAL part of that -- the edited node is required to
-stay proper against every neighbour whose colour is already visible, under BOTH
-the rule and the broken edit -- but it cannot remove the global part. A model
-that notices the contradiction and reverts to its own value would score as "does
-not chain" while chaining perfectly in free generation, so a LOW flip rate is
-ambiguous and `rule_reverts` is recorded to tell the two apart: reverting to c is
-the signature of detection, a third colour is neither. A HIGH flip rate has no
-such ambiguity -- it can only mean the edited fact was used.
+the prefix is inconsistent in a way a hint edit is not -- globally against the
+planted colouring, and now, unavoidably, locally at the edited node too. A model
+that notices that and reverts to its own value would score as "does not chain"
+while chaining perfectly in free generation, so a LOW flip rate is ambiguous.
+Two things bound it. `rule_reverts` says whether the model falls back on c: that
+is the signature of detection, a third colour is neither. And the placebo is now
+the same KIND of object as the edit -- a derived token recoloured, clashing with
+the same number of visible neighbours, just nowhere near v -- so if the model
+merely reacts to a corrupted prefix, the placebo moves too and C4 fails. A HIGH
+flip rate has no ambiguity at all: it can only mean the edited fact was used.
 
 NOTHING IS TRAINED. Six existing checkpoints, read four times each.
 """
@@ -91,17 +110,31 @@ def revealed_before(trace, hints, node):
     return avail, deduced
 
 
-def _stays_proper(adj, avail, node, color):
-    """Would `node` show `color` without clashing with a visible neighbour?
+def _clashes(adj, avail, node, color):
+    """How many visible neighbours of `node` already hold `color`.
 
-    This is the local half of the consistency the edit breaks. The global half --
-    that the planted colouring says otherwise -- is irreducible and is what the
-    module docstring's caveat is about.
+    THE CENSUS THEOREM (job 52231126, zero cases from 1200 instances). For a node
+    the model DEDUCED this count is never zero, whatever colour you pick. A node
+    w is deduced to colour a precisely because its visible neighbours cover every
+    other colour, so each alternative has at least one holder sitting next to w,
+    and later rounds only reveal more. Requiring the edited node to stay locally
+    proper and requiring it to be derived are therefore MUTUALLY EXCLUSIVE: the
+    set of locally consistent single-token edits to the reasoning section is
+    empty.
+
+    So the edit cannot avoid a visible clash and the measurement stops pretending
+    to. It minimises the count instead, records it, and matches the placebo to
+    it -- see find_chained_quads.
     """
-    return all(avail.get(int(u)) != color for u in adj[node] if int(u) in avail)
+    return sum(1 for u in adj[node] if avail.get(int(u)) == color)
 
 
-def find_chained_quads(adj, colors, hints, trace, vocab, rng, max_per_instance=4):
+def _stays_proper(adj, avail, node, color):
+    """Kept for the census script, which uses it to re-derive the theorem."""
+    return _clashes(adj, avail, node, color) == 0
+
+
+def find_chained_quads(adj, colors, hints, trace, vocab, rng, max_per_round=2):
     """Round k>=1 deductions that one edit to an EARLIER DEDUCTION can flip or break.
 
     Every returned case carries all four variants' ingredients, so a case either
@@ -115,7 +148,10 @@ def find_chained_quads(adj, colors, hints, trace, vocab, rng, max_per_instance=4
     for k, rnd in enumerate(trace["rounds"]):
         if k < 1:
             continue
+        taken = 0
         for rank, (v, c) in enumerate(rnd):
+            if taken >= max_per_round:
+                break
             v, c = int(v), int(c)
             avail, deduced = revealed_before(trace, hints, v)
             nbrs = [int(u) for u in adj[v]]
@@ -127,41 +163,54 @@ def find_chained_quads(adj, colors, hints, trace, vocab, rng, max_per_instance=4
             # given -- that single condition is the whole difference from finding 69
             singles = [(col, [u for u in known if known[u] == col]) for col in covered]
             bind = [(col, us[0]) for col, us in singles if len(us) == 1 and us[0] in deduced]
-            pick = None
-            for a, w in bind:
-                if not _stays_proper(adj, avail, w, c):
-                    continue
-                others = [b for b in covered if b != a and _stays_proper(adj, avail, w, b)]
-                if not others:
-                    continue
-                pick = (a, w, int(rng.choice(sorted(others))))
-                break
-            if pick is None:
+            # A visible clash at w is unavoidable -- see _clashes. Take the
+            # binding neighbour whose rule edit is least visibly wrong, ties by
+            # node id, so the case list stays a deterministic function of the
+            # instance stream and no rng decides what gets measured.
+            if not bind:
                 continue
-            a, w, b = pick
-            # the placebo is another DEDUCED node, so it is the same kind of token
-            # in the same section as the edit it is the null for
+            a, w = min(bind, key=lambda aw: (_clashes(adj, avail, aw[1], c), aw[1]))
+            rule_cl = _clashes(adj, avail, w, c)
+            others = sorted(b for b in covered if b != a)
+            if not others:
+                continue
+            b = min(others, key=lambda col: (_clashes(adj, avail, w, col), col))
+            broken_cl = _clashes(adj, avail, w, b)
+            # The placebo is another DEDUCED node, so it is the same kind of
+            # token in the same section as the edit it is the null for -- AND,
+            # since the real edit must clash, the placebo is matched on how many
+            # neighbours it clashes with. That is what makes it a null for
+            # "the model noticed a corrupted prefix" and not only for relevance.
             far = sorted(u for u in deduced if u not in nbrs and u != v and u != w)
-            placebo = None
+            cands = []
             for p in far:
-                opts = [col for col in range(q)
-                        if col != avail[p] and _stays_proper(adj, avail, p, col)]
-                if opts:
-                    placebo = (p, int(rng.choice(sorted(opts))))
-                    break
-            if placebo is None:
+                for col in range(q):
+                    if col != avail[p]:
+                        cands.append((p, col, _clashes(adj, avail, p, col)))
+            if not cands:
                 continue
+            p, pcol, placebo_cl = min(cands, key=lambda t: (abs(t[2] - rule_cl),
+                                                            t[2], t[0], t[1]))
+            placebo = (p, pcol)
             out.append({
                 "node": v, "round": k, "round_rank": rank, "true_color": c,
                 "freed_color": a, "new_color": b, "recolored_nbr": w,
                 "nbr_round": next(kk for kk, rr in enumerate(trace["rounds"])
                                   if any(int(u) == w for u, _ in rr)),
                 "placebo_node": placebo[0], "placebo_color": placebo[1],
+                "rule_clashes": rule_cl, "broken_clashes": broken_cl,
+                "placebo_clashes": placebo_cl,
+                "clash_matched": int(placebo_cl == rule_cl),
                 "n_known": len(known), "n_colors": q,
                 "v_first_in_round": rank == 0,
             })
-            if len(out) >= max_per_instance:
-                return out
+            # A per-ROUND cap rather than a per-instance one. The old cap of 4
+            # per instance filled up inside round 1 and the depth figure got
+            # r3=15 out of 611, because rounds are scanned in order. Capping
+            # each round separately spends the same budget across depths, which
+            # is the one axis this measurement adds over finding 69. Decided
+            # from the case census alone -- no forward pass, no model output.
+            taken += 1
     return out
 
 
@@ -210,6 +259,13 @@ def run_chain4(model, vocab, device, cases):
             "true_color": c, "freed_color": a, "new_color": case["new_color"],
             "placebo_node": case["placebo_node"],
             "v_first_in_round": case["v_first_in_round"],
+            # how visibly wrong each edit is: a derived token cannot be edited
+            # without clashing with at least one visible neighbour (_clashes),
+            # so these are >= 1 by construction and the placebo is matched
+            "rule_clashes": case["rule_clashes"],
+            "broken_clashes": case["broken_clashes"],
+            "placebo_clashes": case["placebo_clashes"],
+            "clash_matched": case["clash_matched"],
         }
         for name in VARIANTS:
             for key, val in reads[name].items():

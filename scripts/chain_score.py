@@ -39,8 +39,11 @@ WHAT IS REGISTERED, BEFORE ANY NUMBER EXISTS.
       Both of those are the result. Neither licenses a new arm or a third edit.
 
   C4  SPECIFICITY. The placebo -- another deduced, non-neighbour node recoloured
-      to a locally proper colour -- moves p_freed by at most FREED_BAR = 0.05.
-      Otherwise C2 has no null and nothing below is read.
+      to a different colour, clashing with the SAME number of visible
+      neighbours as the real edit -- moves p_freed by at most FREED_BAR = 0.05.
+      Otherwise C2 has no null and nothing below is read. Because the placebo
+      is matched on clash count (see AMENDMENT), C4 is also the null for
+      "the model is merely reacting to a corrupted prefix".
 
   C5  THE PROVENANCE GAP, the cell-level comparison that is the point of the
       run. For each cell, chained rule-flip against finding 69's round-0
@@ -50,6 +53,30 @@ WHAT IS REGISTERED, BEFORE ANY NUMBER EXISTS.
       by construction (round k >= 1, binding neighbour deduced), so this is a
       comparison of two rates at one checkpoint and never a per-case difference.
 
+AMENDMENT, 2026-11-13, AFTER A ZERO-YIELD CENSUS AND BEFORE ANY FORWARD PASS.
+The construction originally required the edited node to stay locally proper.
+Job 52231126's census found 0 usable cases in 1200 instances: 1926 of 1997
+candidate deductions reached that filter and all 1926 failed it. The reason is a
+theorem, not a thin tail. A node is deduced to colour a exactly because its
+visible neighbours already cover every other colour, so every alternative colour
+for it is held by a neighbour -- the set of locally consistent single-token
+edits to the reasoning section is EMPTY, and "edit a derived fact" and "keep the
+prefix locally proper" cannot both hold.
+
+So the edit minimises its visible clashes (always >= 1) instead of forbidding
+them, records the count, and the placebo is matched to that count. THE
+AMENDMENT SAW NO MODEL OUTPUT: `--cases-only` runs no forward pass, so the
+census is a property of the instance generator alone. Every bar, hypothesis and
+verdict branch above is unchanged from the 968c355 registration. The per-round
+case cap was set in the same model-blind step, so the depth figure spans rounds
+1-10 instead of being 84% round 1.
+
+  C6  THE CLASH CONTROL, new with the amendment and reported either way. The
+      rule flip rate split by rule_clashes (1 vs >= 2). If the model were
+      reacting to how visibly corrupted the prefix is rather than to the edited
+      value, these would differ; CLASH_BAR = 0.10 is the difference at which
+      that reading is raised in the deck. This is descriptive, not a gate.
+
 GUARDS, each of which fails the job rather than printing a number.
   1. Every checkpoint is the cell it is filed under and the arms agree on every
      instance-generating key (guard_configs, shared with findings 68 and 69).
@@ -58,6 +85,9 @@ GUARDS, each of which fails the job rather than printing a number.
   3. Every case is round >= 1 with a binding neighbour that is itself a
      deduction -- the construction's defining property, re-checked from the CSV
      rather than trusted from the module that wrote it.
+  4. Every edit clashes at least once (the theorem, re-derived from the CSV) and
+     the placebo is clash-matched in at least 0.95 of cases. A construction that
+     silently stopped matching would turn C4 back into a relevance-only null.
 
 NOTHING IS TRAINED. rho_50, the gate, the free line and every stage result are
 untouched by this file and by the job that feeds it.
@@ -76,6 +106,7 @@ from scripts.dissoc_score import FREED_BAR, _num, fmean, sign_test
 RUN = "/scratch/users/hshunt/spin_gnn/runs/2026-11-13_chain"
 REVERT_BAR = 0.60
 GAP_BAR = 0.10
+CLASH_BAR = 0.10
 # The case key for this construction. `round` and `nbr_round` are in it because
 # they are what makes a case chained; two cells that agreed on the node but not
 # on the round would not be measuring the same deduction.
@@ -133,7 +164,24 @@ def main():
     print("guard 3 OK: every case is round %d-%d with an earlier DEDUCED binding "
           "neighbour" % (rmin, rmax))
 
-    out = {"n_cases": n, "round_min": rmin, "round_max": rmax, "cells": {}}
+    # guard 4: the theorem, re-derived from the CSV, and the clash match that
+    # turns C4 into a null for detection and not only for relevance
+    base = cells[(ARMS[0], SEEDS[0])]
+    for key in ("rule_clashes", "broken_clashes", "placebo_clashes"):
+        lo = min(int(r[key]) for r in base)
+        if lo < 1:
+            raise SystemExit("guard 4 FAILED: %s reached 0, so a locally proper "
+                             "edit to a derived token exists and the amendment's "
+                             "premise is wrong" % key)
+    matched = sum(1 for r in base if truthy(r["clash_matched"])) / len(base)
+    if matched < 0.95:
+        raise SystemExit("guard 4 FAILED: placebo clash-matched in only %.4f of "
+                         "cases" % matched)
+    print("guard 4 OK: every edit clashes >= 1 (the theorem), placebo matched "
+          "in %.4f" % matched)
+
+    out = {"n_cases": n, "round_min": rmin, "round_max": rmax,
+           "clash_matched": matched, "cells": {}}
 
     # ---- C1, chaining
     print("\nC1  rule edit on a DERIVED fact flips the answer   bar %.2f, chance %.3f"
@@ -243,10 +291,34 @@ def main():
     print("    C5: %s" % ("provenance gap in " + ", ".join(gap_arms) if gap_arms
                           else "no provenance gap in either arm"))
 
+    # ---- C6, the clash control. Descriptive: does the flip rate depend on how
+    # visibly wrong the edit looks, rather than on what it says?
+    print("\nC6  rule flip split by how many visible neighbours the edit clashes with")
+    c6_split = 0.0
+    for arm in ARMS:
+        for s in SEEDS:
+            rows = cells[(arm, s)]
+            one = [r for r in rows if int(r["rule_clashes"]) == 1]
+            many = [r for r in rows if int(r["rule_clashes"]) >= 2]
+            a1 = fmean(one, "rule_flips")[0] if one else float("nan")
+            am = fmean(many, "rule_flips")[0] if many else float("nan")
+            d = abs(a1 - am) if one and many else 0.0
+            c6_split = max(c6_split, d)
+            out["cells"]["%s_s%d" % (arm, s)].update(
+                {"flip_clash1": a1, "flip_clash1_n": len(one),
+                 "flip_clash2": am, "flip_clash2_n": len(many)})
+            print("    %s s%d  1 clash %.4f (n=%d)   2+ clashes %.4f (n=%d)   |d| %.4f"
+                  % (arm, s, a1, len(one), am, len(many), d))
+    print("    C6: largest split %.4f, bar %.2f -- %s"
+          % (c6_split, CLASH_BAR,
+             "visible wrongness tracks the flip rate" if c6_split > CLASH_BAR
+             else "the flip rate does not track visible wrongness"))
+
     out.update({"C1": bool(c1_pass), "C2": bool(c2_pass), "C4": bool(c4_pass),
                 "C3_detects": bool(detects), "C5_gap_arms": gap_arms,
+                "C6_split": c6_split, "C6_tracks": bool(c6_split > CLASH_BAR),
                 "revert_bar": REVERT_BAR, "gap_bar": GAP_BAR, "rule_bar": RULE_BAR,
-                "freed_bar": FREED_BAR})
+                "freed_bar": FREED_BAR, "clash_bar": CLASH_BAR})
 
     # ---- the verdict, in the order the registration fixed
     print("\n" + "=" * 78)
