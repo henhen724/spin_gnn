@@ -77,6 +77,12 @@ def load_cells():
         d.update({"b": b, "c": c, "sign_n": nn, "p": p, "median": med})
         d["dissoc"] = fmean(rows, "dissoc")[0]
         d["drift"] = d["freed_placebo"] - d["freed_clean"]
+        # C6: the same rate, split by how visibly wrong the edit is
+        one = [r for r in rows if int(r["rule_clashes"]) == 1]
+        many = [r for r in rows if int(r["rule_clashes"]) >= 2]
+        d["flip_clash1"] = fmean(one, "rule_flips")[0] if one else float("nan")
+        d["flip_clash2"] = fmean(many, "rule_flips")[0] if many else float("nan")
+        d["flip_clash1_n"], d["flip_clash2_n"] = len(one), len(many)
         d["round0"], d["round0_n"] = round0_rule_flip(arm, s)
         d["gap"] = d["round0"] - d["rule_flips"]
         # the depth profile: rule-flip rate by the round v was deduced in
@@ -103,6 +109,8 @@ def check_claims(cells):
                           ("round0_rule_flips", c["round0"]),
                           ("gap", c["gap"])):
             assert abs(j[key] - mine) < 1e-12, "%s disagrees at %s" % (key, k)
+        assert j["flip_clash1_n"] == c["flip_clash1_n"], "clash split n at %s" % k
+        assert j["flip_clash2_n"] == c["flip_clash2_n"], "clash split n at %s" % k
         for v in VARIANTS:
             assert abs(j["%s_p_freed" % v] - c["freed_%s" % v]) < 1e-12, \
                 "p_freed(%s) disagrees at %s" % (v, k)
@@ -286,10 +294,55 @@ That is a deliberate change from the same-edit deck, whose placebo recoloured a
 distant **hint**. A hint placebo here would differ from the real edit in two
 ways at once, provenance and relevance, and could not isolate either.
 
-Both the placebo node and the edited neighbour are required to stay **locally
-proper**: the new colour must not clash with any neighbour of theirs whose
-colour is already visible. So no variant shows the model a colouring that is
-locally impossible at the edited node.
+The placebo is also **clash-matched** to the real edit — it clashes with the
+same number of already-visible neighbours. The next page explains why that is
+not optional, and why it is what makes this null strong.
+"""
+
+THEOREM = """## A derived fact cannot be recoloured without a visible clash
+
+Call a colour **clashing** at a node if some neighbour of that node, whose
+colour is already visible in the prefix, holds it. The first version of this
+measurement required every edit to be **non-clashing**, exactly as the
+same-edit deck's edits are. It found **zero** usable cases in 1200 instances.
+
+That is a theorem, not a thin tail. A node $w$ is deduced to colour $a$
+*precisely because* its visible neighbours already cover all $q - 1 = 3$ other
+colours. So every colour other than $a$ clashes at $w$, by the very fact that
+made $w$ deducible, and later rounds only reveal more neighbours:
+
+$$w \\ \\text{deduced to}\\ a \\ \\implies\\ \\text{clashes}(w, x) \\ge 1
+\\ \\ \\text{for every}\\ x \\neq a$$
+
+**Editing a derived fact and keeping the prefix locally consistent are mutually
+exclusive.** The set of locally consistent one-token edits to the reasoning
+section is empty. A hint has no such property, which is why the same-edit deck
+never met this.
+
+So the edit does not avoid the clash. It **minimises** it, **records** it, and
+**matches the placebo to it**.
+"""
+
+BLIND = """## The construction was amended before any model was run
+
+The zero-yield census is a property of the instance generator: it builds the
+case list and stops, with **no forward pass and no checkpoint output**. So the
+amendment could not have been tuned to any model's behaviour, and nothing that
+is scored moved.
+
+What changed: the edit minimises its visible clashes instead of forbidding them,
+the count is recorded, the placebo is matched on it, and cases are capped per
+**round** rather than per instance so the depth axis spans rounds 1 to 10
+instead of being mostly round 1.
+
+What did not change: every bar, every hypothesis, every verdict branch. They
+were fixed at commit `968c355` before the first submission and are quoted on a
+later page as they were written.
+
+The clash count is also read as a control of its own: if the model were
+reacting to *how visibly broken* the prefix looks rather than to *what the edit
+says*, the flip rate would depend on the clash count. One page reports that
+split.
 """
 
 CAVEAT = """## Editing a derived fact makes the prefix inconsistent, and that is a confound
@@ -300,16 +353,20 @@ run.
 Editing a hint is unremarkable: a different hint is simply a different problem.
 Editing a **deduction** shows the model a reasoning step it would not itself
 have written — the graph and the hints still imply the original colour, so the
-prefix now contradicts itself somewhere, even though case selection keeps the
-edited node locally proper.
+prefix contradicts itself, and by the clash theorem it must do so **visibly**,
+right next to the edited node.
 
 A model that *notices* that and keeps its own answer would score as "does not
 chain" here while chaining perfectly in free generation. So a **low** flip rate
-is ambiguous, and the deck reports `rule_reverts` — how often the model answers
-$c$, its original value, under the rule edit — to separate the two:
+is ambiguous. Two things bound it:
 
-- reverting to $c$ above %.2f is the signature of **detection**;
-- neither following nor reverting is the signature of **provenance**.
+- `rule_reverts` — how often the model answers $c$, its original value, under
+  the rule edit. Above %.2f that is the signature of **detection**; neither
+  following nor reverting is the signature of **provenance**.
+- the **clash-matched placebo**, which is the same kind of object as the real
+  edit — a derived token recoloured, clashing with the same number of visible
+  neighbours, just nowhere near $v$. If the model merely reacts to a corrupted
+  prefix, the placebo moves too and the whole reading is withdrawn.
 
 A **high** flip rate has no such ambiguity. It can only mean the edited fact was
 used.
@@ -411,6 +468,9 @@ Committed at `968c355`, before the job was submitted.
   %.2f, otherwise C2 has no null and nothing else is read.
 - **C5 — the provenance gap.** Chained against round-0 rule-flip at the same
   checkpoint, called only at more than %.2f lower in at least 2 of 3 seeds.
+- **C6 — the clash control,** added with the amendment and model-blind like the
+  rest of it. The flip rate split by how many visible neighbours the edit
+  clashes with. Descriptive, not a gate.
 """ % (RULE_BAR, FREED_BAR, FREED_BAR, GAP_BAR)
 
 
@@ -441,8 +501,9 @@ SCOPE = """## What this measurement does not establish
   0.011 token-accuracy gap between the two architectures is exactly where it was.
 - **The arms still differ in size as well as in tying,** by a factor of 4.1 in
   trainable parameters. Every difference here is tying *and* budget.
-- **The edited prefix is globally inconsistent** and no case selection can fix
-  that. `rule_reverts` bounds the confound; it does not remove it.
+- **The edited prefix is inconsistent, visibly, and no case selection can fix
+  that** — the clash theorem says there is nothing to select. `rule_reverts`
+  and the clash-matched placebo bound the confound; they do not remove it.
 - **Not paired with round 0.** Different case list by construction, so the
   comparison is between two rates at one checkpoint.
 - **No localisation.** These are decision-level readouts. Nothing here says
@@ -512,8 +573,8 @@ def main():
         else:
             d._add(page)
 
-    own = (PROVENANCE, ROUNDK, QUAD, PLACEBOPAGE, POSITIONS, PFREED, SIGNTEST,
-           CAVEAT, PAIRING, hypotheses_page(), arms_page())
+    own = (PROVENANCE, ROUNDK, QUAD, PLACEBOPAGE, THEOREM, BLIND, POSITIONS,
+           PFREED, SIGNTEST, CAVEAT, PAIRING, hypotheses_page(), arms_page())
     for page in own:
         d._add(page)
     n_explain = (len([p for p in shared if p is not deck_explain.FIGURE_SLOT])
@@ -526,8 +587,9 @@ def main():
         [[cell_label(*k), "%.4f" % cells[k]["freed_clean"],
           "%.4f" % cells[k]["freed_placebo"], "%+.4f" % cells[k]["drift"]]
          for k in CELL_ORDER],
-        note=("Mean $p_{\\mathrm{freed}}$ over all %d cases. This is the null the "
-              "broken edit is read against; the bar is %.2f." % (n, FREED_BAR)))
+        note=("Mean $p_{\\mathrm{freed}}$ over %d cases. The placebo is clash-matched "
+              "to the real edit in %.4f of them; the bar is %.2f."
+              % (n, js["clash_matched"], FREED_BAR)))
 
     # ---- C1, the headline.
     # Every title below states what its own numbers show, so each one branches
@@ -556,6 +618,18 @@ def main():
         lambda ax: draw_rounds(ax, cells), "rounds",
         note=("Tied model, rule-flip rate split by the round $v$ was deduced in. "
               "Rounds with under 10 cases in a seed are dropped."))
+
+    d.table_page(
+        "Visible wrongness tracks the flip rate"
+        if js["C6_tracks"] else
+        "How visibly wrong the edit looks does not change the answer",
+        ["cell", "1 clash", "$n$", "2+ clashes", "$n$"],
+        [[cell_label(*k), "%.4f" % cells[k]["flip_clash1"],
+          "%d" % cells[k]["flip_clash1_n"], "%.4f" % cells[k]["flip_clash2"],
+          "%d" % cells[k]["flip_clash2_n"]] for k in CELL_ORDER],
+        note=("Rule-flip rate split by clash count. A dependence here would mean "
+              "the model reads corruption, not content; the bar is %.2f."
+              % js["clash_bar"]))
 
     d.table_page(
         "The model reverts to its own answer under the edit"
