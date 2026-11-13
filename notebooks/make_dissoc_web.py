@@ -123,11 +123,19 @@ def draw_variants(ax, cells, arm):
     of one model, never a trend.
     """
     xs = list(range(len(VARIANTS)))
-    dys = (12, 0, -12)
+    series = [[cells[(arm, s)]["freed_%s" % v] for v in VARIANTS] for s in SEEDS]
+    # Fixed dy offsets collided on J2, where two endpoints are 0.06 apart and
+    # the offsets pushed their labels onto each other. Stack the labels at
+    # guaranteed-separated heights instead, in the same vertical order as the
+    # points they name, so the figure cannot depend on how close the data lands.
+    ends = [ys[-1] for ys in series]
+    base = min(max(sum(ends) / len(ends), 0.10), 0.98)
+    rank = {i: r for r, i in enumerate(sorted(range(len(ends)), key=ends.__getitem__))}
     for i, s in enumerate(SEEDS):
-        ys = [cells[(arm, s)]["freed_%s" % v] for v in VARIANTS]
-        ax.plot(xs, ys, "o-", ms=12 - 3 * i, lw=2, color=SERIES[i], zorder=3 + i)
-        label_line(ax, xs[-1], ys[-1], "seed %d" % s, color=SERIES[i], dy=dys[i])
+        ax.plot(xs, series[i], "o-", ms=12 - 3 * i, lw=2,
+                color=SERIES[i], zorder=3 + i)
+        label_line(ax, xs[-1], base + (rank[i] - 1) * 0.085, "seed %d" % s,
+                   color=SERIES[i])
     ax.axhline(0.0, color=MUTED, lw=1, ls=":", zorder=1)
     ax.set_xticks(xs)
     ax.set_xticklabels([VARIANT_GLOSS[v] for v in VARIANTS], fontsize=11)
@@ -148,7 +156,10 @@ def draw_diff(ax, cells):
     ax.plot(xs[3:], ys[3:], "o-", ms=11, lw=2, color=SERIES[0], zorder=3)
     ax.axhline(0.0, color=MUTED, lw=1, ls=":", zorder=1)
     ax.axhline(FREED_BAR, color=SERIES[1], lw=1.5, ls="--", zorder=2)
-    label_line(ax, xs[-1], FREED_BAR, "bar %.2f" % FREED_BAR, color=SERIES[1])
+    # dy lifts the label clear of its own dashed line, which otherwise strikes
+    # straight through the text.
+    label_line(ax, xs[-1], FREED_BAR, "bar %.2f" % FREED_BAR, color=SERIES[1],
+               dy=9)
     ax.axvline(2.5, color=MUTED, lw=1, ls=":", zorder=1)
     for x, name in ((1.0, "TIED, one shared block"), (4.0, "UNTIED, 16 blocks")):
         ax.annotate(name, xy=(x, 1.0), xycoords=("data", "axes fraction"),
@@ -263,8 +274,8 @@ the deduction about $v$ that gives two positions one apart:
 $v$'s node token is physically present in all four variants, because every edit
 is to a hint colour earlier in the prompt. So the colour readout is **teacher
 forced** on "the node is $v$": the model is not asked to choose $v$, it is told
-$v$ and asked for the colour. That is exactly the conditional direct deduction's
-rule computes.
+$v$ and asked for the colour. That is exactly the conditional that direct
+deduction's rule computes.
 """
 
 PFREED = """## $p_{\\mathrm{freed}}$ is the probability mass on the colour the edit released
@@ -489,8 +500,8 @@ def main():
     d.claim_page(
         "The two readouts under one edit, on one probability scale",
         lambda ax: draw_positions(ax, cells), "positions",
-        note=("Both series are probabilities under the SAME broken edit: naming "
-              "$v$, and the mass freed at $v$'s colour."))
+        note=("Both series are under the SAME broken edit. Naming $v$ is over "
+              "all %d cases, not finding 68's conditional denominator." % n))
 
     d.claim_page(
         "How far the broken edit moves the freed colour past the placebo",
@@ -523,13 +534,13 @@ def main():
          "So the difference is in the schedule, not in the elimination."])
 
     d.table_page(
-        "Whether $v$ is still named, on both denominators",
+        "The guard rate depends on which cases you count",
         ["cell", "all %d cases" % n, "broken $\\mid$ clean", "clean cases"],
         [[cell_label(*k), "%.4f" % cells[k]["emits_broken"],
           "%.4f" % cells[k]["emits_cond_broken"],
           "%d of %d" % (cells[k]["clean_n"], n)] for k in CELL_ORDER],
-        note=("The second column is finding 68's published statistic. The two "
-              "differ because they are over different case sets."))
+        note=("Column 3 counts only cases where the clean prompt named $v$; "
+              "column 2 counts all. Finding 68 published column 3."))
 
     # ---- H5, the reproduction
     d.table_page(
