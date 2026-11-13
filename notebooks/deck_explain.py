@@ -141,8 +141,8 @@ LEVELS = """## Train NLL settles at one of three levels: plateau, floor, basin
 - Cells in this family do not land on a continuum. Training ends at one of three places, and which one is reached matters more than any architectural knob tested so far:
 - **Plateau**, above 1.600: the cell left its initial collapse and then stopped. Stage V's seed 1 ended at 1.6334 and never moved again.
 - **Floor**, at or below 1.600, typically 1.585-1.592: where the recipe's healthy seeds land. Tight and reproducible.
-- **Basin**, at or below 1.561: below the floor, reached by only two cells on disk, and those two are the best $\\rho_{50}$ seeds the tied family has produced.
-- A **step** is a move between levels: a one-epoch fall out of a flat stretch that keeps falling. It happens at one epoch, not gradually, and it is the single event most associated with a cell ending up good.
+- **Basin**, at or below 1.561: below the floor, and rare. Two of the cells that reached it are the best $\\rho_{50}$ seeds the tied family has produced, which is why the level is tracked at all. Reaching it is not by itself a better model: the association is what makes the level worth watching, and it is not a guarantee.
+- A **step** is a move between levels: a one-epoch fall out of a flat stretch that keeps falling. It happens at one epoch rather than gradually, and it has been the event most associated with a cell ending up good.
 """
 
 LEAK = """## Every eval shuffles the adjacency so the answer cannot leak
