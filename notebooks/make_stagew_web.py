@@ -84,6 +84,15 @@ DECK = "/home/users/hshunt/slides/decks/spin-gnn/budget"
 WORD = {0: "Zero", 1: "One", 2: "Two", 3: "Three"}
 CONTROL_EPOCHS = EPOCHS - ADDED_EPOCHS      # 50
 
+# A BUDGET is a count of epochs; an EPOCH is the log's own 0-based index, which
+# is also the figures' x axis. The second text read-back caught three tables
+# reading the same two histories and labelling 1.5738 "epoch 50" on one page and
+# "epoch 49" on another -- true under both conventions and a contradiction on the
+# page. Every table that names an epoch now names it through these two, so the
+# two conventions cannot be mixed again by editing one page.
+MID_EP = CONTROL_EPOCHS - 1                 # 49: the control's last epoch
+END_EP = EPOCHS - 1                         # 99: the 100-epoch arm's last
+
 # step_epoch_census.level() returns STUCK for the level the LEVELS
 # explanation page calls the plateau. One level, one word, on every page.
 LEVEL_WORD = {"BASIN": "basin", "FLOOR": "floor", "STUCK": "plateau"}
@@ -133,15 +142,19 @@ def within_run(rows, ms):
     for r in rows:
         at50 = nll_at(paths[r["seed"]], CONTROL_EPOCHS)
         if at50 is None:
-            raise SystemExit("seed %d has no epoch-%d entry; W-c cannot be read"
-                             % (r["seed"], CONTROL_EPOCHS))
+            raise SystemExit("seed %d has nothing after %d epochs (log epoch %d);"
+                             " W-c cannot be read"
+                             % (r["seed"], CONTROL_EPOCHS, MID_EP))
         h = r["h"]
         if len(h) != EPOCHS:
             raise SystemExit("seed %d has %d history entries, not %d"
                              % (r["seed"], len(h), EPOCHS))
-        if abs(h[CONTROL_EPOCHS - 1]["train_nll"] - at50) > 1e-9:
-            raise SystemExit("nll_at() and history.json disagree at epoch %d"
-                             % CONTROL_EPOCHS)
+        # nll_at() takes a BUDGET (50 epochs); history.json is indexed by the
+        # log's 0-based EPOCH (49). Same quantity, two conventions -- asserting
+        # they agree here is what makes MID_EP safe to print on a deck page.
+        if abs(h[MID_EP]["train_nll"] - at50) > 1e-9:
+            raise SystemExit("nll_at(%d epochs) and history.json at epoch %d "
+                             "disagree" % (CONTROL_EPOCHS, MID_EP))
         out.append({"seed": r["seed"], "at50": at50, "end": r["nll"],
                     "fall": at50 - r["nll"], "level": LEVEL_WORD[level(r["nll"])]})
     return out
@@ -164,7 +177,7 @@ def paired(w_hist, c_hist):
     into a measurement -- at that epoch the extra budget has not happened yet,
     so whatever separates them there is the run and not the knob.
     """
-    last_c, last_w = CONTROL_EPOCHS - 1, EPOCHS - 1
+    last_c, last_w = MID_EP, END_EP
     out = []
     for seed in sorted(set(w_hist) & set(c_hist)):
         w = {e: (n, a) for e, n, a in w_hist[seed]}
@@ -278,7 +291,7 @@ def check_claims(ctrl, cs, w1, ws, wc, steps, bar, res, pairs, onsets, csteps):
     for r in wc:
         assert abs(mid[r["seed"]]["nll_w"] - r["at50"]) < 5e-5, (
             "the log and the scorer disagree on the 100-epoch cell at epoch %d"
-            % (CONTROL_EPOCHS - 1), r["seed"])
+            % MID_EP, r["seed"])
     for r in w1:
         assert abs(mid[r["seed"]]["acc_end"] - r["acc"]) < 5e-5, (
             "the log's final accuracy is not the scorer's", r["seed"])
@@ -526,9 +539,9 @@ def main():
     # evidence in both directions.
     d.table_page(
         "Matched seeds do not reproduce: the arms differ at the control's end",
-        ["seed", "train NLL at epoch %d, %d-epoch arm" % (CONTROL_EPOCHS - 1,
-                                                          EPOCHS),
-         "the control there", "difference", "val accuracy difference"],
+        ["seed", "train NLL at epoch %d, %d-epoch arm" % (MID_EP, EPOCHS),
+         "the control there", "arm minus control",
+         "val accuracy, arm minus control"],
         [[str(p["seed"]), "%.4f" % p["nll_w"], "%.4f" % p["nll_c"],
           "%+.4f" % p["d_nll"], "%+.4f" % p["d_acc_run"]] for p in pairs],
         # What a seed does and does not fix is defined on the explanation page
@@ -537,13 +550,13 @@ def main():
         # cliff a reader will otherwise hit unexplained on the curve figure.
         note="Epoch %d is the control's last, before any extra budget. Seed %d's "
              "control stepped at epoch %d and its %d-epoch run never did."
-             % (CONTROL_EPOCHS - 1, cstep_seed, csteps[cstep_seed], EPOCHS))
+             % (MID_EP, cstep_seed, csteps[cstep_seed], EPOCHS))
 
     d.table_page(
         "Within each run, the extra %d epochs moved accuracy by %+.4f"
         % (ADDED_EPOCHS, median([p["d_acc"] for p in pairs])),
-        ["seed", "val accuracy at epoch %d" % (CONTROL_EPOCHS - 1),
-         "at epoch %d" % (EPOCHS - 1), "change", "the control's own final"],
+        ["seed", "val accuracy at epoch %d" % MID_EP,
+         "at epoch %d" % END_EP, "change", "the control's own final"],
         [[str(p["seed"]), "%.4f" % p["acc_mid"], "%.4f" % p["acc_end"],
           "%+.4f" % p["d_acc"], "%.4f" % p["acc_c"]] for p in pairs],
         note="W-a was registered across runs and failed; measured within run "
@@ -552,14 +565,14 @@ def main():
 
     d.table_page(
         "Training loss fell in all three seeds, by %.4f at the median" % med_fall,
-        ["seed", "train NLL at epoch %d" % CONTROL_EPOCHS,
-         "at epoch %d" % EPOCHS, "fall", "bar %.4f" % NLL_BAR, "level reached"],
+        ["seed", "train NLL at epoch %d" % MID_EP,
+         "at epoch %d" % END_EP, "fall", "bar %.4f" % NLL_BAR, "level reached"],
         [[str(r["seed"]), "%.4f" % r["at50"], "%.4f" % r["end"],
           "%.4f" % r["fall"], "clears" if r["fall"] >= NLL_BAR else "below",
           r["level"]] for r in wc],
         note="Within each run, not across runs: the same cell at epoch %d and "
              "at epoch %d. The bar is stage S's measured tail slope."
-             % (CONTROL_EPOCHS, EPOCHS))
+             % (MID_EP, END_EP))
 
     # This figure is rendered by notebooks/stagew_figs.py, which saves the PNG
     # itself rather than handing a figure to savefig(), so the page is added
@@ -662,7 +675,7 @@ def main():
              "/".join("%s" % (csteps[s] if csteps[s] is not None else "none")
                       for s in sorted(csteps))))
     print("reproducibility at epoch %d: dNLL %s, dacc %s; within-run dacc %s"
-          % (CONTROL_EPOCHS - 1,
+          % (MID_EP,
              "/".join("%+.4f" % p["d_nll"] for p in pairs),
              "/".join("%+.4f" % p["d_acc_run"] for p in pairs),
              "/".join("%+.4f" % p["d_acc"] for p in pairs)))

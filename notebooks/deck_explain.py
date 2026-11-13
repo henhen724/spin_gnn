@@ -156,6 +156,7 @@ LEVELS = """## Train NLL settles at one of three levels: plateau, floor, basin
 - **Plateau**, above 1.600: the cell left its initial collapse and then stopped. One cell on disk ended at 1.6334 and never moved again.
 - **Floor**, at or below 1.600, typically 1.585-1.592: where the recipe's healthy seeds land. Tight and reproducible.
 - **Basin**, at or below 1.561: below the floor, and rare. Two of the cells that reached it are the best $\\rho_{50}$ seeds the tied family has produced, which is why the level is tracked at all. Reaching it is not by itself a better model: the association is what makes the level worth watching, and it is not a guarantee.
+- **Epochs are numbered the way the training log numbers them, from zero.** A 50-epoch run's last epoch is **epoch 49**, a 100-epoch run's is **epoch 99**, and every table and every figure axis in this deck uses that numbering. So "a budget of 50 epochs" and "epoch 49" name the same place in a run, and a value appearing under both labels is one value, not two.
 - A **step** is a move between levels that happens at one epoch rather than gradually. It is registered as three tests that must all hold at the same epoch $e$, with $n_e$ the train NLL after epoch $e$:
 - **Flat run-in**: $n_{e-6} - n_{e-1} < 0.0125$, i.e. under 0.0025 per epoch over the preceding 5 epochs. **Drop**: $n_{e-1} - n_e \\ge 0.005$ in that one epoch. **Persistence**: $n_{e-1} - n_{e+5} \\ge 0.020$, i.e. it keeps falling over the following 5 epochs.
 - Only epochs $e \\ge 8$ are scanned, which is after the initial collapse out of initialisation has finished, so that collapse cannot be mistaken for a step.
@@ -195,7 +196,8 @@ def check():
     py_compile of this module has to work without the scorer being importable.
     The deck job calls this with the project's modules loaded.
     """
-    from scripts.stagew_score import FREE, LOO_BAR, S1_RHO50, S1_TRAINABLE
+    from scripts.stagew_score import (ADDED_EPOCHS, EPOCHS, FREE, LOO_BAR,
+                                      S1_RHO50, S1_TRAINABLE)
     from scripts.step_epoch_census import (BASIN, DROP, FLAT, FLOOR, MIN_EP,
                                            PERSIST, RUNIN, WINDOW)
 
@@ -218,7 +220,15 @@ def check():
                        ("%.3f" % PERSIST, "PERSIST"),
                        ("n_{e-6}", "RUNIN=%d" % RUNIN),
                        ("n_{e+5}", "WINDOW=%d" % WINDOW),
-                       ("e \\ge %d" % MIN_EP, "MIN_EP")):
+                       ("e \\ge %d" % MIN_EP, "MIN_EP"),
+                       # Three results tables read the same two histories, and
+                       # the budget (50 epochs) and the log's index (epoch 49)
+                       # are both true names for one column. The page states
+                       # which one the tables use; these two assert it stays the
+                       # numbering make_stagew_web's MID_EP/END_EP actually
+                       # print, so the definition cannot drift from the tables.
+                       ("epoch %d" % (EPOCHS - ADDED_EPOCHS - 1), "MID_EP"),
+                       ("epoch %d" % (EPOCHS - 1), "END_EP")):
         if text not in LEVELS:
             failures.append("LEVELS does not state %s (%s) as %r"
                             % (owns, text, text))
