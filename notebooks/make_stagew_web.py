@@ -330,12 +330,19 @@ def _seed_dots(ax, arms, field, meds, only_ok=False):
     bound-aware and carries a censored seed's bound, which a median over the
     plotted dots cannot reproduce. A figure must draw the number its own title
     names.
+
+    The control's dots are MUTED and the arm under test's are SERIES[0], which
+    is the colour round the curve and solve-rate figures use. The second
+    read-back found these two pages drawing both arms in the arm's colour: the
+    x axis still said which was which, but a reader who had just learned "grey
+    is the control" two pages earlier had to unlearn it here.
     """
     for t, rows in arms.items():
+        face = SERIES[0] if t == EPOCHS else MUTED
         for r in rows:
             ok = r["ok"] or not only_ok
             ax.plot([XS[t]], [r[field]], "o" if ok else "^", ms=8,
-                    color=SERIES[0], mfc=SERIES[0] if ok else "white", mew=1.7,
+                    color=face, mfc=face if ok else "white", mew=1.7,
                     zorder=4)
         ax.plot([XS[t] - 0.17, XS[t] + 0.17], [meds[t]] * 2, "-",
                 color=SERIES[1], lw=2.6, zorder=3)

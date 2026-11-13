@@ -59,6 +59,32 @@ def by_seed(pattern):
     return out
 
 
+def clearing_dy(ax, fig, y, dy):
+    """A label offset, in points, that does not land the label on a level line.
+
+    The floor and basin lines span the whole axes, so a label placed at a
+    curve's right-hand end sits on one of them whenever the curve ends near
+    that level -- which, on a figure about which level a cell reached, is
+    exactly when it happens. The second read-back of this figure found seed 1's
+    "100 ep" printed across the 1.600 floor.
+
+    Doubling the offset clears the line in the SAME direction, which matters:
+    the two arms' labels are on opposite sides of their curves, and flipping one
+    would put both on one side. Returns dy unchanged when it is already clear,
+    so only the colliding facet moves.
+    """
+    to_disp, to_data = ax.transData.transform, ax.transData.inverted().transform
+    scale = fig.dpi / 72.0
+    base = to_disp((0.0, y))[1]
+    # Half a line of text, in data units, is how close counts as touching.
+    half = abs(to_data((0.0, base + 7.0 * scale))[1] - y)
+    for mult in (1, 2):
+        y_lab = to_data((0.0, base + dy * mult * scale))[1]
+        if all(abs(y_lab - lvl) > half for lvl in (FLOOR, BASIN)):
+            return dy * mult
+    return dy
+
+
 def fig_training_curves(outdir, fname="curves.png"):
     """One facet per seed: the 100-epoch cell against the 50-epoch one at it.
 
@@ -86,6 +112,7 @@ def fig_training_curves(outdir, fname="curves.png"):
 
     fig, axes = plt.subplots(1, len(seeds), figsize=(13, 4.2), sharey=True)
     axes = [axes] if len(seeds) == 1 else list(axes)
+    pending = []
     for ax, seed in zip(axes, seeds):
         # dy splits the two labels: both arms end near the same NLL on the
         # healthy seeds, and the first read-back had them printed on top of
@@ -99,7 +126,10 @@ def fig_training_curves(outdir, fname="curves.png"):
             pts = [(e, n) for e, n, _ in hist if e >= start]
             ax.plot([e for e, _ in pts], [n for _, n in pts],
                     color=color, linewidth=1.8, rasterized=True)
-            label_line(ax, pts[-1][0], pts[-1][1], name, color=color, dy=dy)
+            # Labels wait for tight_layout(): clearing_dy() asks the axes where
+            # a point offset lands in data units, and that answer changes when
+            # the axes is resized.
+            pending.append((ax, pts[-1][0], pts[-1][1], name, color, dy))
         # BOTH level lines, because the page's claim is which level a cell
         # reached: with only the floor drawn, "reached the basin" was a sentence
         # the reader had to take on trust from a figure that did not show 1.561.
@@ -131,6 +161,9 @@ def fig_training_curves(outdir, fname="curves.png"):
                      textcoords="offset points", color=MUTED, fontsize=11,
                      ha="right")
     fig.tight_layout()
+    fig.canvas.draw()          # so transData reflects the laid-out axes
+    for ax, x, y, name, color, dy in pending:
+        label_line(ax, x, y, name, color=color, dy=clearing_dy(ax, fig, y, dy))
     path = os.path.join(outdir, fname)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
