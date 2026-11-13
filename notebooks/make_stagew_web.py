@@ -104,19 +104,29 @@ def sufficiency(target):
     return ref, fit, bar, res
 
 
-def within_run(rows):
+def within_run(rows, ms):
     """W-c's pair: train NLL at the control's last epoch and at this run's.
 
-    The whole point of W-c is a number from the MIDDLE of the run, so it is read
-    from history.json at epoch 50 by the scorer's own nll_at() rather than from
-    the tail the other pages use.
+    The whole point of W-c is a number from the MIDDLE of the run, so epoch 50
+    is read by the scorer's OWN nll_at() -- from the cell's path, which arm()
+    does not carry out -- rather than by a second index written here. The
+    cross-check against the same entry of the history arm() already loaded is
+    what would catch an off-by-one in either of them.
     """
+    paths = {m["seed"]: m["path"] for m in ms}
     out = []
     for r in rows:
-        at50 = nll_at(r["path"], CONTROL_EPOCHS)
+        at50 = nll_at(paths[r["seed"]], CONTROL_EPOCHS)
         if at50 is None:
             raise SystemExit("seed %d has no epoch-%d entry; W-c cannot be read"
                              % (r["seed"], CONTROL_EPOCHS))
+        h = r["h"]
+        if len(h) != EPOCHS:
+            raise SystemExit("seed %d has %d history entries, not %d"
+                             % (r["seed"], len(h), EPOCHS))
+        if abs(h[CONTROL_EPOCHS - 1]["train_nll"] - at50) > 1e-9:
+            raise SystemExit("nll_at() and history.json disagree at epoch %d"
+                             % CONTROL_EPOCHS)
         out.append({"seed": r["seed"], "at50": at50, "end": r["nll"],
                     "fall": at50 - r["nll"], "level": level(r["nll"])})
     return out
@@ -303,8 +313,9 @@ def main():
     cells = load_pooled([SCAN_W] + BASELINE_DIRS + SCAN_DIRS, 2000)
     ctrl, cs = arm(cells, S1)
     w1, ws = arm(cells, W1)
+    wms = rung(cells, W1)
     c50, c100 = curves([SCAN_S], S1), curves([SCAN_W], W1)
-    wc = within_run(w1)
+    wc = within_run(w1, wms)
     steps = {s: step_epoch(h) for s, h in logs_by_seed(
         "sud2N48BudgetW_52053221_%d.out").items()}
     ref, fit, bar, res = sufficiency(W1)
@@ -320,7 +331,7 @@ def main():
     j2 = summarize(j2ms)
     j2_acc = median([a for _, a in acc_of(j2ms)])
 
-    n_esc, _nll = escapes([m for m in rung(cells, W1)])
+    n_esc, _nll = escapes(wms)
     grid, y50 = _median_curve(c50)
     g100, y100 = _median_curve(c100)
     assert len(grid) == len(g100) == 14, (len(grid), len(g100))
