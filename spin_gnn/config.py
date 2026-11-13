@@ -323,3 +323,15 @@ class SudokuReasoningTrainConfig:
     # never learning to deduce -- the signature of an early-training failure,
     # which is what warmup exists to fix.
     warmup_epochs: int = 0
+    # Pin the GPU kernels' reduction order, so that two runs of ONE
+    # configuration at one seed are the same run. A seed already fixes the
+    # instances, the weight init and the batch order (train_sudoku_model seeds
+    # all three), and finding 66b is what is left over after that: at the
+    # 50-epoch cell's last epoch the 100-epoch cell at the SAME seed differed
+    # by up to 0.0602 train NLL and 0.0246 accuracy, against the 0.0011 of
+    # accuracy that stage S's gap is worth. That is the measurement instrument,
+    # not the model. False reproduces every run before 2026-11-13 exactly --
+    # stages S through W were all run without it and none of their numbers
+    # move -- and True costs speed, which is what runs/2026-11-13_determinism
+    # measures.
+    deterministic: bool = False

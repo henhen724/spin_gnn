@@ -406,6 +406,30 @@ def train_sudoku_model(
     checkpoint_epochs=(),
 ):
     device = train_cfg.device if torch.cuda.is_available() else "cpu"
+    # Opt-in (finding 66b): the seed below fixes the init, build_instances fixes
+    # the data and default_rng(seed) fixes the batch order -- and two runs of one
+    # configuration STILL diverge, because nothing pins the order the GPU reduces
+    # a sum in. Measured: 0.151 of train NLL apart at epoch 0, which is where the
+    # trajectory is steepest and rounding is amplified most. Setting this makes a
+    # matched-seed pair differ only by the knob under test, which is the whole
+    # point of a control. Checked before any GEMM runs: cuBLAS reads
+    # CUBLAS_WORKSPACE_CONFIG once when it initializes, so exporting it from
+    # inside the process would be silently too late and the run would look
+    # deterministic without being it.
+    if getattr(train_cfg, "deterministic", False):
+        workspace = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+        if workspace not in (":4096:8", ":16:8"):
+            raise RuntimeError(
+                "deterministic=True needs CUBLAS_WORKSPACE_CONFIG=:4096:8 (or "
+                ":16:8) in the environment, found %r. cuBLAS reads it at init, "
+                "so it has to be set by the launcher: "
+                "CUBLAS_WORKSPACE_CONFIG=:4096:8 python3 -m spin_gnn...."
+                % (workspace,))
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        print(f"determinism: use_deterministic_algorithms(True), "
+              f"cudnn.benchmark=False, CUBLAS_WORKSPACE_CONFIG={workspace}")
     torch.manual_seed(sudoku_cfg.seed)
     vocab = build_vocab(sudoku_cfg)
 
@@ -555,6 +579,13 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
             "lr_schedule": getattr(train_cfg, "lr_schedule", "constant"),
             "lr_min_factor": getattr(train_cfg, "lr_min_factor", None),
             "warmup_epochs": getattr(train_cfg, "warmup_epochs", 0),
+            # Absent on every checkpoint before 2026-11-13, where it reads
+            # False -- correct for them, every run up to and including stage W
+            # was trained with the kernels unpinned. Recorded because it is
+            # otherwise unrecoverable from the checkpoint, and because it is
+            # the one setting that says whether a rerun of this cell can be
+            # expected to reproduce it.
+            "deterministic": getattr(train_cfg, "deterministic", False),
             # Absent on every checkpoint before 2026-11-02, where it reads 0 --
             # correct for them, their max_len IS the longest training sequence.
             # Recorded because that is otherwise unrecoverable: without it a

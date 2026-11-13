@@ -54,6 +54,7 @@ def run_one(args):
         batch_size=args.batch_size, lr=args.lr, epochs=args.epochs,
         lr_schedule=args.lr_schedule, lr_min_factor=args.lr_min_factor,
         warmup_epochs=args.warmup_epochs, max_len_margin=args.max_len_margin,
+        deterministic=args.deterministic,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
 
@@ -117,6 +118,13 @@ def run_one(args):
         # shared-block cell. Only present when k != 1, so every tag written
         # before 2026-11-11 is byte-identical.
         + (f"_k{args.n_blocks:02d}" if args.n_blocks != 1 else "")
+        # Same rule once more. A pinned-kernel cell trains the same
+        # architecture on the same data from the same init, and still ends at
+        # different weights than an unpinned one at the same seed -- finding
+        # 66b is the measurement of exactly that -- so the two must not share a
+        # directory name. Only present when the flag is on, so every tag
+        # written before 2026-11-13 is byte-identical.
+        + ("_det" if args.deterministic else "")
         + (f"_s{args.seed:02d}" if args.seed else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
@@ -150,6 +158,7 @@ def run_one(args):
         "evidence_slot_accuracy": result["solve_metrics"].get("evidence_slot_accuracy"),
         "lr_schedule": args.lr_schedule,
         "warmup_epochs": args.warmup_epochs,
+        "deterministic": args.deterministic,
         "checkpoint_dir": out_dir,
     }
 
@@ -230,6 +239,12 @@ if __name__ == "__main__":
     ap.add_argument("--warmup-epochs", type=int, default=0,
                     help="linear lr ramp over the first N epochs before --lr-schedule takes over; "
                          "0 (default) reproduces every run before 2026-10-28")
+    ap.add_argument("--deterministic", action="store_true",
+                    help="pin the GPU kernels' reduction order so two runs of this cell at "
+                         "one seed are the same run (torch.use_deterministic_algorithms, "
+                         "cudnn.benchmark off). Needs CUBLAS_WORKSPACE_CONFIG=:4096:8 in "
+                         "the launcher's environment and costs speed. OFF by default, so "
+                         "every run up to stage W is reproduced exactly.")
     ap.add_argument("--n-train-instances", type=int, default=5000)
     ap.add_argument("--n-val-instances", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=32)
