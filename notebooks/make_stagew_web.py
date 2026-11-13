@@ -362,11 +362,17 @@ def _median_curve(by):
 
 
 def draw_solve(ax, c50, c100):
-    for i, (by, name, dy) in enumerate(((c50, "%d epochs" % CONTROL_EPOCHS, 12),
-                                        (c100, "%d epochs" % EPOCHS, -4))):
+    # The control is MUTED and the arm under test is SERIES[0], the same way
+    # round as the training-curve figure. The read-back caught these two pages
+    # disagreeing: blue was the 100-epoch arm on one and the 50-epoch control on
+    # the other, two pages apart. Orange stays what it is everywhere else in
+    # this deck -- the median annotation, not an arm.
+    for by, name, color, dy in ((c50, "%d epochs" % CONTROL_EPOCHS, MUTED, 12),
+                                (c100, "%d epochs" % EPOCHS, SERIES[0], -4)):
         xs, ys = _median_curve(by)
-        ax.plot(xs, ys, "-o", ms=4, color=SERIES[i], lw=2.0, zorder=3 - i)
-        label_line(ax, xs[-1], ys[-1], name, color=SERIES[i], dy=dy)
+        ax.plot(xs, ys, "-o", ms=4, color=color, lw=2.0,
+                zorder=3 if color is MUTED else 2)
+        label_line(ax, xs[-1], ys[-1], name, color=color, dy=dy)
     ax.axhline(0.5, ls="--", lw=1.2, color=MUTED, zorder=1)
     label_line(ax, _median_curve(c50)[0][0], 0.5,
                "the 0.5 crossing that defines rho_50", color=MUTED, dy=8)
@@ -382,9 +388,13 @@ def draw_fit(ax, ref, fit, bar, res):
                     color=MUTED, alpha=0.13, lw=0, zorder=1)
     ax.plot([c["acc"] for c in ref], [c["mean_solve"] for c in ref], "o", ms=5,
             color=MUTED, mfc="white", mew=1.2, zorder=3)
-    low = [p for p in fit if p[0] <= 0.470] or fit[:1]
-    label_line(ax, low[-1][0], low[-1][1], "depth ladder\n+- its own LOO bar",
-               color=MUTED, dy=26)
+    # In the empty upper-left quadrant, not on the curve: anchored at the knee
+    # it printed straight through seed 2's label, which the read-back caught.
+    # "LOO" is also expanded here -- the explanation page spells the bar out,
+    # and a reader should not have to map an abbreviation onto it.
+    ax.annotate("depth ladder\n+- its leave-one-out bar", xy=(0.04, 0.82),
+                xycoords="axes fraction", color=MUTED, fontsize=12,
+                ha="left", va="top")
     for i, seed in enumerate(sorted(res)):
         r = res[seed]
         ax.plot([r["acc"]], [r["solve"]], "o", ms=10, color=SERIES[0], zorder=5)
@@ -417,6 +427,7 @@ def main():
     ref, fit, bar, res = sufficiency(W1)
     n_clear, spread_w, basin, best, on = check_claims(
         ctrl, cs, w1, ws, wc, steps, bar, res, pairs, onsets, csteps)
+    cstep_seed = next(s for s, e in csteps.items() if e is not None)
 
     arms = {CONTROL_EPOCHS: ctrl, EPOCHS: w1}
     acc_meds = {CONTROL_EPOCHS: median([r["acc"] for r in ctrl]),
@@ -520,9 +531,13 @@ def main():
          "the control there", "difference", "val accuracy difference"],
         [[str(p["seed"]), "%.4f" % p["nll_w"], "%.4f" % p["nll_c"],
           "%+.4f" % p["d_nll"], "%+.4f" % p["d_acc_run"]] for p in pairs],
-        note="Epoch %d is the control's last. Config and data match; nothing "
-             "pins the GPU's arithmetic order, so each run is independent."
-             % (CONTROL_EPOCHS - 1))
+        # What a seed does and does not fix is defined on the explanation page
+        # that introduces seeds, so this note spends its words on the specific
+        # instead: the control's seed-2 step is the whole 0.0602, and it is the
+        # cliff a reader will otherwise hit unexplained on the curve figure.
+        note="Epoch %d is the control's last, before any extra budget. Seed %d's "
+             "control stepped at epoch %d and its %d-epoch run never did."
+             % (CONTROL_EPOCHS - 1, cstep_seed, csteps[cstep_seed], EPOCHS))
 
     d.table_page(
         "Within each run, the extra %d epochs moved accuracy by %+.4f"
@@ -563,8 +578,11 @@ def main():
         "rho_50 rose from %s to %.3f and one seed stopped crossing"
         % (S1_RHO50, ws["rho50"]),
         lambda ax: draw_level(ax, arms, lvl_meds), "level",
-        note="Per seed, not pooled. The open triangle never reached a 0.5 solve "
-             "rate at any density, so its rho_50 is only a bound.")
+        # The CENSOR explanation page requires every figure to name which of the
+        # two estimators drew it. "not pooled" said where the numbers came from
+        # and not which estimator, so the words go to the estimator instead.
+        note="Per seed, bound-aware median. The open triangle never reached a "
+             "0.5 solve rate at any density, so its rho_50 is a bound.")
 
     d.table_page(
         "The seed that reached the basin did not solve any better",
