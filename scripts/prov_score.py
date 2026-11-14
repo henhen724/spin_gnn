@@ -71,6 +71,25 @@ WHAT IS REGISTERED, BEFORE ANY NUMBER EXISTS.
       fewer than MATCH_MIN = 100 cases in a cell, G1 stands on the full sample
       and the deck states that the clash confound is bounded, not removed.
 
+AMENDMENT, 2026-11-13, FROM THE CENSUS ALONE AND BEFORE ANY MODEL OUTPUT WAS
+READ. Job 52267370's census (`--cases-only`, no forward pass, so this is a
+property of the instance generator and nothing else) returned 6828 paired cases
+from 1200 instances, and every one of the 400 scored sits at round >= 1:
+r1=112, r2=76, r3=54, r4=37, r5=29, r6=23, r7=17, r8=19, r9=12, r10=7, r11=6,
+r12=2, r13=2, r14=3, r15=1. Round 0 is empty for a structural reason, not a thin
+tail. A round-0 v is forced by HINTS alone, so its hint neighbours already cover
+q-1 colours; a neighbour the model deduced earlier in the same round must
+therefore repeat one of those colours, which gives that colour two holders and
+disqualifies it as a single holder. A round-0 case with both a hint single
+holder and a deduced single holder cannot exist -- the same shape of argument as
+the clash theorem, and it means this probe can hold depth fixed but cannot reach
+the shallowest depth finding 68 measured.
+
+So G5's one-line summary is differenced against the shallowest NON-EMPTY bin
+instead of r0. The r0 column stays in the table, because its emptiness is the
+fact. Every bar, gate and hypothesis above is unchanged from the 9b59866
+registration, and G5 was descriptive rather than a test in that registration.
+
 GUARDS, each of which fails the job rather than printing a number.
   1. Every checkpoint is the cell it is filed under and the arms agree on every
      instance-generating key (guard_configs, shared with findings 68-70).
@@ -304,12 +323,17 @@ def main():
                     line += "%-14s" % "-"
             out["cells"]["%s_s%d" % (arm, s)]["depth"] = prof
             print(line)
-    j2_depth = [out["cells"]["J2_s%d" % s]["depth"] for s in SEEDS]
+    # Against the shallowest NON-EMPTY bin: r0 cannot exist (see AMENDMENT), so
+    # differencing against it would print nan three times and say nothing.
+    shallow = next((t for t in labels
+                    if out["cells"]["J2_s%d" % SEEDS[0]]["depth"][t]["n"]), labels[0])
     deep_rise = []
-    for prof in j2_depth:
-        a, b_ = prof["r0"], prof["r3+"]
+    for s in SEEDS:
+        prof = out["cells"]["J2_s%d" % s]["depth"]
+        a, b_ = prof[shallow], prof["r3+"]
         deep_rise.append(b_["rate"] - a["rate"] if a["n"] and b_["n"] else float("nan"))
-    print("    J2 r3+ minus r0: " + "  ".join("%+.4f" % x for x in deep_rise))
+    out["depth_shallow_bin"] = shallow
+    print("    J2 r3+ minus %s: " % shallow + "  ".join("%+.4f" % x for x in deep_rise))
 
     # ---- G6, the clash-matched subset
     print("\nG6  the same J2 comparison on the exactly clash-matched cases only")
