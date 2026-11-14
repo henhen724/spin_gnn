@@ -73,3 +73,6 @@ notebooks/stagen_2026-11-10_DRY_PARTIAL/
 # Smoke tests also emit single JSON summaries, not just directories.
 _smoke_*.json
 _*_smoke.json
+# Web-deck drafts rendered before the deck goes to ~/slides. Same reasoning:
+# the builder under notebooks/ is the kept artefact, the render is not.
+/deckdraft/

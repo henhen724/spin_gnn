@@ -67,7 +67,7 @@ DEDUCTION = """## A colour is forced when its neighbours show the other three
 - A neighbour of known colour **eliminates** that colour from the set. When $q - 1 = 3$ of the four have been eliminated, one candidate remains and the node's colour is **forced**.
 - **Direct deduction (DD)** is this rule and nothing else: no guessing, no backtracking, no trying a colour to see if it fails later.
 - One **round** applies the rule to every node at once, then updates. An instance is DD-solvable if repeated rounds resolve every node; the number of rounds needed is the depth of its longest inference chain.
-- Draws from this generator reach **19 rounds**, so the deepest chains need 19 successive applications before the last node is pinned.
+- Draws from this generator reach **19 rounds**, so the deepest chains need 19 successive rounds of the rule before the last node is pinned.
 """
 
 GENERATION = """## The model is prompted with the problem and writes the rest itself
