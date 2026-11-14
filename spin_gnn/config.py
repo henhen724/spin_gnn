@@ -335,3 +335,21 @@ class SudokuReasoningTrainConfig:
     # move -- and True costs speed, which is what runs/2026-11-13_determinism
     # measures.
     deterministic: bool = False
+    # Stage X. Weight on a multi-label BCE that trains the readout's NODE
+    # logits, at every position where a node is about to be emitted, to say
+    # which still-uncoloured nodes are deducible right now (the target is
+    # spin_gnn.sudoku_determinacy). Zero new parameters: the loss attaches to
+    # the readout the model already has.
+    #
+    # Motivated by findings 68 and 69, and by a gauge argument. Cross-entropy
+    # sees the logits only through a softmax, so it fixes them only up to an
+    # additive constant and can express "this node comes next" but never "that
+    # node is not emittable at all" -- which is exactly the guard the tied
+    # model lacks while demonstrably computing the determinacy it would need
+    # (finding 69: p_freed ~0.52 under an edit that destroys determinacy, and
+    # the node readout does not move to four decimals). This term is the
+    # smallest change that makes the absolute logit height mean something.
+    #
+    # 0.0 reproduces every run before 2026-11-13 exactly, including the batch
+    # order: at 0 the determinacy targets are never even built.
+    determinacy_weight: float = 0.0

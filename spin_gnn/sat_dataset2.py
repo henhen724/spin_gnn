@@ -11,16 +11,25 @@ import torch
 
 
 class SATTokenDataset:
-    def __init__(self, token_sequences, max_len=None):
-        sequences = [s for s in token_sequences if s.shape[0] >= 2]
-        dropped_short = len(token_sequences) - len(sequences)
+    def __init__(self, token_sequences, max_len=None, aux=None):
+        """aux, when given, is a list parallel to token_sequences of
+        (pos, target) pairs -- see spin_gnn.sudoku_determinacy. It is filtered
+        in lockstep with the sequences, so a dropped instance never shifts the
+        alignment between a sequence and its targets. None reproduces every
+        dataset built before stage X exactly."""
+        if aux is not None and len(aux) != len(token_sequences):
+            raise ValueError(f"aux has {len(aux)} entries for {len(token_sequences)} sequences")
+        keep = [i for i, s in enumerate(token_sequences) if s.shape[0] >= 2]
+        dropped_short = len(token_sequences) - len(keep)
         if max_len:
-            n_before = len(sequences)
-            sequences = [s for s in sequences if s.shape[0] <= max_len]
-            dropped_long = n_before - len(sequences)
+            n_before = len(keep)
+            keep = [i for i in keep if token_sequences[i].shape[0] <= max_len]
+            dropped_long = n_before - len(keep)
         else:
             dropped_long = 0
+        sequences = [token_sequences[i] for i in keep]
         self.sequences = sequences
+        self.aux = [aux[i] for i in keep] if aux is not None else None
         if dropped_short:
             print(f"SATTokenDataset: dropped {dropped_short}/{len(token_sequences)} instances with < 2 tokens")
         if dropped_long:
@@ -53,11 +62,40 @@ def make_token_batch(dataset: SATTokenDataset, indices):
     return x, y, mask
 
 
-def iterate_token_batches(dataset, indices, batch_size, rng=None, shuffle=True):
+def make_token_batch_aux(dataset, indices):
+    """make_token_batch plus the determinacy targets for the same instances.
+
+    Returns x, y, mask, aux_pos, aux_target. Instances differ in how many
+    deductions their trace holds, so aux_pos is padded with 0 (a position that
+    always exists) and aux_target with MASKED, which spin_gnn.sudoku_determinacy
+    drops -- a padded row therefore contributes nothing to the loss rather than
+    contributing a zero.
+    """
+    from .sudoku_determinacy import MASKED
+
+    x, y, mask = make_token_batch(dataset, indices)
+    entries = [dataset.aux[i] for i in indices]
+    n_pos = [p.shape[0] for p, _t in entries]
+    max_pos = max(n_pos) if n_pos else 0
+    n_nodes = entries[0][1].shape[1]
+    b = len(indices)
+
+    aux_pos = torch.zeros(b, max_pos, dtype=torch.long)
+    aux_target = torch.full((b, max_pos, n_nodes), MASKED, dtype=torch.int8)
+    for i, ((p, t), length) in enumerate(zip(entries, n_pos)):
+        aux_pos[i, :length] = torch.from_numpy(p)
+        aux_target[i, :length] = torch.from_numpy(t)
+    return x, y, mask, aux_pos, aux_target
+
+
+def iterate_token_batches(dataset, indices, batch_size, rng=None, shuffle=True, collate=make_token_batch):
+    """`collate` selects what a batch carries; the bucketing and the shuffle
+    above it are untouched by the choice, so a determinacy run sees exactly the
+    batch order its plain counterpart would at the same seed."""
     indices = list(indices)
     if not shuffle:
         for start in range(0, len(indices) - batch_size + 1, batch_size):
-            yield make_token_batch(dataset, indices[start : start + batch_size])
+            yield collate(dataset, indices[start : start + batch_size])
         return
 
     rng = rng or np.random.default_rng()
@@ -65,4 +103,4 @@ def iterate_token_batches(dataset, indices, batch_size, rng=None, shuffle=True):
     batches = [indices[start : start + batch_size] for start in range(0, len(indices) - batch_size + 1, batch_size)]
     rng.shuffle(batches)
     for batch in batches:
-        yield make_token_batch(dataset, batch)
+        yield collate(dataset, batch)

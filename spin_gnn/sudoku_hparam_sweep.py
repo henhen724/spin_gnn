@@ -55,6 +55,7 @@ def run_one(args):
         lr_schedule=args.lr_schedule, lr_min_factor=args.lr_min_factor,
         warmup_epochs=args.warmup_epochs, max_len_margin=args.max_len_margin,
         deterministic=args.deterministic,
+        determinacy_weight=args.determinacy_weight,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
 
@@ -125,6 +126,13 @@ def run_one(args):
         # directory name. Only present when the flag is on, so every tag
         # written before 2026-11-13 is byte-identical.
         + ("_det" if args.deterministic else "")
+        # Same rule once more, and this is the segment that makes stage X a
+        # stage at all: the architecture, the parameter count and the state
+        # dict are S1's exactly, so the objective is the ONLY thing a
+        # directory name could carry. Without it a stage-X cell and its
+        # stage-S control collide on disk. Only present when the term is on,
+        # so every tag written before 2026-11-13 is byte-identical.
+        + (f"_dw{args.determinacy_weight:g}" if args.determinacy_weight else "")
         + (f"_s{args.seed:02d}" if args.seed else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
@@ -159,6 +167,8 @@ def run_one(args):
         "lr_schedule": args.lr_schedule,
         "warmup_epochs": args.warmup_epochs,
         "deterministic": args.deterministic,
+        "determinacy_weight": args.determinacy_weight,
+        "final_determinacy_auroc": result["history"][-1].get("determinacy_auroc"),
         "checkpoint_dir": out_dir,
     }
 
@@ -245,6 +255,12 @@ if __name__ == "__main__":
                          "cudnn.benchmark off). Needs CUBLAS_WORKSPACE_CONFIG=:4096:8 in "
                          "the launcher's environment and costs speed. OFF by default, so "
                          "every run up to stage W is reproduced exactly.")
+    ap.add_argument("--determinacy-weight", type=float, default=0.0,
+                    help="stage X: weight on a multi-label BCE training the readout's NODE "
+                         "logits, at each position about to emit a node, to say which "
+                         "still-uncoloured nodes are deducible now. Adds no parameters. "
+                         "0.0 (default) reproduces every run up to stage W exactly, "
+                         "including the batch order.")
     ap.add_argument("--n-train-instances", type=int, default=5000)
     ap.add_argument("--n-val-instances", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=32)

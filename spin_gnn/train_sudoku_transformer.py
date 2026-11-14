@@ -37,9 +37,12 @@ import numpy as np
 import torch
 
 from .config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
-from .sat_dataset2 import SATTokenDataset, iterate_token_batches
+from .sat_dataset2 import SATTokenDataset, iterate_token_batches, make_token_batch, make_token_batch_aux
 from .sat_transformer2 import SATReasoningTransformer, sat2_accuracy, sat2_nll_loss
 from .sudoku_dd import planted_regular_graph, removal_path
+from .sudoku_determinacy import (
+    auroc, determinacy_loss, determinacy_targets, node_logits_at, summarize,
+)
 from .sudoku_tokens import Vocab, check_evidence, check_solution, decode, encode_instance
 from .sudoku_trace import sample_hints, solve_with_dd_trace
 
@@ -158,6 +161,44 @@ def baseline_accuracy(dataset: SATTokenDataset, vocab_size):
         target = seq[1:]
         counts += np.bincount(target, minlength=vocab_size)
     return float(counts.max() / counts.sum())
+
+
+def evaluate_determinacy(model, dataset, indices, device, vocab, batch_size=32):
+    """How well the readout's node logits already answer "which open nodes are
+    deducible here", on held-out instances.
+
+    Reported as AUROC because the positive rate is ~0.65 (measured at N=48),
+    so a thresholded accuracy would mostly be reporting the base rate. An
+    untrained-for-this readout is not expected to sit at 0.5 -- the main loss
+    pushes the next node's logit up, and the next node is always deducible --
+    so what this tracks is the margin over whatever the main loss already
+    buys, and the stage-S cells are the control for that.
+    """
+    model.eval()
+    scores, labels = [], []
+    total_bce, total_n = 0.0, 0
+    with torch.no_grad():
+        for x, y, mask, apos, atgt in iterate_token_batches(
+                dataset, indices, batch_size, shuffle=False, collate=make_token_batch_aux):
+            x, mask, apos = x.to(device), mask.to(device), apos.to(device)
+            atgt = atgt.to(device)
+            logits = model(x, valid_mask=mask)
+            loss = determinacy_loss(logits, apos, atgt, vocab.node_offset, vocab.n_nodes)
+            scored = atgt >= 0
+            n = int(scored.sum().item())
+            if loss is None or n == 0:
+                continue
+            total_bce += loss.item() * n
+            total_n += n
+            node_logits = node_logits_at(logits, apos, vocab.node_offset, vocab.n_nodes)
+            scores.append(node_logits[scored].float().cpu().numpy())
+            labels.append((atgt[scored] == 1).cpu().numpy())
+    if not total_n:
+        return {"determinacy_bce": float("nan"), "determinacy_auroc": float("nan")}
+    return {
+        "determinacy_bce": total_bce / total_n,
+        "determinacy_auroc": auroc(np.concatenate(scores), np.concatenate(labels)),
+    }
 
 
 def evaluate(model, dataset, indices, device, batch_size=32):
@@ -439,9 +480,24 @@ def train_sudoku_model(
     train_tokens = [encode_instance(adj, trace, vocab) for adj, _, _, trace in train_instances]
     val_tokens = [encode_instance(adj, trace, vocab) for adj, _, _, trace in val_instances]
 
+    # Stage X. Built only when the term is on, so a weight of 0 does not even
+    # pay for the labels and reproduces every earlier run exactly.
+    det_w = float(getattr(train_cfg, "determinacy_weight", 0.0) or 0.0)
+    if det_w > 0:
+        train_aux = [determinacy_targets(adj, trace, vocab, tok)
+                     for (adj, _c, _h, trace), tok in zip(train_instances, train_tokens)]
+        val_aux = [determinacy_targets(adj, trace, vocab, tok)
+                   for (adj, _c, _h, trace), tok in zip(val_instances, val_tokens)]
+        stats = summarize([t for _p, t in train_aux])
+        print(f"determinacy targets: weight={det_w:g} positive_rate={stats['positive_rate']:.4f} "
+              f"scored_fraction={stats['scored_fraction']:.4f} "
+              f"({stats['positives']:,} pos / {stats['negatives']:,} neg / {stats['masked']:,} masked)")
+    else:
+        train_aux = val_aux = None
+
     max_len = train_cfg.max_len or None
-    train_dataset = SATTokenDataset(train_tokens, max_len=max_len)
-    val_dataset = SATTokenDataset(val_tokens, max_len=max_len)
+    train_dataset = SATTokenDataset(train_tokens, max_len=max_len, aux=train_aux)
+    val_dataset = SATTokenDataset(val_tokens, max_len=max_len, aux=val_aux)
     if len(train_dataset) == 0 or len(val_dataset) == 0:
         raise ValueError(f"empty dataset: train={len(train_dataset)}, val={len(val_dataset)}")
     longest_train_seq = max(seq.shape[0] for seq in train_dataset.sequences + val_dataset.sequences)
@@ -493,15 +549,30 @@ def train_sudoku_model(
     for epoch in range(train_cfg.epochs):
         model.train()
         epoch_loss, epoch_n = 0.0, 0
-        for x, y, mask in iterate_token_batches(train_dataset, train_indices, train_cfg.batch_size, rng=rng):
-            x, y, mask = x.to(device), y.to(device), mask.to(device)
+        epoch_det, epoch_det_n = 0.0, 0
+        collate = make_token_batch_aux if det_w > 0 else make_token_batch
+        for batch in iterate_token_batches(train_dataset, train_indices, train_cfg.batch_size,
+                                           rng=rng, collate=collate):
+            x, y, mask = (t.to(device) for t in batch[:3])
             logits = model(x, valid_mask=mask)
-            loss = sat2_nll_loss(logits, y, mask)
+            main = sat2_nll_loss(logits, y, mask)
+            loss = main
+            if det_w > 0:
+                apos, atgt = batch[3].to(device), batch[4].to(device)
+                det = determinacy_loss(logits, apos, atgt, vocab.node_offset, vocab.n_nodes)
+                if det is not None:
+                    loss = main + det_w * det
+                    n_scored = int((atgt >= 0).sum().item())
+                    epoch_det += det.item() * n_scored
+                    epoch_det_n += n_scored
             opt.zero_grad()
             loss.backward()
             opt.step()
             n_valid = mask.sum().item()
-            epoch_loss += loss.item() * n_valid
+            # The recorded train_nll stays the MAIN term alone, so the column
+            # means the same thing it meant in stages S through W and the two
+            # are directly comparable.
+            epoch_loss += main.item() * n_valid
             epoch_n += n_valid
 
         lr_now = opt.param_groups[0]["lr"]
@@ -510,9 +581,16 @@ def train_sudoku_model(
 
         val_metrics = evaluate(model, val_dataset, val_indices, device, batch_size=train_cfg.batch_size)
         record = {"epoch": epoch, "train_nll": epoch_loss / epoch_n, "lr": lr_now, **val_metrics}
+        det_note = ""
+        if det_w > 0:
+            record["train_determinacy_bce"] = epoch_det / epoch_det_n if epoch_det_n else float("nan")
+            record.update(evaluate_determinacy(model, val_dataset, val_indices, device, vocab,
+                                               batch_size=train_cfg.batch_size))
+            det_note = (f" det_bce={record['train_determinacy_bce']:.4f} "
+                        f"val_det_auroc={record['determinacy_auroc']:.4f}")
         history.append(record)
         print(f"epoch {epoch}: train_nll={record['train_nll']:.4f} val_nll={val_metrics['nll']:.4f} "
-              f"val_accuracy={val_metrics['accuracy']:.4f} lr={lr_now:.2e}")
+              f"val_accuracy={val_metrics['accuracy']:.4f} lr={lr_now:.2e}{det_note}")
         if (epoch + 1) in checkpoint_epochs:
             checkpoints[epoch + 1] = snapshot()
 
@@ -586,6 +664,13 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
             # the one setting that says whether a rerun of this cell can be
             # expected to reproduce it.
             "deterministic": getattr(train_cfg, "deterministic", False),
+            # Absent on every checkpoint before 2026-11-13, where it reads 0.0
+            # -- correct for them: stages S through W trained the readout
+            # under cross-entropy alone. Load-bearing for a reader, because it
+            # is the ONLY thing that distinguishes a stage-X cell from its
+            # stage-S control: same architecture, same parameter count, same
+            # state dict shape, different objective.
+            "determinacy_weight": float(getattr(train_cfg, "determinacy_weight", 0.0) or 0.0),
             # Absent on every checkpoint before 2026-11-02, where it reads 0 --
             # correct for them, their max_len IS the longest training sequence.
             # Recorded because that is otherwise unrecoverable: without it a
