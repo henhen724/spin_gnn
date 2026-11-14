@@ -159,7 +159,17 @@ and stagex_score returned `representation_without_use`. The draft was
 written before X2 was readable and said explicitly that an X2 pass would
 make the diagnosis wrong and change the design. X2 failed at
 1.0000/1.0000/0.9568, which is the branch the design was built for, and
-nothing in it moved. Not submitted yet: no cells, no Slurm id.
+nothing in it moved.
+
+SUBMITTED 2026-11-14 at commit 062c9a4, after this file was already
+committed at a05847a: array 52336800 (3 cells, sganguli, 20:00:00) with
+52336801 chained --dependency=afterok to run Y2, Y3 and print the verdict
+this module returns. The channel was smoke-tested first
+(scripts/stagey_smoke.py, five assertions, all pass) and the training job
+re-runs that script before it trains, because three of the five -- an
+off-by-default flag that does not take, an emission that drops
+log sigma(g), a BCE that still reaches the readout -- would otherwise
+produce a plausible run of the WRONG stage.
 """
 import sys
 
