@@ -81,6 +81,19 @@ VARIANTS = ("clean", "broken")
 SITES = ("edit", "read")
 
 
+def _case_key(case):
+    """The four fields that identify a case, as ddguard_score.CASE_KEY has them.
+
+    `node` ALONE DOES NOT IDENTIFY A CASE: it is a node index in 0..47 and the
+    stream yields hundreds of cases across 400 instances, so node 7 recurs in
+    dozens of them. Every row therefore carries a sequential `case_id`, which
+    is what the scorer groups on, plus these four so a row joins to finding
+    68's and finding 71's CSVs, which are keyed this way.
+    """
+    return {"node": case["node"], "binding_nbr": case["recolored_nbr"],
+            "n_known": case["n_known"], "round0_rank": case["round0_rank"]}
+
+
 def _norm_of(model):
     """The final norm the model's own forward applies before the readout.
 
@@ -164,7 +177,7 @@ def run_lens(model, vocab, device, cases):
     norm = _norm_of(model)
     depth = _depth(model)
     rows = []
-    for adj, colors, hints, trace, case in cases:
+    for cid, (adj, colors, hints, trace, case) in enumerate(cases):
         quad, pos = build_quad(adj, trace, hints, vocab, case)
         v_tok = vocab.node_token(case["node"])
         col_toks = [vocab.color_token(i) for i in range(vocab.n_colors)]
@@ -194,7 +207,8 @@ def run_lens(model, vocab, device, cases):
                             d_col = num / den
                 prev = h
                 rows.append({
-                    "node": case["node"], "variant": name, "t": t,
+                    "case_id": cid, "variant": name, "t": t,
+                    **_case_key(case),
                     "emits_v": r["emits_v"], "v_logit": r["v_logit"],
                     "p_true": r["p_true"], "p_freed": r["p_freed"],
                     "p_cand": r["p_cand"],
@@ -217,7 +231,7 @@ def run_patch(model, vocab, device, cases):
     depth = _depth(model)
     tied = _is_tied(model)
     rows = []
-    for adj, colors, hints, trace, case in cases:
+    for cid, (adj, colors, hints, trace, case) in enumerate(cases):
         quad, pos = build_quad(adj, trace, hints, vocab, case)
         v_tok = vocab.node_token(case["node"])
         col_toks = [vocab.color_token(i) for i in range(vocab.n_colors)]
@@ -261,7 +275,8 @@ def run_patch(model, vocab, device, cases):
                 finally:
                     h.remove()
                 rows.append({
-                    "node": case["node"], "site": site, "t": t,
+                    "case_id": cid, "site": site, "t": t,
+                    **_case_key(case),
                     "emits_v": r["emits_v"], "p_freed": r["p_freed"],
                     "p_cand": r["p_cand"], "v_logit": r["v_logit"],
                     "clean_emits_v": base_clean["emits_v"],
@@ -284,7 +299,7 @@ def run_noop(model, vocab, device, cases):
     depth = _depth(model)
     tied = _is_tied(model)
     rows = []
-    for adj, colors, hints, trace, case in cases:
+    for cid, (adj, colors, hints, trace, case) in enumerate(cases):
         quad, pos = build_quad(adj, trace, hints, vocab, case)
         v_tok = vocab.node_token(case["node"])
         col_toks = [vocab.color_token(i) for i in range(vocab.n_colors)]
@@ -317,7 +332,8 @@ def run_noop(model, vocab, device, cases):
                 finally:
                     h.remove()
                 rows.append({
-                    "node": case["node"], "site": site, "t": t,
+                    "case_id": cid, "site": site, "t": t,
+                    **_case_key(case),
                     "same_emits_v": int(r["emits_v"] == base["emits_v"]),
                     "abs_freed_drift": abs(r["p_freed"] - base["p_freed"]),
                 })
@@ -399,7 +415,7 @@ def main():
         raise SystemExit("L1 FAILED: the lens is not the model's own readout")
 
     patch = run_patch(model, vocab, args.device, cases[:args.n_patch])
-    disc = {r["node"] for r in patch
+    disc = {r["case_id"] for r in patch
             if r["clean_emits_v"] and not r["broken_emits_v"]}
     print("L3 discordant cases (clean names v, broken does not): %d of %d"
           % (len(disc), min(args.n_patch, len(cases))))

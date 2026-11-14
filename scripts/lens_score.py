@@ -41,6 +41,12 @@ GATES, both fail-closed inside the measurement module as well as here.
       and |p_freed| drift <= 1e-4. A hook that shifted a position or cloned the
       wrong tensor would otherwise manufacture a recovery curve out of its own
       bug.
+  A3  THE GROUPING KEY IS A KEY. (case_id, variant, t) and (case_id, site, t)
+      must be unique, and the case_id count must match the metadata. The first
+      version of this scorer grouped on `node` -- a node index in 0..47 that
+      recurs in dozens of the hundreds of cases the stream yields -- which
+      pooled unrelated cases without erroring. The assertion exists so that
+      class of bug cannot recur silently.
 
 L3, THE HEADLINE, UNTIED ARM ONLY, and the reason is finding 68: the untied
 model is the one with a guard to lose (0.0000 / 0.0000 / 0.8444), and the tied
@@ -107,7 +113,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.ddguard_score import ARMS, SEEDS, rows_of, truthy  # noqa: E402
 
 _SCR = os.environ.get("SCRATCH", "/scratch/users/hshunt")
-RUN = os.path.join(_SCR, "spin_gnn", "runs", "2026-11-13_lens")
+# ..._lens holds the first attempt, cancelled 10 minutes in when A3's bug was
+# found; its partial S1_s0 cell is left in place rather than deleted, and this
+# run writes somewhere else so a stale cell can never be scored by accident.
+RUN = os.path.join(_SCR, "spin_gnn", "runs", "2026-11-13_lens2")
 
 DEPTH = 16               # both arms; asserted per cell against lens_meta.json
 DISC_MIN = 50            # L3 is not scored on a thinner cell than this
@@ -134,11 +143,16 @@ def _num(x):
 
 
 def profile(rows, key, cases=None):
-    """mean(key) at each t, over the given cases (all of them if None)."""
+    """mean(key) at each t, over the given cases (all of them if None).
+
+    Grouped on `case_id`, never on `node`: `node` is an index in 0..47 and the
+    stream yields hundreds of cases over 400 instances, so node 7 recurs in
+    dozens of them and a node-keyed set would pool unrelated cases.
+    """
     out = []
     for t in range(DEPTH):
         v = [_num(r[key]) for r in rows
-             if int(r["t"]) == t and (cases is None or int(r["node"]) in cases)]
+             if int(r["t"]) == t and (cases is None or int(r["case_id"]) in cases)]
         out.append(float(np.mean(v)) if v else float("nan"))
     return out
 
@@ -175,7 +189,7 @@ def decision_time(traj_rows, variant):
     for r in traj_rows:
         if r["variant"] != variant:
             continue
-        by_case.setdefault(int(r["node"]), {})[int(r["t"])] = int(_num(r["emits_v"]))
+        by_case.setdefault(int(r["case_id"]), {})[int(r["t"])] = int(_num(r["emits_v"]))
     out = []
     for seq in by_case.values():
         v = [seq[t] for t in range(DEPTH) if t in seq]
@@ -196,7 +210,7 @@ def tail_share(traj_rows, key, cut=8):
         d = _num(r[key])
         if d != d:            # nan at t = 0, by construction
             continue
-        by_case.setdefault(int(r["node"]), []).append((int(r["t"]), d))
+        by_case.setdefault(int(r["case_id"]), []).append((int(r["t"]), d))
     out = []
     for seq in by_case.values():
         tot = sum(d for _, d in seq)
@@ -215,6 +229,14 @@ def score_cell(arm, seed):
     patch = rows_of(os.path.join(d, "lens_patch.csv"))
     noop = rows_of(os.path.join(d, "lens_noop.csv"))
 
+    # A3: the grouping key has to be a key. Checked rather than assumed,
+    # because the first version of this scorer grouped on `node` -- an index in
+    # 0..47 that recurs across instances -- and silently pooled unrelated cases.
+    assert len({(r["case_id"], r["variant"], r["t"]) for r in traj}) == len(traj)
+    assert len({(r["case_id"], r["site"], r["t"]) for r in patch}) == len(patch)
+    assert len({int(r["case_id"]) for r in traj}) == meta["n_cases"]
+    assert len({int(r["case_id"]) for r in patch}) == meta["n_patch"]
+
     # ---- the two gates, recomputed here rather than trusted from the module
     last = [r for r in traj if int(r["t"]) == DEPTH - 1]
     l1_agree = float(np.mean([_num(r["emits_v"]) == _num(r["final_emits_v"])
@@ -224,10 +246,10 @@ def score_cell(arm, seed):
     a2_drift = max(_num(r["abs_freed_drift"]) for r in noop)
 
     # ---- L3, the discordant cases: clean names v, broken does not
-    disc = {int(r["node"]) for r in patch
+    disc = {int(r["case_id"]) for r in patch
             if truthy(r["clean_emits_v"]) and not truthy(r["broken_emits_v"])}
     # ---- L4's cases: the two prompts have to separate on p_freed at all
-    freed = {int(r["node"]) for r in patch
+    freed = {int(r["case_id"]) for r in patch
              if abs(_num(r["clean_p_freed"]) - _num(r["broken_p_freed"])) >= FREED_MIN}
 
     cell = {"arm": arm, "seed": seed, "n_cases": meta["n_cases"],
@@ -249,14 +271,14 @@ def score_cell(arm, seed):
         per_t = {t: [] for t in range(DEPTH)}
         base = {}
         for r in srows:
-            node = int(r["node"])
-            if node in freed:
-                base[node] = (_num(r["clean_p_freed"]), _num(r["broken_p_freed"]))
+            cid = int(r["case_id"])
+            if cid in freed:
+                base[cid] = (_num(r["clean_p_freed"]), _num(r["broken_p_freed"]))
         for r in srows:
-            node = int(r["node"])
-            if node not in base:
+            cid = int(r["case_id"])
+            if cid not in base:
                 continue
-            cl, br = base[node]
+            cl, br = base[cid]
             per_t[int(r["t"])].append((_num(r["p_freed"]) - br) / (cl - br))
         recp = [float(np.mean(per_t[t])) if per_t[t] else float("nan")
                 for t in range(DEPTH)]

@@ -53,7 +53,12 @@ export NUMBA_CACHE_DIR=/scratch/users/hshunt/numba_cache
 export MPLBACKEND=Agg
 export PYTHONUNBUFFERED=1
 
-RUN=/scratch/users/hshunt/spin_gnn/runs/2026-11-13_lens
+# _lens2, not _lens: the first submission (52270697) was cancelled ten minutes
+# in, after its S1_s0 cell had already landed, when A3's bug surfaced -- rows
+# were keyed by `node`, a 0..47 index that recurs across instances, so the
+# scorer would have pooled unrelated cases. That directory is left in place;
+# this run writes beside it so no stale cell can be scored by accident.
+RUN=/scratch/users/hshunt/spin_gnn/runs/2026-11-13_lens2
 SMOKE=$RUN/_smoke
 mkdir -p "$RUN"
 
