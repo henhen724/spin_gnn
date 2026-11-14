@@ -76,3 +76,4 @@ _*_smoke.json
 # Web-deck drafts rendered before the deck goes to ~/slides. Same reasoning:
 # the builder under notebooks/ is the kept artefact, the render is not.
 /deckdraft/
+/stagex_smoke_*/
