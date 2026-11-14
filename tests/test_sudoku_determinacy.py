@@ -95,11 +95,14 @@ def test_both_classes_are_well_populated():
     """Sanity bound used by the dataset-build printout, and the reason the
     scored set is the OPEN nodes only.
 
-    Measured at N=48 d=5 q=4 on 200 instances: 15.6% of cells are scored at
-    all (the rest are already coloured), and of those 65.4% are positive --
-    7.5 open nodes at the median position, 4.9 of them deducible. Both
-    classes are therefore well populated, which is what the loss needs; the
-    bounds below are loose enough to pass at other N and tight enough to
+    The rates move with the hint density, which is why the bounds here are
+    loose. At one high density (200 instances, N=48 d=5 q=4) 15.6% of cells
+    are scored at all -- the rest are already coloured -- and 65.4% of those
+    are positive: 7.5 open nodes at the median position, 4.9 deducible. Over
+    the sweep's full rho range, which is what a cell actually trains on, it
+    is 24.9% scored and 35.4% positive. Both classes are well populated at
+    either end, which is what the loss needs; the bounds below are loose
+    enough to pass across that range and at other N, and tight enough to
     catch a target that has collapsed to one class."""
     _cfg, vocab, instances = _instances(n=8, n_nodes=48)
     targets = []

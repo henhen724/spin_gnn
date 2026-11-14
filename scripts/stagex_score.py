@@ -66,14 +66,26 @@ predicate (spin_gnn.sudoku_determinacy; pinned against
 sudoku_activations.dd_state_labels by tests/test_sudoku_determinacy.py).
 
 Already-coloured nodes are masked out rather than labelled negative: they are
-trivially undeducible and at N=48 they are about five sixths of every row.
-What is scored is exactly DD's scheduler question. Measured on 200 instances
-at N=48 d=5 q=4 fall shuffle_adj: 15.6% of cells are scored, and 65.4% of
-those are positive -- 7.5 open nodes at the median position, 4.9 deducible.
+trivially undeducible and at N=48 they are most of every row. What is scored
+is exactly DD's scheduler question.
+
+THE TARGET STATISTICS DEPEND ON THE DENSITY, AND THE TRAINING MIX IS THE ONE
+THAT MATTERS. An earlier 200-instance measurement at a single high hint
+density gave scored_fraction 0.156 and positive_rate 0.654; that is NOT what
+these cells train on. Measured on the actual training distribution (the
+sweep's rho range at N=48 d=5 q=4 fall shuffle_adj, 2000 instances):
+
+    scored_fraction 0.2486     positive_rate 0.3543
+    157,470 positive / 286,992 negative / 1,343,058 masked
+
+Both readings are right for their density -- at high rho few nodes are open
+and most of those are determined, at low rho many are open and few are -- and
+the training mix is the better-conditioned of the two for a BCE: a quarter of
+all cells carry signal and the classes sit nearer 1:2 than 2:1.
 
 LAMBDA IS 1.0 AND IS NOT SWEPT. Both terms are means of per-item losses; at
-initialization the determinacy term is ~0.65 against a main term of ~3.4, so
-it enters at roughly 0.2x the main loss. One value, chosen a priori, no tuning
+N=48 the determinacy term starts at 0.733 against a main term of 3.95, so it
+enters at roughly 0.19x the main loss. One value, chosen a priori, no tuning
 run. A sweep over lambda would be a second knob and is not part of this stage.
 
 PINNED KERNELS. Cells run with --deterministic, which stage S did not have.
@@ -110,12 +122,15 @@ X2  MECHANISM. Does the guard appear? Re-run finding 68's guard probe,
     2 of the 3 seeds. S1 measured 1.0000 in all three with spread 0.0000, so
     0.90 is a drop of ten times the control's entire spread.
 
-X3  THE TERM DID WHAT IT SAYS. CONFIRMED iff every stage-X seed's final val
-    determinacy AUROC exceeds every stage-S seed's, the stage-S cells being
-    evaluated with the same function on the same val instances. An AUROC above
-    chance is NOT the bar: the main loss alone already lifts the next node's
-    logit and the next node is always deducible, so the stage-S cells are
-    expected to score above 0.5 and they are the control.
+X3  THE TERM DID WHAT IT SAYS. CONFIRMED iff every stage-X seed's determinacy
+    AUROC exceeds every stage-S seed's. BOTH groups are measured by
+    scripts/determinacy_eval.py on ONE fixed held-out instance set -- not from
+    history.json, whose per-epoch column is computed on each cell's own
+    validation draw (seed + n_train, so the three seeds see three different
+    sets) and does not exist at all for a stage-S cell trained before the term.
+    An AUROC above chance is NOT the bar: the main loss alone already lifts the
+    next node's logit and the next node is always deducible, so the stage-S
+    cells are expected to score above 0.5 and they are the control.
 
 OUTCOMES ARE NOT RANKED BY PREFERENCE. X1 confirmed with X2 confirmed says the
 missing guard was part of the gap. X3 confirmed with X2 refuted is the
@@ -154,6 +169,10 @@ HARM_DROP = 0.05           # X4: val accuracy may fall by at most this
 GUARD_BAR = 0.90           # X2: a guard rate below this counts as a guard
 GUARD_MIN_SEEDS = 2        # X2: in at least this many of 3 seeds
 LAMBDA = 1.0               # registered, not swept
+BASIN = 1.561              # train NLL line between stage U's two populations
+PLATEAU = 1.64             # finding 44, an N=48 number. Neither is a stage-X
+                           # bar; both are carried so the launchers read the
+                           # project's lines from one place instead of retyping.
 
 
 def _num(v):

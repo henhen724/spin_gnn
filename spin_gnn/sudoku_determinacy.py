@@ -42,13 +42,20 @@ THE TARGET ENCODING is one int8 (P, N) array:
      1  v is uncoloured and deducible now      -- a positive
 
 Already-coloured nodes are masked rather than labelled 0 because they are
-trivially undeducible (they are done), and at N=48 they are five sixths of
-every row -- letting them in would hand the loss most of its targets for
-free. What is left is exactly DD's scheduler question: among the nodes still
-open, which ones can be named? Measured on 200 instances at N=48 d=5 q=4
-fall shuffle_adj, that question has 7.5 open nodes in it at the median
-position, of which 4.9 are deducible, so the target is neither constant nor
-rare in either class.
+trivially undeducible (they are done), and at N=48 they are most of every
+row -- letting them in would hand the loss most of its targets for free.
+What is left is exactly DD's scheduler question: among the nodes still open,
+which ones can be named?
+
+THE ANSWER'S STATISTICS MOVE WITH THE HINT DENSITY, so quote the one the
+cells train on. At a single high density (200 instances, N=48 d=5 q=4 fall
+shuffle_adj) the median position has 7.5 open nodes and 4.9 of them are
+deducible: scored_fraction 0.156, positive_rate 0.654. Over the sweep's
+actual rho RANGE, which is what a cell sees, there are more open nodes and
+fewer of them determined: scored_fraction 0.2486, positive_rate 0.3543
+(157,470 positive / 286,992 negative / 1,343,058 masked, 2000 instances).
+Either way the target is neither constant nor rare in either class, and the
+training mix is the better conditioned of the two.
 
 THE LOSS ATTACHES TO THE READOUT THE MODEL ALREADY HAS, not to a new head.
 The node-token logits at a pre_node position are trained as a multi-label
