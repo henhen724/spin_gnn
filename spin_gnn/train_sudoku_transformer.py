@@ -41,7 +41,8 @@ from .sat_dataset2 import SATTokenDataset, iterate_token_batches, make_token_bat
 from .sat_transformer2 import SATReasoningTransformer, sat2_accuracy, sat2_nll_loss
 from .sudoku_dd import planted_regular_graph, removal_path
 from .sudoku_determinacy import (
-    auroc, determinacy_loss, determinacy_targets, node_logits_at, summarize,
+    auroc, determinacy_loss, determinacy_loss_from_channel, determinacy_targets,
+    node_logits_at, summarize,
 )
 from .sudoku_tokens import Vocab, check_evidence, check_solution, decode, encode_instance
 from .sudoku_trace import sample_hints, solve_with_dd_trace
@@ -163,17 +164,33 @@ def baseline_accuracy(dataset: SATTokenDataset, vocab_size):
     return float(counts.max() / counts.sum())
 
 
+def has_determinacy_channel(model):
+    """True for a stage-Y model, which scores determinacy on its own channel
+    instead of on the readout. One predicate, read by both the training loop
+    and evaluate_determinacy, so the loss and the metric can never end up
+    reading different tensors."""
+    return getattr(model, "det_scale", None) is not None
+
+
 def evaluate_determinacy(model, dataset, indices, device, vocab, batch_size=32):
-    """How well the readout's node logits already answer "which open nodes are
+    """How well the model's node scores already answer "which open nodes are
     deducible here", on held-out instances.
 
-    Reported as AUROC because the positive rate is ~0.65 (measured at N=48),
-    so a thresholded accuracy would mostly be reporting the base rate. An
-    untrained-for-this readout is not expected to sit at 0.5 -- the main loss
-    pushes the next node's logit up, and the next node is always deducible --
-    so what this tracks is the margin over whatever the main loss already
-    buys, and the stage-S cells are the control for that.
+    Scored on the readout's node logits for stages S through X, and on the
+    stage-Y determinacy channel g when the model has one -- in both cases on
+    the tensor that stage's BCE is written against, which is what makes the
+    AUROC column comparable across stages.
+
+    Reported as AUROC because the positive rate is 0.354 over the scored cells
+    (measured at N=48; the "~0.65" this docstring claimed until 2026-11-14 was
+    one high-density slice), so a thresholded accuracy would mostly be
+    reporting the base rate. An untrained-for-this readout is not expected to
+    sit at 0.5 -- the main loss pushes the next node's logit up, and the next
+    node is always deducible -- so what this tracks is the margin over
+    whatever the main loss already buys, and the stage-S cells are the control
+    for that.
     """
+    use_channel = has_determinacy_channel(model)
     model.eval()
     scores, labels = [], []
     total_bce, total_n = 0.0, 0
@@ -182,15 +199,23 @@ def evaluate_determinacy(model, dataset, indices, device, vocab, batch_size=32):
                 dataset, indices, batch_size, shuffle=False, collate=make_token_batch_aux):
             x, mask, apos = x.to(device), mask.to(device), apos.to(device)
             atgt = atgt.to(device)
-            logits = model(x, valid_mask=mask)
-            loss = determinacy_loss(logits, apos, atgt, vocab.node_offset, vocab.n_nodes)
+            if use_channel:
+                logits, g = model(x, valid_mask=mask, return_determinacy=True)
+                loss = determinacy_loss_from_channel(g, apos, atgt)
+            else:
+                logits = model(x, valid_mask=mask)
+                loss = determinacy_loss(logits, apos, atgt, vocab.node_offset, vocab.n_nodes)
             scored = atgt >= 0
             n = int(scored.sum().item())
             if loss is None or n == 0:
                 continue
             total_bce += loss.item() * n
             total_n += n
-            node_logits = node_logits_at(logits, apos, vocab.node_offset, vocab.n_nodes)
+            if use_channel:
+                sel = apos.unsqueeze(-1).expand(-1, -1, g.shape[-1])
+                node_logits = g.gather(1, sel)
+            else:
+                node_logits = node_logits_at(logits, apos, vocab.node_offset, vocab.n_nodes)
             scores.append(node_logits[scored].float().cpu().numpy())
             labels.append((atgt[scored] == 1).cpu().numpy())
     if not total_n:
@@ -483,6 +508,17 @@ def train_sudoku_model(
     # Stage X. Built only when the term is on, so a weight of 0 does not even
     # pay for the labels and reproduces every earlier run exactly.
     det_w = float(getattr(train_cfg, "determinacy_weight", 0.0) or 0.0)
+    # Stage Y. Resolved here, beside det_w, because the two are only coherent
+    # together: a channel nobody trains still perturbs the emission by
+    # log sigma(g) at initialization and would quietly be a different model
+    # from the control for no reason.
+    det_channel_cfg = bool(getattr(train_cfg, "determinacy_channel", False))
+    if det_channel_cfg and det_w <= 0:
+        raise ValueError(
+            "determinacy_channel=True with determinacy_weight=0 builds the "
+            "stage-Y channel and never trains it, while still adding "
+            "log sigma(g) to the node logits. Set a weight or drop the "
+            "channel.")
     if det_w > 0:
         train_aux = [determinacy_targets(adj, trace, vocab, tok)
                      for (adj, _c, _h, trace), tok in zip(train_instances, train_tokens)]
@@ -521,7 +557,11 @@ def train_sudoku_model(
         dim_feedforward=model_cfg.dim_feedforward or None, norm_first=model_cfg.norm_first,
         arch_mode=getattr(model_cfg, "arch_mode", "full"),
         n_blocks=getattr(model_cfg, "n_blocks", 1),
+        determinacy_channel=det_channel_cfg,
+        node_offset=vocab.node_offset if det_channel_cfg else None,
+        n_nodes=vocab.n_nodes if det_channel_cfg else None,
     ).to(device)
+    det_channel = has_determinacy_channel(model)
     n_all = sum(p.numel() for p in model.parameters())
     n_trainable = model.trainable_parameter_count()
     print(f"arch_mode={model.arch_mode}  parameters {n_all:,} total, {n_trainable:,} trainable "
@@ -554,12 +594,18 @@ def train_sudoku_model(
         for batch in iterate_token_batches(train_dataset, train_indices, train_cfg.batch_size,
                                            rng=rng, collate=collate):
             x, y, mask = (t.to(device) for t in batch[:3])
-            logits = model(x, valid_mask=mask)
+            if det_channel:
+                logits, g = model(x, valid_mask=mask, return_determinacy=True)
+            else:
+                logits = model(x, valid_mask=mask)
             main = sat2_nll_loss(logits, y, mask)
             loss = main
             if det_w > 0:
                 apos, atgt = batch[3].to(device), batch[4].to(device)
-                det = determinacy_loss(logits, apos, atgt, vocab.node_offset, vocab.n_nodes)
+                det = (determinacy_loss_from_channel(g, apos, atgt)
+                       if det_channel else
+                       determinacy_loss(logits, apos, atgt, vocab.node_offset,
+                                        vocab.n_nodes))
                 if det is not None:
                     loss = main + det_w * det
                     n_scored = int((atgt >= 0).sum().item())
@@ -671,6 +717,14 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
             # stage-S control: same architecture, same parameter count, same
             # state dict shape, different objective.
             "determinacy_weight": float(getattr(train_cfg, "determinacy_weight", 0.0) or 0.0),
+            # Absent on every checkpoint before 2026-11-14, where it reads
+            # False -- correct for them, stage X wrote the BCE onto the
+            # readout. Load-bearing in the same way determinacy_weight is, and
+            # more so: unlike every earlier flag this one changes the STATE
+            # DICT (det_scale) and the forward map, so a loader that misses it
+            # gets a shape error rather than a wrong number, which is the
+            # failure mode to prefer.
+            "determinacy_channel": bool(getattr(train_cfg, "determinacy_channel", False)),
             # Absent on every checkpoint before 2026-11-02, where it reads 0 --
             # correct for them, their max_len IS the longest training sequence.
             # Recorded because that is otherwise unrecoverable: without it a
@@ -699,6 +753,12 @@ def load_checkpoint(out_dir, device="cpu"):
         # Absent on every checkpoint before 2026-11-11, where it reads 1 --
         # correct for them: a tied cell there was always ONE shared block.
         n_blocks=config.get("n_blocks", 1),
+        # Absent before 2026-11-14, where it reads False. Every probe script
+        # in scripts/ reaches a model through this function, so getting it
+        # from the config here is what makes a stage-Y checkpoint scoreable by
+        # the guard and AUROC probes with no change to any of them.
+        determinacy_channel=config.get("determinacy_channel", False),
+        node_offset=vocab.node_offset, n_nodes=vocab.n_nodes,
     ).to(device)
     model.load_state_dict(torch.load(os.path.join(out_dir, "model.pt"), map_location=device, weights_only=True))
     model.eval()

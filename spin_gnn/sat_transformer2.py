@@ -31,7 +31,8 @@ def _identity(x):
 
 class SATReasoningTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=64, num_layers=2, nhead=1, max_len=1024, dim_feedforward=None,
-                 norm_first=False, arch_mode="full", n_blocks=1):
+                 norm_first=False, arch_mode="full", n_blocks=1,
+                 determinacy_channel=False, node_offset=None, n_nodes=None):
         super().__init__()
         if arch_mode not in ARCH_MODES:
             raise ValueError(f"arch_mode must be one of {ARCH_MODES}, got {arch_mode!r}")
@@ -111,6 +112,58 @@ class SATReasoningTransformer(nn.Module):
             layer, num_layers=self.n_blocks if self.tied else num_layers,
             norm=final_norm)
         self.readout = nn.Linear(d_model, vocab_size)
+        # Stage Y. A SECOND score per node token, g_{p,v} = <h[p] * s, E_v>,
+        # read off the same hidden state through the token embedding with one
+        # learned diagonal s in R^d -- d_model new parameters, 320 at d=320,
+        # +0.05%. The emission adds log sigma(g) to the node block only:
+        #
+        #     z'_{p,v} = z_{p,v} + log sigma(g_{p,v})   for v a node token
+        #     z'_{p,v} = z_{p,v}                        otherwise
+        #
+        # Two properties, and stage Y is a test of both:
+        #
+        #   It can RE-RANK. Finding 74 measured what the untied guard does when
+        #   it fires -- it names a DIFFERENT still-forced node (node token
+        #   0.966, still forced 0.903, names v again 0.000 of 350), it does not
+        #   stop. A monotone gate z -> z + log sigma(a(z - tau)) is strictly
+        #   increasing in z and so cannot produce that at all; it can only
+        #   build the stop-shaped guard stage X already built. g is a different
+        #   function of h than z is -- token_embed and readout are separate,
+        #   never weight-tied -- so log sigma(g) reorders the node block.
+        #
+        #   It SEPARATES the two objectives. Stage X put the determinacy BCE on
+        #   the readout's own node logits and got AUROC 0.947 with zero
+        #   counterfactual responsiveness (finding 75): a per-node loss on
+        #   absolute logit HEIGHT shifts the whole node block against the
+        #   terminal tokens instead of making one node's logit conditional on
+        #   that node's determinacy. Here the cross-entropy writes to z and the
+        #   BCE writes to g, so they stop competing for the same scalars, and
+        #   the only way g can change the emission is through the node block's
+        #   internal order -- which is the thing that was missing.
+        #
+        # Off by default, and when off this class is byte-identical to every
+        # run from stages S through X: no parameter is created, forward()
+        # returns self.readout(h) through the same expression, and every
+        # existing checkpoint loads unchanged.
+        self.det_node_offset = node_offset
+        self.det_n_nodes = n_nodes
+        if determinacy_channel:
+            if node_offset is None or n_nodes is None:
+                raise ValueError(
+                    "determinacy_channel=True needs node_offset and n_nodes: "
+                    "the channel scores the node-token block of the vocabulary "
+                    "and cannot find it otherwise")
+            if node_offset < 0 or node_offset + n_nodes > vocab_size:
+                raise ValueError(
+                    f"node block [{node_offset}, {node_offset + n_nodes}) does "
+                    f"not fit in vocab_size={vocab_size}")
+            # Ones, not randn: at initialization g = <h, E_v> is the model's
+            # own embedding similarity and log sigma(g) is a small common
+            # offset, so the first step starts from the stage-S emission rather
+            # than from noise injected into a trained ranking.
+            self.det_scale = nn.Parameter(torch.ones(d_model))
+        else:
+            self.register_parameter("det_scale", None)
         self._apply_arch_mode()
 
     def _apply_arch_mode(self):
@@ -151,10 +204,25 @@ class SATReasoningTransformer(nn.Module):
     def trainable_parameter_count(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-    def forward(self, x, valid_mask=None):
+    def determinacy_logits(self, h):
+        """The stage-Y channel: (B, L, d_model) hidden -> (B, L, n_nodes).
+
+        Only the node block's embedding rows are touched, so this is an
+        (n_nodes x d) matmul and not a second full readout.
+        """
+        lo, hi = self.det_node_offset, self.det_node_offset + self.det_n_nodes
+        return (h * self.det_scale) @ self.token_embed.weight[lo:hi].t()
+
+    def forward(self, x, valid_mask=None, return_determinacy=False):
         """x: (B, L) long token ids. valid_mask: (B, L) bool, True = real
         (non-pad) position, or None if the batch has no padding.
-        Returns logits: (B, L, vocab_size)."""
+        Returns logits: (B, L, vocab_size), or (logits, g) with g the
+        (B, L, n_nodes) determinacy channel when return_determinacy=True.
+
+        return_determinacy on a model built without the channel raises rather
+        than returning None: a training loop that asked for g and silently got
+        nothing would train the stage-X objective under a stage-Y name.
+        """
         b, l = x.shape
         if l > self.pos_embed.shape[0]:
             raise ValueError(f"sequence length {l} exceeds max_len={self.pos_embed.shape[0]}")
@@ -177,7 +245,21 @@ class SATReasoningTransformer(nn.Module):
                 h = self.encoder.norm(h)
         else:
             h = self.encoder(h, mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
-        return self.readout(h)
+        z = self.readout(h)
+        if self.det_scale is None:
+            if return_determinacy:
+                raise ValueError(
+                    "return_determinacy=True on a model built with "
+                    "determinacy_channel=False: there is no channel to return")
+            return z
+        g = self.determinacy_logits(h)
+        lo, hi = self.det_node_offset, self.det_node_offset + self.det_n_nodes
+        # torch.cat rather than an in-place slice assignment on z: z is the
+        # output of a Linear and writing into a view of it is an autograd
+        # hazard that silently differs between torch versions.
+        z = torch.cat([z[..., :lo], z[..., lo:hi] + F.logsigmoid(g),
+                       z[..., hi:]], dim=-1)
+        return (z, g) if return_determinacy else z
 
 
 def is_tied(model):

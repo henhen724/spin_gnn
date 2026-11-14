@@ -353,3 +353,21 @@ class SudokuReasoningTrainConfig:
     # 0.0 reproduces every run before 2026-11-13 exactly, including the batch
     # order: at 0 the determinacy targets are never even built.
     determinacy_weight: float = 0.0
+    # Stage Y. Where determinacy_weight's BCE is written. False is stage X:
+    # onto the readout's own node logits, zero new parameters, measured
+    # verdict "representation_without_use" -- AUROC 0.947 and a guard rate
+    # still 1.0000/1.0000/0.9568, i.e. the model learned to RANK nodes by
+    # determinacy without any one node's emission becoming conditional on its
+    # own determinacy, and rho_50 went the wrong way, 0.754/0.757/0.765 ->
+    # 0.866/0.864/0.855.
+    #
+    # True adds SATReasoningTransformer's determinacy channel -- one learned
+    # diagonal s in R^d, 320 parameters at d=320 -- and writes the BCE there
+    # instead, with the emission taking z + log sigma(g) on the node block.
+    # The diagnosis it tests: stage X's term and the cross-entropy were
+    # writing to the same scalars, where a per-node loss on absolute logit
+    # height can only shift the node block as a whole.
+    #
+    # Only meaningful with determinacy_weight > 0; the trainer refuses the
+    # combination that builds the channel and never trains it.
+    determinacy_channel: bool = False

@@ -56,6 +56,7 @@ def run_one(args):
         warmup_epochs=args.warmup_epochs, max_len_margin=args.max_len_margin,
         deterministic=args.deterministic,
         determinacy_weight=args.determinacy_weight,
+        determinacy_channel=args.determinacy_channel,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
 
@@ -133,6 +134,10 @@ def run_one(args):
         # stage-S control collide on disk. Only present when the term is on,
         # so every tag written before 2026-11-13 is byte-identical.
         + (f"_dw{args.determinacy_weight:g}" if args.determinacy_weight else "")
+        # Same argument one stage on: a stage-Y cell and its stage-X control
+        # share d_model, depth, weight and seed, so without this they collide
+        # on disk and the directory name lies about which model is in it.
+        + ("_chan" if args.determinacy_channel else "")
         + (f"_s{args.seed:02d}" if args.seed else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
@@ -168,6 +173,7 @@ def run_one(args):
         "warmup_epochs": args.warmup_epochs,
         "deterministic": args.deterministic,
         "determinacy_weight": args.determinacy_weight,
+        "determinacy_channel": args.determinacy_channel,
         "final_determinacy_auroc": result["history"][-1].get("determinacy_auroc"),
         "checkpoint_dir": out_dir,
     }
@@ -261,6 +267,12 @@ if __name__ == "__main__":
                          "still-uncoloured nodes are deducible now. Adds no parameters. "
                          "0.0 (default) reproduces every run up to stage W exactly, "
                          "including the batch order.")
+    ap.add_argument("--determinacy-channel", action="store_true",
+                    help="stage Y: write --determinacy-weight's BCE onto a separate "
+                         "determinacy channel g = <h*s, E_v> instead of onto the readout, "
+                         "and emit z + log sigma(g) on the node block. One learned vector, "
+                         "d_model parameters (320 at d=320, +0.05%). OFF by default, which "
+                         "is stage X exactly. Requires --determinacy-weight > 0.")
     ap.add_argument("--n-train-instances", type=int, default=5000)
     ap.add_argument("--n-val-instances", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=32)

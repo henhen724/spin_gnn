@@ -172,11 +172,43 @@ def determinacy_loss(logits, pos, target, node_offset, n_nodes):
         node_logits[scored], (target[scored] == 1).to(node_logits.dtype))
 
 
+def determinacy_loss_from_channel(g, pos, target):
+    """Stage Y's BCE, on the model's determinacy CHANNEL instead of its
+    readout.
+
+    g (B, L, n_nodes) is SATReasoningTransformer.forward(...,
+    return_determinacy=True)'s second output: the node block is already
+    selected, so unlike determinacy_loss there is no vocabulary slice and no
+    node_offset. Same targets, same masking, same None-on-empty contract, so
+    the two are interchangeable in the training loop and the stage-X and
+    stage-Y numbers are the same quantity.
+
+    The point of the separation is not the loss but where its gradient lands:
+    stage X's term wrote to the same logits the cross-entropy writes to, and
+    reached AUROC 0.947 while buying zero counterfactual responsiveness
+    (finding 75). Here it writes to g, and g reaches the emission only through
+    log sigma(g) on the node block.
+    """
+    scored = target >= 0
+    if not bool(scored.any()):
+        return None
+    sel = pos.unsqueeze(-1).expand(-1, -1, g.shape[-1])
+    gathered = g.gather(1, sel)
+    return F.binary_cross_entropy_with_logits(
+        gathered[scored], (target[scored] == 1).to(gathered.dtype))
+
+
 def auroc(scores, labels):
     """Rank AUROC of `scores` against boolean `labels`, ties averaged.
 
-    Threshold-free on purpose: the positive rate is 0.65, so an accuracy at
-    0.5 would mostly report the base rate. nan when either class is empty.
+    Threshold-free on purpose: the positive rate is 0.354 over the scored
+    cells (0.247 of all cells are scored; the rest are already coloured and
+    masked), so an accuracy at 0.5 would mostly report the base rate. nan when
+    either class is empty.
+
+    The 0.65 this docstring claimed until 2026-11-14 was measured on one
+    high-density slice and is wrong for the population; the corrected figures
+    above are from the whole scored set at c5c440b.
     """
     scores = np.asarray(scores, dtype=np.float64)
     labels = np.asarray(labels).astype(bool)
