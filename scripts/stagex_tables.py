@@ -78,6 +78,51 @@ def table_acc(xs, ss):
                      "difference", "train NLL, no term", "train NLL, with"])
 
 
+def _sweep_rows(scan, cells):
+    """The one-row-per-cell summary each task writes beside its checkpoint."""
+    out = []
+    for c in cells:
+        p = os.path.join(scan, c.split("/")[0], "sweep.csv")
+        if not os.path.exists(p):
+            out.append(None)
+            continue
+        with open(p) as f:
+            rs = list(csv.DictReader(f))
+        out.append(rs[0] if rs else None)
+    return out
+
+
+def table_easy_end(xw, sw):
+    """k = number of nodes left uncoloured, 0 to 4: the end of the density
+    range where stopping IS the task. The control's non-monotonicity here
+    (0.070 at one node missing, 0.960 at three) sat unexplained in the
+    stage-S scan and is the missing guard of finding 68."""
+    rows = []
+    for i in range(3):
+        for tag, w in (("without the term", sw[i]), ("with the term", xw[i])):
+            if not w:
+                continue
+            rows.append(["seed %d, %s" % (i, tag)]
+                        + ["%.3f" % float(w["solve_rate_k%d" % k])
+                           for k in range(5)])
+    return md(rows, ["", "k=0", "k=1", "k=2", "k=3", "k=4"])
+
+
+def table_whole_run(xw, sw):
+    """Aggregate solve rate and the SOLVED/UNSOLVED call, which is the one
+    decision that asks directly whether anything is left to derive."""
+    rows = []
+    for i in range(3):
+        if not xw[i] or not sw[i]:
+            continue
+        for k, name in (("agg_solve_rate", "solve rate, whole grid"),
+                        ("agg_outcome_accuracy", "solved/unsolved call"),
+                        ("mean_o1_solve_rate", "solve rate, k=0..4 only")):
+            rows.append(["seed %d, %s" % (i, name), "%.3f" % float(sw[i][k]),
+                         "%.3f" % float(xw[i][k])])
+    return md(rows, ["", "without the term", "with the term"])
+
+
 def table_guard(run):
     """CONDITIONAL on clean_emits_v, which is the published number, with the
     unconditional rate printed beside it and both named in words."""
@@ -130,6 +175,12 @@ def main():
     print(table_rho(xr, sr, pred))
     print("\n## validation token accuracy at the last epoch\n")
     print(table_acc(xs, ss))
+    xw, sw = _sweep_rows(SCAN_X, X_CELLS), _sweep_rows(SCAN_S, S_CELLS)
+    print("\n## solve rate with k nodes left to colour, the easy end\n")
+    print(table_easy_end(xw, sw))
+    print("\n## the whole run, not just the easy end\n")
+    print(table_whole_run(xw, sw))
+
     print("\n## the guard probe, unchanged from finding 68\n")
     print(table_guard(GUARD_RUN))
     print("\n## determinacy AUROC on the one fixed held-out set\n")
