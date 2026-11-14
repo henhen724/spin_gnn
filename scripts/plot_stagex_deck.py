@@ -109,8 +109,12 @@ def load_arm(scan, cells, logs=None, from_logs=False):
     return arm
 
 
-def load_rho(scan, pattern):
-    """The 14-point grid, one list of (realized_rho, solve_rate) per seed."""
+def load_rho(scan, pattern, column="solve_rate"):
+    """The 14-point grid, one list of (realized_rho, <column>) per seed.
+
+    `column` is solve_rate for the rho_50 reading and outcome_accuracy for
+    the SOLVED/UNSOLVED call, which is read off the same rows of the same
+    file so the two curves can never come from different evals."""
     out = []
     for t in range(3):
         hit = [f for f in sorted(os.listdir(scan))
@@ -122,7 +126,7 @@ def load_rho(scan, pattern):
         rows = []
         with open(os.path.join(scan, hit[-1])) as f:
             for r in csv.DictReader(f):
-                rows.append((float(r["realized_rho"]), float(r["solve_rate"])))
+                rows.append((float(r["realized_rho"]), float(r[column])))
         out.append(sorted(rows))
     return out
 
@@ -250,6 +254,45 @@ def fig_rho(xr, sr, out, partial):
     plt.close(fig)
 
 
+def fig_outcome(xo, so, out, partial):
+    """The SOLVED/UNSOLVED call against density, both arms, three panels.
+
+    This is the mechanism figure. The control is flat near 1.00 at every
+    density. The determinacy arm traces a U: right at the top, where almost
+    nothing is left to deduce and stopping is correct; right at the bottom,
+    where nothing is deducible and "stuck" is correct; and near chance in
+    the middle, which is the only region where the call requires carrying
+    the deduction on. A term whose whole content is which nodes are still
+    deducible breaking exactly the is-anything-still-deducible decision is
+    what a guard that fires too eagerly looks like."""
+    fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.4), sharey=True)
+    for i, ax in enumerate(axes):
+        if not so[i]:
+            continue
+        ax.plot([p[0] for p in so[i]], [p[1] for p in so[i]],
+                color=SERIES[0], lw=1.6, marker="o", ms=2.5, rasterized=True)
+        if xo[i]:
+            ax.plot([p[0] for p in xo[i]], [p[1] for p in xo[i]],
+                    color=SERIES[1], lw=1.6, marker="o", ms=2.5,
+                    rasterized=True)
+        ax.set_ylim(0.0, 1.05)
+        style_axes(ax, xlabel=r"realized $\rho$",
+                   ylabel="solved/unsolved call" if i == 0 else None)
+        ax.set_title("seed %d" % i, fontsize=9, color=MUTED)
+        if i == 2:
+            # Right-hand end, and staggered: the two curves rejoin at the
+            # top of the range to within 0.06, so unstaggered labels overlap.
+            label_line(ax, so[i][-1][0], so[i][-1][1], "no term",
+                       color=SERIES[0], dy=7)
+            if xo[i]:
+                label_line(ax, xo[i][-1][0], xo[i][-1][1], "determinacy term",
+                           color=SERIES[1], dy=-9)
+    fig.tight_layout()
+    _tag(fig, partial)
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", required=True)
@@ -283,6 +326,9 @@ def main():
     fig_auroc(xs, control, os.path.join(a.out_dir, "auroc.png"), p)
     if any(xr):
         fig_rho(xr, sr, os.path.join(a.out_dir, "rho_curve.png"), p)
+        xo = load_rho(SCAN_X, "52285051", "outcome_accuracy")
+        so = load_rho(SCAN_S, "51853969", "outcome_accuracy")
+        fig_outcome(xo, so, os.path.join(a.out_dir, "outcome_call.png"), p)
     else:
         print("no stage-X rho grid yet: rho_curve.png not written")
     print("wrote figures to", a.out_dir)

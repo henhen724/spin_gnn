@@ -17,14 +17,34 @@ All three seeds, control -> stage X, never a single seed quoted alone:
   aggregate solve     0.313/0.310/0.323    -> 0.147/0.133/0.153
   solved/unsolved     0.993/0.990/0.993    -> 0.653/0.713/0.690
 
-The term does what it was asked to do to the representation and costs the
-behaviour. Two of those lines move the same way in every seed and by a
-large margin: the solve rate over the whole density grid is roughly halved,
-and the SOLVED/UNSOLVED call -- the one decision that asks directly whether
-anything is left to derive -- falls from essentially perfect to about 0.69.
-A term whose entire content is "which nodes are still deducible" wrecking
-precisely the "is anything still deducible" decision is the diagnosis:
-stage X's guard is STOP-SHAPED, and it over-fires.
+The registered scorer returned `representation_without_use`: X3 and X4
+passed, X1 and X2 failed. rho_50 went 0.754/0.757/0.765 -> 0.855/0.864/0.866,
+the wrong way by 0.103 of mean shift.
+
+The decisive one is X2, the counterfactual guard probe of finding 68, run
+unchanged on the stage-X cells. The guard rate conditional on clean_emits_v
+is 1.0000/1.0000/0.9568 against the control's 1.0000/1.0000/1.0000: when
+node v's determinacy is destroyed, the stage-X model names v anyway, at the
+control's rate, in every seed. So determinacy at AUROC 0.9467 inside the
+deciding logits bought NO counterfactual responsiveness at all.
+
+That rules out the obvious reading of the behavioural damage. There is no
+over-eager guard, because there is no conditional guard: nothing in the
+emission responds to whether the particular node in question is determined.
+What the BCE bought is a change in the ABSOLUTE height of the node block
+against the terminal and round-marker tokens -- a density-independent bias
+toward stopping -- which is exactly the degree of freedom cross-entropy
+never constrained and exactly the one a per-node BCE on absolute logit
+height can move. The 14-point grid shows it directly: the SOLVED/UNSOLVED
+call is flat at ~1.00 for the control at every density, and for stage X it
+traces a U, ~0.93 at rho 0.94, bottoming at 0.42-0.45 around rho 0.69-0.75,
+back to ~0.94 at rho 0.33. Right where stopping is right, right where
+"stuck" is right, near chance in the middle where the call requires
+carrying the deduction on.
+
+A global bias is not a guard, and this is the lesson stage Y is built on:
+a per-node loss on absolute logit height does not produce per-node
+conditional behaviour. It produces a shift of the whole block.
 
 What this does NOT rest on is the easy end, k = 0..4 nodes left to colour,
 where stopping is most of the task. There the term helps in two seeds and
@@ -134,12 +154,12 @@ model's guard being partly provenance-specific (finding 71) or to its being
 a window at t ~ 3-6 (finding 72); stage Y installs a guard at every
 position and does not try to make it a window.
 
-STATUS: drafted 2026-11-14 while 52285051 was still in its rho grid and
-52285735 had not run. NOT YET REGISTERED -- Y2 and Y3 are measured by the
-same probe as X2 and X3, and if X2 shows stage X already bought
-counterfactual responsiveness on the shared channel then the diagnosis above
-is wrong in its second half and the design changes. Do not submit before
-X2 is read.
+STATUS: REGISTERED 2026-11-14, after 52285051 and 52285735 both completed
+and stagex_score returned `representation_without_use`. The draft was
+written before X2 was readable and said explicitly that an X2 pass would
+make the diagnosis wrong and change the design. X2 failed at
+1.0000/1.0000/0.9568, which is the branch the design was built for, and
+nothing in it moved. Not submitted yet: no cells, no Slurm id.
 """
 import sys
 

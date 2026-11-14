@@ -139,8 +139,24 @@ def table_guard(run):
             / max(len(cs), 1)
         rows.append(["seed %d" % i, "%.4f" % cond, "%d" % den,
                      "%.4f" % uncond])
+    # The control's denominator is NOT 350 and was hardcoded as 350 in the
+    # first version of this table. 350 is the number of counterfactual cases
+    # offered; the denominator is how many of them the model named cleanly,
+    # which differs per cell and per arm (control 232/237/233, stage X
+    # 194/175/185). Read it, never assume it.
+    ctrl = os.path.join(os.path.dirname(run), "2026-11-13_ddguard", "guard")
+    dens = []
+    for i in range(3):
+        p = os.path.join(ctrl, "S1_s%d" % i, "skip_behavior.csv")
+        if not os.path.exists(p):
+            dens.append("?")
+            continue
+        with open(p) as f:
+            dens.append(str(ratio(list(csv.DictReader(f)), "clean_emits_v",
+                                  "corrupt_emits_v")[1]))
     rows.append(["**control (no term)**",
-                 "/".join("%.4f" % v for v in sx.S1_GUARD), "350", "--"])
+                 "/".join("%.4f" % v for v in sx.S1_GUARD),
+                 "/".join(dens), "--"])
     return md(rows, ["", "guard rate, conditional on naming it cleanly",
                      "cases in the denominator", "unconditional, for contrast"])
 
