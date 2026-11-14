@@ -115,6 +115,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.ddguard_score import (ALPHA, ARMS, PLACEBO_FLOOR, RULE_BAR, SEEDS,
                                    binom_exact, guard_configs, holm, ratio,
                                    rows_of, truthy)
+from scripts.chain_score import round0_guard
 from scripts.dissoc_score import fmean
 
 _SCR = os.environ.get("SCRATCH", "/scratch/users/hshunt")
@@ -356,6 +357,44 @@ def main():
         g6_agrees = None          # too few matched cases somewhere; not readable
     else:
         g6_agrees = all((x["diff"] >= PROV_BAR) == g1_pass for x in g6)
+
+    # ---- POST-HOC, NOT REGISTERED. Nothing above reads either block and no
+    # verdict branch moves on them; they exist because G1 confirms only that
+    # provenance matters at fixed v, and the lead it came from was a gap of a
+    # very different size. Both are computed from files that already exist.
+    print("\nPOST-HOC 1 (not registered): given-side rate by the edit's clash count.")
+    print("    cl=0 is finding 68's own construction -- a hint edit that clashes")
+    print("    with nothing -- so if clash were what moved the post-hoc gap, this")
+    print("    column would sit near finding 68's round-0 number.")
+    print("    cell     cl=0            cl=1            cl>=2")
+    for arm in ARMS:
+        for s in SEEDS:
+            rows = cells[(arm, s)]
+            line, prof = "    %s s%d  " % (arm, s), {}
+            for lab, sub in (("cl0", [r for r in rows
+                                      if int(r["broken_clashes_given"]) == 0]),
+                             ("cl1", [r for r in rows
+                                      if int(r["broken_clashes_given"]) == 1]),
+                             ("cl2+", [r for r in rows
+                                       if int(r["broken_clashes_given"]) >= 2])):
+                v, den = ratio(sub, "clean_emits_v", "names_v_given") if sub \
+                    else (float("nan"), 0)
+                prof[lab] = {"rate": v, "n": den}
+                line += "%-16s" % ("%.4f (n=%d)" % (v, den))
+            out["cells"]["%s_s%d" % (arm, s)]["clash_split"] = prof
+            print(line)
+
+    print("\nPOST-HOC 2 (not registered): against finding 68's round-0 guard rate,")
+    print("    the previous measurement of this same quantity. NOT PAIRED -- a")
+    print("    different case list, at a depth this construction cannot reach.")
+    print("    cell     round-0 (n)      here, given      here, derived")
+    for arm in ARMS:
+        for s in SEEDS:
+            r0, r0n = round0_guard(arm, s)
+            cell = out["cells"]["%s_s%d" % (arm, s)]
+            cell.update({"round0_guard": r0, "round0_n": r0n})
+            print("    %s s%d  %.4f (n=%d)    %.4f           %.4f"
+                  % (arm, s, r0, r0n, cell["guard_given"], cell["guard_derived"]))
 
     out.update({"G1": bool(g1_pass), "G1_reversed": bool(g1_rev),
                 "G2": bool(g2_pass), "G3": bool(g3_pass), "G4_quiet": bool(g4_quiet),
