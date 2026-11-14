@@ -101,11 +101,35 @@
 # which needs a third arm with g trained but DETACHED from the emission. That
 # is the natural stage Z and is not submitted here.
 #
-# SMOKE-TESTED BEFORE SUBMISSION: scripts/stagey_smoke.py, five assertions,
+# SMOKE-TESTED BEFORE SUBMISSION: scripts/stagey_smoke.py, six assertions,
 # all pass -- 613,818 -> 614,138; channel off is bit-identical to the old
 # forward; z'_node == z_node + log sigmoid(g) exactly and no other column
-# moves; d(BCE)/d(readout) is exactly zero; and the emission does reorder the
-# node block with only the 320-vector moving.
+# moves; d(BCE)/d(readout) is exactly zero; the emission does reorder the
+# node block with only the 320-vector moving; and the channel is INERT AT
+# INITIALIZATION.
+#
+# THE FIRST SUBMISSION OF THIS ARRAY FAILED, AND THE SIXTH ASSERTION IS WHY
+# THIS ONE IS DIFFERENT. 52336800 initialized s to ones, on the untested
+# reasoning -- written in the code comment as if it were a result -- that
+# g = <h, E_v> would be "a small common offset". Measured, it is neither:
+# h is LayerNorm'd and E_v ~ N(0, I), so g had std 21 and log sigmoid(g) std
+# 10.3, reaching -59, against node logits whose own spread is 0.61. A random
+# PER-NODE penalty seventeen times the signal it perturbs, scrambling the
+# ranking before step 1. Seeds 0 and 2 trained through it (epoch 12: val acc
+# 0.4600/0.4582, AUROC 0.940); seed 1 never left the initial plateau
+# (train_nll 3.67 -> 3.96 in epoch 0, val acc 0.032, AUROC 0.59, flat for 13
+# epochs). Y4 needs all three seeds, so the array was cancelled at 2h29
+# rather than spend 21 more GPU-h on a verdict the scorer would have had to
+# return as "Y4 failed, Y1-Y3 not interpreted" -- and on a model whose
+# channel began as noise injection rather than as the registered design.
+#
+# s = 0 makes the channel inert: g is identically 0 and log sigmoid(g) =
+# -log 2 for every node at every position, so the ORDER within the node block
+# starts exactly the control's, which is what the original comment claimed
+# and did not deliver. Not a saddle (dL/ds_i = sum_{p,v} (dL/dg) h_pi E_vi is
+# O(1)) and not a parameter (still +320 exactly). THE ONLY CHANGE FROM
+# 52336800 is this initialization: the design, the bars and the registration
+# are untouched.
 #
 # WALL TIME. Stage X's cells ran 9h15-9h31 with the same data, depth and
 # pinned kernels. The channel adds one (48 x 320) matmul per position per
@@ -210,12 +234,13 @@ print("cuda", torch.cuda.get_device_name(0))
 PY
 
 echo
-echo "=== the five structural assertions of the channel, in the job ==="
-# These are what distinguish stage Y from stage X at all, and three of the five
+echo "=== the six structural assertions of the channel, in the job ==="
+# These are what distinguish stage Y from stage X at all, and four of the six
 # can only fail SILENTLY: an off-by-default flag that does not take, an
-# emission that drops log sigma(g), or a BCE that still reaches the readout
-# would each produce a plausible run of the WRONG stage. Checked here rather
-# than trusted from a login node.
+# emission that drops log sigma(g), a BCE that still reaches the readout, or a
+# channel that is not inert at initialization would each produce a plausible
+# run of the WRONG stage -- and the last of those is not hypothetical, it is
+# what 52336800 did. Checked here rather than trusted from a login node.
 python3 scripts/stagey_smoke.py
 
 echo
@@ -230,7 +255,7 @@ for n in names:
 print("%d determinacy tests pass" % len(names))
 PY
 
-OUT="${SCRATCH}/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14"
+OUT="${SCRATCH}/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b"
 cell="${OUT}/t${TT}_d${DD}_ff${FFS}_h${HH}_${ARCH}_L${LL}_dw${DETW}_chan_s${SEED}"
 mkdir -p "$cell"
 

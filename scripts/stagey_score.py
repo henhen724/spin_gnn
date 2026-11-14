@@ -170,6 +170,34 @@ re-runs that script before it trains, because three of the five -- an
 off-by-default flag that does not take, an emission that drops
 log sigma(g), a BCE that still reaches the readout -- would otherwise
 produce a plausible run of the WRONG stage.
+
+CANCELLED 2026-11-14 at 2h29 and RESUBMITTED. 52336800 initialized the
+channel's s to ONES, on reasoning that was written into the code comment as
+if it were a measurement: that g = <h, E_v> would be "a small common
+offset". It is not. h is LayerNorm'd and E_v ~ N(0, I), so at init g had
+std 21 and log sigma(g) std 10.3, reaching -59, against node logits whose
+own spread is 0.61 -- a random PER-NODE penalty seventeen times the signal
+it perturbs, scrambling the ranking before step 1. Seeds 0 and 2 trained
+through it (epoch 12: val acc 0.4600/0.4582, AUROC 0.940); seed 1 never
+left the initial plateau (train_nll 3.67 -> 3.96 at epoch 0, flat at ~3.95
+through epoch 12, val acc 0.032, AUROC 0.59, det_bce pinned at ln 2). Y4
+requires ALL THREE seeds >= 0.4800, so score() would have returned
+"Y4 failed, Y1-Y3 not interpreted" whatever cells 0 and 2 did; 21 more
+GPU-h for an uninterpretable verdict, on a model whose channel began as
+noise injection rather than as the design registered above.
+
+THE ONLY CHANGE FROM 52336800 is this initialization, s = 0 instead of
+s = 1: g is then identically 0 and log sigma(g) = -log 2 for every node at
+every position, so the order within the node block starts exactly the
+control's, which is what the original comment claimed and did not deliver.
+It is not a saddle -- dL/ds_i = sum (dL/dg) h_i E_vi is O(1) -- and the
+count is still +320. THE DESIGN, THE FOUR BARS AND THIS REGISTRATION ARE
+UNTOUCHED: no bar was moved after seeing a number, because no bar was
+readable from a cancelled array. The smoke test gained a SIXTH assertion,
+that the channel's contribution is constant across the node axis at init
+and moves after one BCE step, since nothing in the first five looks at the
+SCALE of the perturbation -- which is how a design error passed a smoke
+test that asserts the forward map is algebraically right.
 """
 import sys
 

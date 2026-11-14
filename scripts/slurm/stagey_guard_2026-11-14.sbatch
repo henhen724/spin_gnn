@@ -60,9 +60,9 @@ export PYTHONUNBUFFERED=1
 
 cd "${SLURM_SUBMIT_DIR}"
 
-Y="${SCRATCH}/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14"
+Y="${SCRATCH}/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b"
 S="${SCRATCH}/spin_gnn/sudoku_n48_tiedwidth_S_2026-11-10"
-RUN="${SCRATCH}/spin_gnn/runs/2026-11-14_stagey_guard"
+RUN="${SCRATCH}/spin_gnn/runs/2026-11-14b_stagey_guard"
 mkdir -p "$RUN"
 
 # Finding 68's constants, copied so the case list is the SAME one. If any of

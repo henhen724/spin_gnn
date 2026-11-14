@@ -157,11 +157,28 @@ class SATReasoningTransformer(nn.Module):
                 raise ValueError(
                     f"node block [{node_offset}, {node_offset + n_nodes}) does "
                     f"not fit in vocab_size={vocab_size}")
-            # Ones, not randn: at initialization g = <h, E_v> is the model's
-            # own embedding similarity and log sigma(g) is a small common
-            # offset, so the first step starts from the stage-S emission rather
-            # than from noise injected into a trained ranking.
-            self.det_scale = nn.Parameter(torch.ones(d_model))
+            # ZERO, and this is the one initialization that works. The first
+            # submission (52336800) used torch.ones on the reasoning that
+            # g = <h, E_v> is the model's own embedding similarity and so
+            # log sigma(g) would be "a small common offset". MEASURED, it is
+            # neither small nor common: h is LayerNorm'd and E_v ~ N(0, I), so
+            # g has std 21 and log sigma(g) has std 10.3 and reaches -59,
+            # against node logits whose own spread is 0.61. That is a random
+            # PER-NODE penalty seventeen times the signal it perturbs -- the
+            # ranking is scrambled before the first step. Seeds 0 and 2
+            # recovered from it; seed 1 never left the initial plateau
+            # (train_nll 3.67 -> 3.96 in epoch 0, val accuracy 0.032 and det
+            # AUROC 0.59 flat for 13 epochs), which costs Y4 and with it the
+            # whole stage.
+            #
+            # At s = 0 the channel is inert: g is identically 0, so log
+            # sigma(g) = -log 2 for every node at every position. A constant
+            # on the whole node block leaves the ORDER within it exactly the
+            # control's, which is the matched start the comment above only
+            # claimed. It is not a saddle -- dL/ds_i = sum_{p,v} (dL/dg) h_pi
+            # E_vi is O(1) -- and it costs no parameter, so the registered
+            # count of +320 is unchanged.
+            self.det_scale = nn.Parameter(torch.zeros(d_model))
         else:
             self.register_parameter("det_scale", None)
         self._apply_arch_mode()

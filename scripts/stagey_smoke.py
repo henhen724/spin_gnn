@@ -31,6 +31,24 @@ Run before the array, because three of these five can only fail silently:
                  Asserted on the model's own forward with a fitted s, not on
                  the formula in the abstract.
 
+  6  INERT AT INIT, LIVE AFTER ONE STEP. The channel's contribution must be
+                 CONSTANT across the node axis at initialization -- the same
+                 number for every node at every position -- so the first step
+                 starts from the control's ranking, and it must move off that
+                 after one BCE step.
+
+                 THIS CHECK IS WHY STAGE Y IS BEING RESUBMITTED. The first
+                 array (52336800) initialized s to ones, on the untested
+                 reasoning that g = <h, E_v> would be "a small common offset".
+                 It is not: h is LayerNorm'd and E_v ~ N(0, I), so log
+                 sigma(g) had std 10.3 and reached -59 against node logits of
+                 spread 0.61 -- a random per-node penalty 17x the signal.
+                 Seeds 0 and 2 trained through it, seed 1 never left the
+                 initial plateau, and Y4 needs all three. Nothing in the five
+                 checks above looks at the SCALE of the perturbation, which is
+                 how a design error passed a smoke test that asserts the
+                 forward map is algebraically right.
+
     python3 scripts/stagey_smoke.py
 """
 import os
@@ -155,7 +173,28 @@ def main():
                     "320-vector moving" % (b, a, float(z0[b] - z0[a]),
                                            float(z1[b] - z1[a]))))
 
-    print("\n%s" % ("all five pass" if all(ok) else "SOMETHING FAILED"))
+    # 6. The scale check the first submission did not have.
+    fresh = build(True, seed=2).eval()
+    with torch.no_grad():
+        zf, gf = fresh(x, valid_mask=mask, return_determinacy=True)
+        contrib = F.logsigmoid(gf)
+        # Spread ACROSS NODES at each position: this is what reorders the
+        # block, and it must be exactly zero before training.
+        across = float(contrib.std(dim=-1).max())
+        node_spread = float(zf[..., lo:hi].std())
+    fresh.train()
+    _, gf = fresh(x, valid_mask=mask, return_determinacy=True)
+    determinacy_loss_from_channel(gf, pos, tgt).backward()
+    with torch.no_grad():
+        fresh.det_scale -= 0.1 * fresh.det_scale.grad
+    with torch.no_grad():
+        _, g2 = fresh(x, valid_mask=mask, return_determinacy=True)
+        moved = float(F.logsigmoid(g2).std(dim=-1).max())
+    ok.append(check("6 init scale", across == 0.0 and moved > 0,
+                    "across nodes at init %.2e (logits' own spread %.2f), "
+                    "after one step %.3e" % (across, node_spread, moved)))
+
+    print("\n%s" % ("all six pass" if all(ok) else "SOMETHING FAILED"))
     return 0 if all(ok) else 1
 
 
