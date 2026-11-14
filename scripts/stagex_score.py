@@ -142,6 +142,67 @@ trained alongside it. X3 refuted means the term did not take and nothing else
 is interpretable.
 
 ================================================================================
+MID-RUN PREDICTION, written 2026-11-14 04:30 at epoch 30 of 50, BEFORE any
+cell finished and before rho_50 or the guard rate existed for any of them.
+THE BARS ABOVE ARE NOT TOUCHED. This is a prediction, recorded so X1 is a
+test of it rather than a story told afterwards.
+================================================================================
+
+At epoch 30 all three cells are healthy and none has crashed, but two things
+are already clear from the training logs:
+
+  THE TERM TOOK, AND IT TOOK IMMEDIATELY. val determinacy AUROC is 0.9303 /
+  0.9312 / 0.9351 at epoch 5 and 0.9403 / 0.9411 / 0.9402 at epoch 30 -- it
+  saturates almost at once and then barely moves, against finding 73's
+  untrained control of 0.7610 / 0.7635 / 0.7774. X3 is expected to CONFIRM
+  decisively. That the information needed only a few epochs to become
+  linearly explicit is itself finding 69's thesis at the logit level: it was
+  nearly there already.
+
+  AND IT COSTS MAIN-TASK ACCURACY, PERSISTENTLY. Against the stage-S control
+  at the SAME epoch, val token accuracy runs -0.0059 / -0.0055 / -0.0065 at
+  epoch 30 and -0.0055 / -0.0074 / +0.0125 at epoch 10; the deficit is flat
+  rather than closing, and the one positive is seed 2's control still climbing
+  out of the plateau (its train NLL was 1.6434 at epoch 20 against stage X's
+  1.6482, and it passed afterwards). Train NLL -- the MAIN term alone, the
+  determinacy term is excluded from that column by construction -- runs
+  +0.0327 / +0.0311 / +0.0477.
+
+THE PREDICTION. The accuracy deficit is about -0.0060, and the gap this stage
+exists to close is +0.0011 (stage V's NEED, derived not typed). So the term is
+costing roughly FIVE TIMES the target, in the wrong direction. Pushed through
+the same S4 accuracy-to-solve slope stage V used -- ACC_GAP 0.0110 of accuracy
+per RHO_GAP 0.177 of rho_50, about 16.1 rho_50 per unit accuracy -- a -0.0060
+accuracy deficit predicts rho_50 near 0.853 against S1's 0.757.
+
+    X1 IS THEREFORE EXPECTED TO BE REFUTED, AND REFUTED BADLY RATHER THAN
+    NARROWLY: not a near miss at 0.75, but a move the WRONG WAY to roughly
+    0.85. predict_rho50() below computes it from the imported constants.
+
+X4 still passes comfortably -- 0.4775 against a floor of 0.4330 -- which is
+worth noting as a flaw in X4 rather than a reassurance: the no-harm gate was
+set wide enough to catch "the term broke training" and is far too wide to
+catch "the term costs five times the effect we are chasing". A future stage
+should gate on the control's accuracy at the same epoch, not on a fixed 0.05.
+
+WHY THE RUN IS NOT CANCELLED. X2 is the mechanism question and it does not
+depend on X1 landing well -- it gets SHARPER, not weaker, if the accuracy
+moves the wrong way. With the determinacy at AUROC 0.94 in the very logits
+whose argmax picks the next node, "does the model now withhold a node whose
+determinacy was destroyed" is the cleanest form of that question this project
+has been able to ask. A guard rate still at 1.0000 under those conditions
+would be a strong negative, and a strong negative here is the registered
+most-informative outcome.
+
+AND NO LAMBDA SWEEP IS STARTED ON THE STRENGTH OF THIS. The registration fixed
+lambda = 1.0 a priori and said a sweep would be a second knob; seeing a
+mid-run number is not a licence to go back on that. If a smaller lambda is
+worth running it is a NEW stage with its own registration, and the argument
+for it has to survive X2 first -- if the guard does not appear at AUROC 0.94,
+a gentler version of the same term is not the follow-up, structural coupling
+is.
+
+================================================================================
 WHAT THIS STAGE CANNOT SHOW
 ================================================================================
 
@@ -173,6 +234,44 @@ BASIN = 1.561              # train NLL line between stage U's two populations
 PLATEAU = 1.64             # finding 44, an N=48 number. Neither is a stage-X
                            # bar; both are carried so the launchers read the
                            # project's lines from one place instead of retyping.
+
+
+# ---- The mid-run prediction of 2026-11-14 04:30, read off both arms'
+# history.json at epoch 30 of 50, before any cell finished. NOT A BAR. Nothing
+# above this line was touched when these were added; see the MID-RUN
+# PREDICTION section of the docstring.
+X_ACC_AT_30 = (0.4775, 0.4784, 0.4755)        # stage X, epoch 30, seeds 0/1/2
+S_ACC_AT_30 = (0.4834, 0.4839, 0.4820)        # stage S, the SAME epoch
+X_AUROC_AT_30 = (0.9403, 0.9411, 0.9402)      # per-cell val draw, from history
+S_AUROC_UNTRAINED = (0.7610, 0.7635, 0.7774)  # finding 73, one fixed set
+
+
+def predict_rho50(x_acc=X_ACC_AT_30, s_acc=S_ACC_AT_30):
+    """What the epoch-30 accuracy deficit implies for rho_50, pushed through
+    the SAME accuracy-to-solve slope stage V used to set its own bar: ACC_GAP
+    of token accuracy goes with RHO_GAP of rho_50, the J2/S1 pair. Imported
+    from scripts.stagev_score, never retyped -- and imported lazily, so a job
+    that only wants this file's constants does not pay for stage V's import
+    chain. A negative deficit predicts a HIGHER rho_50, which is worse.
+    """
+    # Run as `python3 scripts/stagex_score.py` the repo root is NOT on the
+    # path, only scripts/ is; the sibling import has to be made to work from
+    # either entry point or the prediction is unreachable half the time.
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    import scripts.stagev_score as sv
+    slope = sv.RHO_GAP / sv.ACC_GAP                 # rho_50 per unit accuracy
+    mean = lambda t: sum(t) / len(t)                # noqa: E731
+    deficit = mean(x_acc) - mean(s_acc)
+    return {
+        "acc_deficit": deficit,
+        "slope_rho50_per_acc": slope,
+        "need_to_close_the_gap": sv.NEED,
+        "deficit_in_units_of_need": deficit / sv.NEED,
+        "s1_rho50_mean": mean(S1_RHO50),
+        "predicted_rho50": mean(S1_RHO50) - deficit * slope,
+    }
 
 
 def _num(v):
@@ -287,10 +386,25 @@ def _self_test():
     assert short["verdict"] == "gap_moved_without_guard", short["verdict"]
 
     assert _num("True") == 1.0 and _num("") != _num("")
+
+    # The mid-run prediction. Pinned so that if stage V's slope is ever edited
+    # the prediction recorded on 2026-11-14 stops matching and somebody has to
+    # say which of the two numbers changed. A deficit costing several times
+    # the gap, and a predicted rho_50 the WRONG side of the control, are the
+    # two claims; neither is a bar and score() never reads them.
+    p = predict_rho50()
+    assert -0.0070 < p["acc_deficit"] < -0.0050, p
+    assert p["deficit_in_units_of_need"] < -4.0, p
+    assert p["predicted_rho50"] > max(S1_RHO50), p
+    assert min(X_AUROC_AT_30) > max(S_AUROC_UNTRAINED), (X_AUROC_AT_30,)
+
     print("stagex_score self-test: OK")
     print(f"registered bars: free_line={FREE_LINE} harm_drop={HARM_DROP} "
           f"guard_bar={GUARD_BAR} need={GUARD_MIN_SEEDS}/3 lambda={LAMBDA}")
     print(f"control: S1 rho_50={S1_RHO50} val_acc={S1_VAL_ACC} guard={S1_GUARD}")
+    print("mid-run prediction (2026-11-14, epoch 30, NOT a bar): "
+          + json.dumps({k: round(v, 4) for k, v in predict_rho50().items()},
+                       sort_keys=True))
 
 
 if __name__ == "__main__":
