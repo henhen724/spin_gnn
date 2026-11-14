@@ -171,7 +171,10 @@ off-by-default flag that does not take, an emission that drops
 log sigma(g), a BCE that still reaches the readout -- would otherwise
 produce a plausible run of the WRONG stage.
 
-CANCELLED 2026-11-14 at 2h29 and RESUBMITTED. 52336800 initialized the
+CANCELLED 2026-11-14 at 2h29 and RESUBMITTED at commit ca7e5ab as array
+52348732 with 52348737 chained --dependency=afterok, into a NEW dated
+directory (..._Y_2026-11-14b) so the abandoned cells are kept and cannot be
+confused with these. 52336800 initialized the
 channel's s to ONES, on reasoning that was written into the code comment as
 if it were a measurement: that g = <h, E_v> would be "a small common
 offset". It is not. h is LayerNorm'd and E_v ~ N(0, I), so at init g had
