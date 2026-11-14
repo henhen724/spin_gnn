@@ -65,3 +65,11 @@ _*_smoke.csv
 # hand under notebooks/<topic>/slides.pdf the way every earlier deck was.
 decks/
 notebooks/stagen_2026-11-10_DRY_PARTIAL/
+# Draft deck renders, named <topic>_draft_<jobid>: a page-per-PNG dump plus a
+# PDF, ~2 MB each, superseded the moment the kept copy lands under notebooks/.
+# Drafts are supposed to go to $SCRATCH, which IS this tree, hence the rule.
+/*_draft_[0-9]*/
+/s4_refit_check_[0-9]*/
+# Smoke tests also emit single JSON summaries, not just directories.
+_smoke_*.json
+_*_smoke.json

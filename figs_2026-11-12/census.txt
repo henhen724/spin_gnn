@@ -1,0 +1,53 @@
+TIED d320 CELLS ON DISK: when does train_nll leave the plateau?
+step = first epoch with a 0.005 one-epoch fall that keeps falling 0.020 over 5 epochs,
+       scanned from epoch 8 so the initial collapse cannot be mistaken for it.
+
+log                                seed appl    k  last   step  pre_nll  end_nll end_acc
+----------------------------------------------------------------------------------------
+sud2N48BudgetW_52053221_0.out         0   16    1    99   NONE        -   1.5494  0.4856
+sud2N48BudgetW_52053221_1.out         1   16    1    99   NONE        -   1.5934  0.4814
+sud2N48BudgetW_52053221_2.out         2   16    1    99   NONE        -   1.6377  0.4594
+sud2N48CycledU_51922710_0.out         0   16    2    49   NONE        -   1.5832  0.4831
+sud2N48CycledU_51922710_1.out         1   16    2    49   NONE        -   1.5836  0.4831
+sud2N48CycledU_51922710_2.out         2   16    2    49     15   1.5908   1.5371  0.4929
+sud2N48CycledU_51922710_3.out         0   16    4    49   NONE        -   1.5797  0.4834
+sud2N48CycledU_51922710_4.out         1   16    4    49     21   1.5899   1.5306  0.4948
+sud2N48CycledU_51922710_5.out         2   16    4    49   NONE        -   1.5816  0.4837
+sud2N48SchedV_51962715_0.out          0   24    1    49   NONE        -   1.5853  0.4833
+sud2N48SchedV_51962715_1.out          1   24    1    49   NONE        -   1.6334  0.4612
+sud2N48SchedV_51962715_2.out          2   24    1    49   NONE        -   1.5845  0.4834
+sud2N48TiedWidthS_51853969_0.out      0   16    1    49   NONE        -   1.5851  0.4822
+sud2N48TiedWidthS_51853969_1.out      1   16    1    49   NONE        -   1.5915  0.4830
+sud2N48TiedWidthS_51853969_2.out      2   16    1    49     22   1.6399   1.5864  0.4833
+
+COMPARABLE SET (k=1, 16 applications, d320 tied): 6 cells, 1 stepped, 5 did not.
+step epochs: 22 -- too few for a median; quote them, do not summarise them.
+
+BUT 'NONE' LUMPS TWO OPPOSITE STATES, so split them by endpoint. The
+project's three levels: BASIN <= 1.561 (stage U's two outliers), FLOOR
+<= 1.600 (the recipe's own floor, where the tight seeds land), STUCK
+above it (stage V's seed 1 ended at 1.6334 and never left).
+
+  sud2N48BudgetW_52053221_0.out      BASIN  step none  -> finished
+  sud2N48BudgetW_52053221_1.out      FLOOR  step none  -> finished
+  sud2N48BudgetW_52053221_2.out      STUCK  step none  -> finished
+  sud2N48CycledU_51922710_0.out      FLOOR  step none  -> finished
+  sud2N48CycledU_51922710_1.out      FLOOR  step none  -> finished
+  sud2N48CycledU_51922710_2.out      BASIN  step 15    -> finished
+  sud2N48CycledU_51922710_3.out      FLOOR  step none  -> finished
+  sud2N48CycledU_51922710_4.out      BASIN  step 21    -> finished
+  sud2N48CycledU_51922710_5.out      FLOOR  step none  -> finished
+  sud2N48SchedV_51962715_0.out       FLOOR  step none  -> finished
+  sud2N48SchedV_51962715_1.out       STUCK  step none  -> finished
+  sud2N48SchedV_51962715_2.out       FLOOR  step none  -> finished
+  sud2N48TiedWidthS_51853969_0.out   FLOOR  step none  -> finished
+  sud2N48TiedWidthS_51853969_1.out   FLOOR  step none  -> finished
+  sud2N48TiedWidthS_51853969_2.out   FLOOR  step 22    -> finished
+
+TWO KINDS OF STEP, and they are not the same event:
+  plateau -> floor: the control's seed 2 at epoch 22, 1.6399 -> 1.5864,
+      catching up to where its two siblings already were.
+  floor -> basin:   stage U k=2 s2 at 15 and k=4 s1 at 21, ~1.590 ->
+      ~1.53, going BELOW the floor -- the rho_50 0.603 / 0.579 seeds.
+
+A cell that is still running shows its CURRENT epoch as 'last': 'none' there means not yet, not never.

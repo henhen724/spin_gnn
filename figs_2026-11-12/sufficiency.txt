@@ -1,0 +1,248 @@
+132 cells with a readable history: 21 reference (full d256 h4 depth ladder), 111 held out
+
+=== the reference curve: solve rate as a function of token accuracy ===
+  isotonic fit over the depth ladder, one row per distinct accuracy
+    acc 0.3273  ->  mean_solve 0.0228    (L=1  h=4 full)
+    acc 0.3290  ->  mean_solve 0.0228    (L=1  h=4 full)
+    acc 0.3299  ->  mean_solve 0.0228    (L=1  h=4 full)
+    acc 0.4623  ->  mean_solve 0.0307    (L=4  h=4 full)
+    acc 0.4666  ->  mean_solve 0.0873    (L=2  h=4 full)
+    acc 0.4670  ->  mean_solve 0.0873    (L=2  h=4 full)
+    acc 0.4692  ->  mean_solve 0.0873    (L=2  h=4 full)
+    acc 0.4811  ->  mean_solve 0.3079    (L=3  h=4 full)
+    acc 0.4814  ->  mean_solve 0.3079    (L=3  h=4 full)
+    acc 0.4821  ->  mean_solve 0.3079    (L=3  h=4 full)
+    acc 0.4846  ->  mean_solve 0.3087    (L=4  h=4 full)
+    acc 0.4851  ->  mean_solve 0.3087    (L=4  h=4 full)
+    acc 0.4937  ->  mean_solve 0.5465    (L=8  h=4 full)
+    acc 0.4939  ->  mean_solve 0.5465    (L=6  h=4 full)
+    acc 0.4943  ->  mean_solve 0.5465    (L=6  h=4 full)
+    acc 0.4948  ->  mean_solve 0.5465    (L=6  h=4 full)
+    acc 0.4979  ->  mean_solve 0.6902    (L=12 h=4 full)
+    acc 0.4991  ->  mean_solve 0.7689    (L=8  h=4 full)
+    acc 0.4993  ->  mean_solve 0.7689    (L=12 h=4 full)
+    acc 0.4996  ->  mean_solve 0.7689    (L=8  h=4 full)
+    acc 0.4997  ->  mean_solve 0.8432    (L=12 h=4 full)
+  over accuracy 0.3273 to 0.4997 the curve rises 0.0228 -> 0.8432, i.e. 4.8 points of solve rate per point of token accuracy
+
+=== the bar: leave-one-out residual of the reference itself ===
+  RMS 0.0423, max |residual| 0.1232 over 21 depth cells
+  a held-out cell is OFF THE CURVE only when |residual| > this RMS: that is what a depth cell's own distance from the curve looks like, so anything smaller is noise.
+
+=== held-out cells: does architecture say anything accuracy did not? ===
+  'cover' is the vertical span of the two depth cells this one falls between: small = the
+  curve is pinned there by real neighbours, so a small residual is evidence; LARGE (> the bar)
+  = the bracket is wide and the agreement mostly says both numbers are near the floor.
+  rung                       seed     acc   solve    pred    resid   cover  verdict
+  L=12 h=4 no_mlp d224          2  0.4951  0.6032  0.5632  +0.0400  0.1437  on the curve  [weakly determined]
+  L=16 h=4 no_mlp d192          1  0.4949  0.5850  0.5524  +0.0326  0.1437  on the curve  [weakly determined]
+  L=16 h=4 tied_no_mlp d320 k4    1  0.4948  0.5513  0.5495  +0.0017  0.1437  on the curve  [weakly determined]
+  L=12 h=4 no_mlp d224          0  0.4948  0.5521  0.5469  +0.0052  0.1437  on the curve  [weakly determined]
+  L=12 h=4 no_mlp               1  0.4945  0.5470  0.5465  +0.0004  0.0000  on the curve
+  L=16 h=4 no_mlp d192          0  0.4940  0.5527  0.5465  +0.0062  0.0000  on the curve
+  L=16 h=4 tied_no_mlp d320 k2    2  0.4929  0.5200  0.5225  -0.0025  0.2378  on the curve  [weakly determined]
+  L=16 h=4 no_mlp d160          0  0.4928  0.5157  0.5214  -0.0057  0.2378  on the curve  [weakly determined]
+  L=12 h=4 no_mlp               0  0.4926  0.4989  0.5148  -0.0159  0.2378  on the curve  [weakly determined]
+  L=12 h=4 no_mlp               2  0.4919  0.5214  0.4967  +0.0247  0.2378  on the curve  [weakly determined]
+  L=6  h=4 full ff256           0  0.4919  0.4711  0.4964  -0.0253  0.2378  on the curve  [weakly determined]
+  L=12 h=4 no_mlp d192          2  0.4913  0.4555  0.4785  -0.0230  0.2378  on the curve  [weakly determined]
+  L=16 h=4 no_mlp d192          2  0.4864  0.3264  0.3453  -0.0188  0.2378  on the curve  [weakly determined]
+  L=16 h=4 no_mlp d176          0  0.4862  0.3420  0.3403  +0.0017  0.2378  on the curve  [weakly determined]
+  L=6  h=4 full ff256           2  0.4862  0.3320  0.3385  -0.0065  0.2378  on the curve  [weakly determined]
+  L=8  h=4 no_mlp               2  0.4860  0.3230  0.3348  -0.0118  0.2378  on the curve  [weakly determined]
+  L=12 h=4 no_mlp d224          1  0.4859  0.3062  0.3300  -0.0237  0.2378  on the curve  [weakly determined]
+  L=16 h=4 no_mlp d160          1  0.4858  0.3163  0.3295  -0.0132  0.2378  on the curve  [weakly determined]
+  L=6  h=4 full d192            2  0.4857  0.3405  0.3258  +0.0147  0.2378  on the curve  [weakly determined]
+  L=6  h=4 full d192            0  0.4857  0.3138  0.3253  -0.0115  0.2378  on the curve  [weakly determined]
+  L=8  h=4 no_mlp               1  0.4857  0.3214  0.3246  -0.0032  0.2378  on the curve  [weakly determined]
+  L=16 h=4 tied_no_mlp d320 ep100    0  0.4856  0.3082  0.3240  -0.0158  0.2378  on the curve  [weakly determined]
+  L=6  h=4 full d192            1  0.4856  0.3266  0.3227  +0.0039  0.2378  on the curve  [weakly determined]
+  L=16 h=4 no_mlp d176          1  0.4854  0.3189  0.3176  +0.0013  0.2378  on the curve  [weakly determined]
+  L=6  h=4 rf_mlp               1  0.4854  0.3168  0.3164  +0.0004  0.2378  on the curve  [weakly determined]
+  L=16 h=4 no_mlp d176          2  0.4853  0.3320  0.3156  +0.0163  0.2378  on the curve  [weakly determined]
+  L=12 h=4 no_mlp d192          0  0.4851  0.3220  0.3087  +0.0132  0.0000  on the curve
+  L=6  h=4 full ff256           1  0.4850  0.3123  0.3087  +0.0036  0.0000  on the curve
+  L=6  h=4 no_mlp ep100         2  0.4848  0.3070  0.3087  -0.0018  0.0000  on the curve
+  L=8  h=4 no_mlp               0  0.4847  0.3059  0.3087  -0.0029  0.0000  on the curve
+  L=6  h=4 rf_mlp               0  0.4842  0.3104  0.3086  +0.0017  0.0008  on the curve
+  L=6  h=4 linear               2  0.4842  0.3177  0.3086  +0.0091  0.0008  on the curve
+  L=12 h=4 no_mlp d160          1  0.4842  0.3000  0.3086  -0.0086  0.0008  on the curve
+  L=12 h=4 no_mlp d192          1  0.4841  0.3105  0.3086  +0.0020  0.0008  on the curve
+  L=16 h=4 no_mlp d160          2  0.4840  0.3021  0.3086  -0.0064  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d320 k4    2  0.4837  0.3186  0.3085  +0.0101  0.0008  on the curve
+  L=6  h=4 no_mlp               2  0.4834  0.3039  0.3084  -0.0044  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d320 k4    0  0.4834  0.3134  0.3084  +0.0050  0.0008  on the curve
+  L=24 h=4 tied_no_mlp d320     2  0.4834  0.3130  0.3083  +0.0047  0.0008  on the curve
+  L=16 h=4 no_mlp d128          5  0.4833  0.3095  0.3083  +0.0012  0.0008  on the curve
+  L=24 h=4 tied_no_mlp d320     0  0.4833  0.2991  0.3083  -0.0092  0.0008  on the curve
+  L=6  h=4 linear               1  0.4833  0.3146  0.3083  +0.0063  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d320     2  0.4833  0.3148  0.3083  +0.0065  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d320 k2    0  0.4831  0.3195  0.3083  +0.0112  0.0008  on the curve
+  L=16 h=4 no_mlp d128          2  0.4831  0.3186  0.3083  +0.0103  0.0008  on the curve
+  L=6  h=4 no_mlp d384          1  0.4831  0.3105  0.3082  +0.0023  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d320 k2    1  0.4831  0.3180  0.3082  +0.0098  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d448     0  0.4831  0.3107  0.3082  +0.0025  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d320     1  0.4830  0.3048  0.3082  -0.0034  0.0008  on the curve
+  L=16 h=4 no_mlp d128          3  0.4829  0.3096  0.3082  +0.0015  0.0008  on the curve
+  L=6  h=4 no_mlp d384          2  0.4829  0.3180  0.3082  +0.0099  0.0008  on the curve
+  L=16 h=4 no_mlp d128          4  0.4827  0.3139  0.3081  +0.0058  0.0008  on the curve
+  L=6  h=4 no_mlp ep100         0  0.4822  0.3093  0.3080  +0.0013  0.0008  on the curve
+  L=16 h=4 tied_no_mlp d320     0  0.4822  0.3245  0.3079  +0.0165  0.0008  on the curve
+  L=4  h=4 linear               2  0.4820  0.3029  0.3079  -0.0051  0.0000  on the curve
+  L=6  h=4 no_mlp ep100         1  0.4819  0.3052  0.3079  -0.0027  0.0000  on the curve
+  L=12 h=4 no_mlp d160          2  0.4818  0.3021  0.3079  -0.0058  0.0000  on the curve
+  L=16 h=4 no_mlp d128          0  0.4817  0.3168  0.3079  +0.0089  0.0000  on the curve
+  L=12 h=4 no_mlp d160          0  0.4814  0.2857  0.3079  -0.0222  0.0000  on the curve
+  L=16 h=4 tied_no_mlp d320 ep100    1  0.4814  0.3084  0.3079  +0.0005  0.0000  on the curve
+  L=6  h=4 no_mlp               0  0.4812  0.3130  0.3079  +0.0051  0.0000  on the curve
+  L=4  h=4 rf_mlp               1  0.4811  0.3050  0.3079  -0.0029  0.0000  on the curve
+  L=6  h=4 no_mlp d384          0  0.4810  0.3155  0.3066  +0.0089  0.2206  on the curve  [weakly determined]
+  L=4  h=4 linear               0  0.4808  0.3093  0.3028  +0.0065  0.2206  on the curve  [weakly determined]
+  L=4  h=4 linear               1  0.4805  0.3086  0.2983  +0.0103  0.2206  on the curve  [weakly determined]
+  L=12 h=4 no_mlp d128          2  0.4805  0.3045  0.2978  +0.0067  0.2206  on the curve  [weakly determined]
+  L=4  h=4 no_mlp               0  0.4795  0.3057  0.2784  +0.0273  0.2206  on the curve  [weakly determined]
+  L=6  h=4 no_mlp d128 ep100    2  0.4759  0.2454  0.2117  +0.0337  0.2206  on the curve  [weakly determined]
+  L=6  h=4 no_mlp d128          2  0.4744  0.2359  0.1841  +0.0518  0.2206  ABOVE the curve  [weakly determined]
+  L=16 h=4 tied_no_mlp d192     0  0.4715  0.2027  0.1298  +0.0729  0.2206  ABOVE the curve  [weakly determined]
+  L=16 h=4 no_mlp d128          1  0.4701  0.0934  0.1032  -0.0098  0.2206  on the curve  [weakly determined]
+  L=4  h=4 no_mlp               1  0.4699  0.0796  0.1005  -0.0209  0.2206  on the curve  [weakly determined]
+  L=6  h=4 rf_mlp               2  0.4668  0.0475  0.0873  -0.0398  0.0000  on the curve
+  L=6  h=4 no_mlp               1  0.4646  0.0459  0.0605  -0.0146  0.0566  on the curve  [weakly determined]
+  L=6  h=4 full d128            2  0.4615  0.0280  0.0307  -0.0026  0.0079  on the curve
+  L=24 h=4 tied_no_mlp d320     1  0.4612  0.0291  0.0306  -0.0015  0.0079  on the curve
+  L=12 h=4 no_mlp d128          0  0.4607  0.0411  0.0306  +0.0105  0.0079  on the curve
+  L=6  h=1 full w05             1  0.4600  0.0284  0.0306  -0.0022  0.0079  on the curve
+  L=6  h=4 full d128            0  0.4599  0.0245  0.0306  -0.0061  0.0079  on the curve
+  L=12 h=4 no_mlp d128          1  0.4598  0.0316  0.0306  +0.0010  0.0079  on the curve
+  L=6  h=1 full w05             2  0.4598  0.0257  0.0306  -0.0049  0.0079  on the curve
+  L=6  h=1 full                 1  0.4596  0.0270  0.0306  -0.0036  0.0079  on the curve
+  L=16 h=4 tied_no_mlp d320 ep100    2  0.4594  0.0275  0.0305  -0.0030  0.0079  on the curve
+  L=6  h=1 full                 0  0.4594  0.0288  0.0305  -0.0018  0.0079  on the curve
+  L=6  h=1 full                 2  0.4592  0.0255  0.0305  -0.0050  0.0079  on the curve
+  L=6  h=1 full w05             0  0.4589  0.0236  0.0305  -0.0069  0.0079  on the curve
+  L=4  h=1 full                 1  0.4586  0.0243  0.0305  -0.0062  0.0079  on the curve
+  L=4  h=4 no_mlp               2  0.4585  0.0254  0.0305  -0.0051  0.0079  on the curve
+  L=4  h=1 full                 2  0.4585  0.0291  0.0305  -0.0014  0.0079  on the curve
+  L=6  h=4 full d128            1  0.4583  0.0273  0.0305  -0.0032  0.0079  on the curve
+  L=4  h=1 full                 0  0.4582  0.0255  0.0305  -0.0049  0.0079  on the curve
+  L=4  h=4 rf_mlp               0  0.4580  0.0248  0.0305  -0.0056  0.0079  on the curve
+  L=6  h=4 no_mlp d128 ep100    0  0.4580  0.0286  0.0305  -0.0019  0.0079  on the curve
+  L=4  h=4 rf_mlp               2  0.4579  0.0243  0.0304  -0.0062  0.0079  on the curve
+  L=6  h=4 linear               0  0.4578  0.0259  0.0304  -0.0046  0.0079  on the curve
+  L=16 h=4 tied_no_mlp d192     2  0.4567  0.0252  0.0304  -0.0052  0.0079  on the curve
+  L=16 h=4 tied_no_mlp d192     1  0.4561  0.0268  0.0303  -0.0036  0.0079  on the curve
+  L=6  h=4 no_mlp d128          0  0.4558  0.0284  0.0303  -0.0019  0.0079  on the curve
+  L=6  h=4 no_mlp d128 ep100    1  0.4556  0.0287  0.0303  -0.0016  0.0079  on the curve
+  L=6  h=4 no_mlp d128          1  0.4540  0.0291  0.0302  -0.0011  0.0079  on the curve
+  L=6  h=4 full d64             1  0.4317  0.0013  0.0289  -0.0276  0.0079  on the curve
+  L=6  h=4 full d64             0  0.4307  0.0011  0.0288  -0.0278  0.0079  on the curve
+  L=6  h=4 full d64             2  0.4299  0.0016  0.0288  -0.0272  0.0079  on the curve
+  L=6  h=4 rf_all               2  0.1133  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+  L=4  h=4 rf_all               2  0.1122  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+  L=6  h=4 rf_all               1  0.1118  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+  L=6  h=4 rf_all               0  0.1099  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+  L=4  h=4 rf_all               1  0.1086  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+  L=4  h=4 rf_all               0  0.1080  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+  L=16 h=4 tied_no_mlp d448     1  0.0412  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+  L=16 h=4 tied_no_mlp d448     2  0.0308  0.0000  0.0228  -0.0228  0.0000  OUT OF RANGE (no depth cell at this accuracy)
+
+=== per rung, mean residual against the bar 0.0423 ===
+  -- WELL-DETERMINED -- bracketed by depth cells closer together than the bar, so these rows carry the result
+     L=16 h=4 tied_no_mlp d320 k2 n=2  mean residual +0.0105   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp d192       n=2  mean residual +0.0076   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d320 k4 n=2  mean residual +0.0076   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d320  n=3  mean residual +0.0066   EXPLAINED by token accuracy
+     L=16 h=4 no_mlp d192       n=1  mean residual +0.0062   EXPLAINED by token accuracy
+     L=6  h=4 no_mlp d384       n=2  mean residual +0.0061   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp d128       n=2  mean residual +0.0057   EXPLAINED by token accuracy
+     L=16 h=4 no_mlp d128       n=5  mean residual +0.0055   EXPLAINED by token accuracy
+     L=6  h=4 linear            n=3  mean residual +0.0036   EXPLAINED by token accuracy
+     L=6  h=4 full ff256        n=1  mean residual +0.0036   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d448  n=1  mean residual +0.0025   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp            n=1  mean residual +0.0004   EXPLAINED by token accuracy
+     L=6  h=4 no_mlp            n=2  mean residual +0.0003   EXPLAINED by token accuracy
+     L=6  h=4 no_mlp ep100      n=3  mean residual -0.0011   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d320 ep100 n=2  mean residual -0.0013   EXPLAINED by token accuracy
+     L=6  h=4 no_mlp d128       n=2  mean residual -0.0015   EXPLAINED by token accuracy
+     L=6  h=4 no_mlp d128 ep100 n=2  mean residual -0.0017   EXPLAINED by token accuracy
+     L=24 h=4 tied_no_mlp d320  n=3  mean residual -0.0020   EXPLAINED by token accuracy
+     L=8  h=4 no_mlp            n=1  mean residual -0.0029   EXPLAINED by token accuracy
+     L=6  h=1 full              n=3  mean residual -0.0035   EXPLAINED by token accuracy
+     L=6  h=4 full d128         n=3  mean residual -0.0040   EXPLAINED by token accuracy
+     L=4  h=1 full              n=3  mean residual -0.0042   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d192  n=2  mean residual -0.0044   EXPLAINED by token accuracy
+     L=6  h=1 full w05          n=3  mean residual -0.0047   EXPLAINED by token accuracy
+     L=4  h=4 rf_mlp            n=3  mean residual -0.0049   EXPLAINED by token accuracy
+     L=4  h=4 linear            n=1  mean residual -0.0051   EXPLAINED by token accuracy
+     L=4  h=4 no_mlp            n=1  mean residual -0.0051   EXPLAINED by token accuracy
+     L=16 h=4 no_mlp d160       n=1  mean residual -0.0064   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp d160       n=3  mean residual -0.0122   EXPLAINED by token accuracy
+     L=6  h=4 rf_mlp            n=2  mean residual -0.0190   EXPLAINED by token accuracy
+     L=6  h=4 full d64          n=3  mean residual -0.0275   EXPLAINED by token accuracy
+  -- WEAKLY DETERMINED -- they land in the empty stretch of the ladder, where the curve is flat and near zero; agreement here is consistency, not evidence
+     L=16 h=4 tied_no_mlp d192  n=1  mean residual +0.0729   ABOVE: solves better than its token accuracy predicts
+     L=6  h=4 no_mlp d128       n=1  mean residual +0.0518   ABOVE: solves better than its token accuracy predicts
+     L=6  h=4 no_mlp d128 ep100 n=1  mean residual +0.0337   EXPLAINED by token accuracy
+     L=6  h=4 no_mlp d384       n=1  mean residual +0.0089   EXPLAINED by token accuracy
+     L=4  h=4 linear            n=2  mean residual +0.0084   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp d224       n=3  mean residual +0.0072   EXPLAINED by token accuracy
+     L=16 h=4 no_mlp d192       n=2  mean residual +0.0069   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp d128       n=1  mean residual +0.0067   EXPLAINED by token accuracy
+     L=16 h=4 no_mlp d176       n=3  mean residual +0.0064   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp            n=2  mean residual +0.0044   EXPLAINED by token accuracy
+     L=4  h=4 no_mlp            n=2  mean residual +0.0032   EXPLAINED by token accuracy
+     L=6  h=4 full d192         n=3  mean residual +0.0024   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d320 k4 n=1  mean residual +0.0017   EXPLAINED by token accuracy
+     L=6  h=4 rf_mlp            n=1  mean residual +0.0004   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d320 k2 n=1  mean residual -0.0025   EXPLAINED by token accuracy
+     L=8  h=4 no_mlp            n=2  mean residual -0.0075   EXPLAINED by token accuracy
+     L=16 h=4 no_mlp d160       n=2  mean residual -0.0095   EXPLAINED by token accuracy
+     L=16 h=4 no_mlp d128       n=1  mean residual -0.0098   EXPLAINED by token accuracy
+     L=6  h=4 no_mlp            n=1  mean residual -0.0146   EXPLAINED by token accuracy
+     L=16 h=4 tied_no_mlp d320 ep100 n=1  mean residual -0.0158   EXPLAINED by token accuracy
+     L=6  h=4 full ff256        n=2  mean residual -0.0159   EXPLAINED by token accuracy
+     L=12 h=4 no_mlp d192       n=1  mean residual -0.0230   EXPLAINED by token accuracy
+
+>>> 31/31 WELL-DETERMINED held-out rungs (68 cells) sit on the depth ladder's own accuracy-to-solve curve.
+    38 of those 68 are DISCRIMINATING -- the curve predicts solve > 0.10 for them, so landing on it is a real constraint and not two numbers agreeing near zero:
+      L=12 h=4 no_mlp          s1  acc 0.4945  predicted 0.5465, observed 0.5470  (+0.0004)
+      L=16 h=4 no_mlp d192     s0  acc 0.4940  predicted 0.5465, observed 0.5527  (+0.0062)
+      L=12 h=4 no_mlp d192     s0  acc 0.4851  predicted 0.3087, observed 0.3220  (+0.0132)
+      L=6  h=4 full ff256      s1  acc 0.4850  predicted 0.3087, observed 0.3123  (+0.0036)
+      L=6  h=4 no_mlp ep100    s2  acc 0.4848  predicted 0.3087, observed 0.3070  (-0.0018)
+      L=8  h=4 no_mlp          s0  acc 0.4847  predicted 0.3087, observed 0.3059  (-0.0029)
+      L=6  h=4 rf_mlp          s0  acc 0.4842  predicted 0.3086, observed 0.3104  (+0.0017)
+      L=6  h=4 linear          s2  acc 0.4842  predicted 0.3086, observed 0.3177  (+0.0091)
+      L=12 h=4 no_mlp d160     s1  acc 0.4842  predicted 0.3086, observed 0.3000  (-0.0086)
+      L=12 h=4 no_mlp d192     s1  acc 0.4841  predicted 0.3086, observed 0.3105  (+0.0020)
+      L=16 h=4 no_mlp d160     s2  acc 0.4840  predicted 0.3086, observed 0.3021  (-0.0064)
+      L=16 h=4 tied_no_mlp d320 k4 s2  acc 0.4837  predicted 0.3085, observed 0.3186  (+0.0101)
+      L=6  h=4 no_mlp          s2  acc 0.4834  predicted 0.3084, observed 0.3039  (-0.0044)
+      L=16 h=4 tied_no_mlp d320 k4 s0  acc 0.4834  predicted 0.3084, observed 0.3134  (+0.0050)
+      L=24 h=4 tied_no_mlp d320 s2  acc 0.4834  predicted 0.3083, observed 0.3130  (+0.0047)
+      L=16 h=4 no_mlp d128     s5  acc 0.4833  predicted 0.3083, observed 0.3095  (+0.0012)
+      L=24 h=4 tied_no_mlp d320 s0  acc 0.4833  predicted 0.3083, observed 0.2991  (-0.0092)
+      L=6  h=4 linear          s1  acc 0.4833  predicted 0.3083, observed 0.3146  (+0.0063)
+      L=16 h=4 tied_no_mlp d320 s2  acc 0.4833  predicted 0.3083, observed 0.3148  (+0.0065)
+      L=16 h=4 tied_no_mlp d320 k2 s0  acc 0.4831  predicted 0.3083, observed 0.3195  (+0.0112)
+      L=16 h=4 no_mlp d128     s2  acc 0.4831  predicted 0.3083, observed 0.3186  (+0.0103)
+      L=6  h=4 no_mlp d384     s1  acc 0.4831  predicted 0.3082, observed 0.3105  (+0.0023)
+      L=16 h=4 tied_no_mlp d320 k2 s1  acc 0.4831  predicted 0.3082, observed 0.3180  (+0.0098)
+      L=16 h=4 tied_no_mlp d448 s0  acc 0.4831  predicted 0.3082, observed 0.3107  (+0.0025)
+      L=16 h=4 tied_no_mlp d320 s1  acc 0.4830  predicted 0.3082, observed 0.3048  (-0.0034)
+      L=16 h=4 no_mlp d128     s3  acc 0.4829  predicted 0.3082, observed 0.3096  (+0.0015)
+      L=6  h=4 no_mlp d384     s2  acc 0.4829  predicted 0.3082, observed 0.3180  (+0.0099)
+      L=16 h=4 no_mlp d128     s4  acc 0.4827  predicted 0.3081, observed 0.3139  (+0.0058)
+      L=6  h=4 no_mlp ep100    s0  acc 0.4822  predicted 0.3080, observed 0.3093  (+0.0013)
+      L=16 h=4 tied_no_mlp d320 s0  acc 0.4822  predicted 0.3079, observed 0.3245  (+0.0165)
+      L=4  h=4 linear          s2  acc 0.4820  predicted 0.3079, observed 0.3029  (-0.0051)
+      L=6  h=4 no_mlp ep100    s1  acc 0.4819  predicted 0.3079, observed 0.3052  (-0.0027)
+      L=12 h=4 no_mlp d160     s2  acc 0.4818  predicted 0.3079, observed 0.3021  (-0.0058)
+      L=16 h=4 no_mlp d128     s0  acc 0.4817  predicted 0.3079, observed 0.3168  (+0.0089)
+      L=12 h=4 no_mlp d160     s0  acc 0.4814  predicted 0.3079, observed 0.2857  (-0.0222)
+      L=16 h=4 tied_no_mlp d320 ep100 s1  acc 0.4814  predicted 0.3079, observed 0.3084  (+0.0005)
+      L=6  h=4 no_mlp          s0  acc 0.4812  predicted 0.3079, observed 0.3130  (+0.0051)
+      L=4  h=4 rf_mlp          s1  acc 0.4811  predicted 0.3079, observed 0.3050  (-0.0029)
+    Worst miss among them: 0.0222, against the bar 0.0423.
+    Then TOKEN ACCURACY IS A SUFFICIENT STATISTIC over this grid: no cut buys or destroys anything solve-specific, each one only moves the model along a curve the depth ladder already traces. The minimal-architecture question becomes 'what is the cheapest architecture reaching accuracy X', readable on a metric that never censors and does not turn on one unlucky seed. The claim is CORRELATIONAL -- nothing here was intervened on -- and it is a statement about this grid's range, which no cell except rf_all leaves.
+    Stated at its weakest and most defensible: across these architectures model quality is ONE-DIMENSIONAL. Removing machinery does not open a second, deduction-specific way to fail -- it moves a cell along the single axis the depth ladder already spans. Note this is NOT the trivial compounding law: independent token errors at accuracy 0.48 over a trace this long would put solve rate at essentially zero everywhere, so the errors these models make are heavily concentrated on positions the solve metric forgives.
