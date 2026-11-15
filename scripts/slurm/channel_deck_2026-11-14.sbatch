@@ -73,12 +73,19 @@ git diff --cached --name-only | sed 's/^/  staged /'
 if ! git diff --cached --quiet; then
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
         commit -q -F - <<'MSG'
-Stage Y's deck, second render: readable axes and three titles that were wrong
+Stage Y's deck, third render: the accuracy page's title was wrong about seed 1
 
-Re-render of decks/spin-gnn/channel after reading the first render's PNGs
-back. No number in the deck changes; what changes is whether a reader can
-see the numbers that were already there, plus three page titles that did not
-survive being checked against their own figure.
+Re-render of decks/spin-gnn/channel after reading the PNGs back. No number in
+the deck changes; what changes is whether a reader can see the numbers that
+were already there, plus four page titles that did not survive being checked
+against their own figure.
+
+"Two seeds reach the control late; the third never does" was the last of them.
+Seed 1 is not late: its two curves are within 0.002 from epoch 16, against
+epoch 43 for seed 0, and the readable y-axis is what made that visible. The
+title now states the two epochs that matter -- seed 0 at 43, seed 2 never --
+and the note places seed 1. joins == [43, 16, None] is asserted, because the
+title hardcodes 43 and nothing else in the build would catch it drifting.
 
 Axes. acc_trajectory and train_nll both plot a difference of 0.02 and 0.07
 sitting on top of an initial collapse of 0.2 and 1.7, so the full range put

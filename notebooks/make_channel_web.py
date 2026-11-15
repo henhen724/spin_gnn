@@ -651,14 +651,19 @@ def main():
     s_out = [sum(p[1] for p in c) / len(c)
              for c in grid(SCAN_S, JOB_S, "outcome_accuracy")]
 
-    # Seed 0's gap and how long it took to close, measured rather than typed.
-    # The gap is read at the epoch before the registered step; the close is
-    # the first later epoch within 0.002 of the control's final accuracy.
-    ya0 = {r["epoch"]: r["accuracy"] for r in D["hy"][0]}
-    sa0 = {r["epoch"]: r["accuracy"] for r in D["hs"][0]}
-    gap0 = sa0[steps[0] - 1] - ya0[steps[0] - 1]
-    close0 = next((e for e in sorted(ya0)
-                   if e >= steps[0] and ya0[e] >= sacc[0] - 0.002), max(ya0))
+    # When each channel seed joins its control, and seed 0's gap before it
+    # does -- measured rather than typed. "Joins" is the first epoch within
+    # 0.002 of the control's final accuracy; seed 2 never gets there, which
+    # is the same fact Y4 fails on. The gap is read at the epoch before the
+    # registered step, so it is the height of the plateau the step leaves.
+    acc_ep = [{r["epoch"]: r["accuracy"] for r in h} for h in D["hy"]]
+    sacc_ep = [{r["epoch"]: r["accuracy"] for r in h} for h in D["hs"]]
+    joins = [next((e for e in sorted(acc_ep[i])
+                   if acc_ep[i][e] >= sacc[i] - 0.002), None) for i in range(3)]
+    gap0 = sacc_ep[0][steps[0] - 1] - acc_ep[0][steps[0] - 1]
+    # The accuracy page's title names epoch 43, so pin it: a title is the one
+    # claim on a page and nothing else here would catch it drifting.
+    assert joins == [43, 16, None], joins
     xtax = sorted(abs(xacc[i] - sacc[i]) for i in range(3))
 
     rho_txt = ["censored" if D["censored"][i] else "%.3f" % D["rho"][i]
@@ -765,11 +770,11 @@ def main():
         highlight_row=2)
 
     panels(d, "acc_trajectory",
-           "Two seeds reach the control late; the third never does",
+           "Seed 0 joins the control at epoch 43; seed 2 never does",
            draw_acc(D),
-           note="Matched seeds, matched epochs. Seed 0 sits %.3f below its "
-                "control for %d epochs, then closes it in %d."
-                % (gap0, steps[0] - 1, close0 - steps[0]))
+           note="Seed 1 joins by epoch %d. Seed 0 sits %.3f below its control "
+                "for %d epochs, then closes it in %d."
+                % (joins[1], gap0, steps[0] - 1, joins[0] - steps[0]))
 
     d.table_page(
         "The channel delays convergence rather than changing where it lands",
