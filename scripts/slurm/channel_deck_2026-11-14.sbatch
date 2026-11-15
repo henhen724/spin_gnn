@@ -6,7 +6,10 @@
 #SBATCH --mem=24G
 #SBATCH --output=/scratch/users/hshunt/spin_gnn/channelDeck_%j.out
 #
-# First render of decks/spin-gnn/channel, the stage-Y deck.
+# Render of decks/spin-gnn/channel, the stage-Y deck. Run once per revision of
+# the builder: the first render was b288a76, this one fixes two unreadable
+# y-axes and three titles that did not survive being checked against their own
+# figure. Re-running is idempotent -- it overwrites deck.md and the PNGs.
 #
 # Stage Y finished clean: array 52348732 (3 cells, 50 epochs, 9h15-9h18 each)
 # and probe 52375912 (37 s), both COMPLETED 0:0. The registered verdict in
@@ -70,47 +73,43 @@ git diff --cached --name-only | sed 's/^/  staged /'
 if ! git diff --cached --quiet; then
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
         commit -q -F - <<'MSG'
-Stage Y's deck: the determinacy channel, and the guard that still does not fire
+Stage Y's deck, second render: readable axes and three titles that were wrong
 
-decks/spin-gnn/channel, built from stage Y's own artifacts. Every number is
-read out of history.json, the three 14-point rho grids, skip_behavior.csv,
-determinacy_both_arms.csv and stagey_verdict.json; every bar is imported from
-scripts/stagey_score.py, which registered them before the first cell ran.
-check_claims() asserts the accuracies, guard rates and rho_50 values the pages
-print against the verdict file the measurement job wrote independently, so a
-deck whose prose has drifted fails to build rather than publishing to a URL.
+Re-render of decks/spin-gnn/channel after reading the first render's PNGs
+back. No number in the deck changes; what changes is whether a reader can
+see the numbers that were already there, plus three page titles that did not
+survive being checked against their own figure.
 
-The headline is the registered verdict, "Y4 failed, Y1-Y3 not interpreted",
-and the deck does not reach for the two-seed subset that looks better. All
-four bars fail on their own numbers anyway.
+Axes. acc_trajectory and train_nll both plot a difference of 0.02 and 0.07
+sitting on top of an initial collapse of 0.2 and 1.7, so the full range put
+every claim on those pages inside a sliver a few pixels tall -- seed 0's
+epoch-41 step was invisible. A _zoom() helper cuts the shared y-axis to the
+epochs after the collapse (2 for accuracy, MIN_EP for NLL, the step
+detector's own boundary) and WRITES ON THE FIGURE that earlier epochs run off
+it, because a clipped curve with no note is a figure that lies about its own
+range. train_nll's in-axes "the 1.600 floor line" label, which was drawn
+across the curves, is gone; the page note already says what the dashed line
+is.
 
-The scientific content is the second refutation. Stage X installed the
-determinacy representation on the existing readout (AUROC 0.947) and changed
-no behaviour; two explanations survived that -- the readout was answering two
-questions at once, and a monotone block gate can only suppress. The channel
-removes both: the determinacy loss reads a separate score g = <h*s, E_v>, and
-log sigma(g) is added per node so the emission can be re-ordered rather than
-only lowered. AUROC 0.9493/0.9478/0.9480 and a guard that fires once in 681
-cases. The gap is not the parameter conflict and not the monotonicity.
+Titles that were false against their own figure:
+- "The AUROC is won in one epoch" -- true of seed 0 (0.9059 at epoch 1) and
+  not of seeds 1 and 2 (0.8467, 0.7684). The seeds are within 0.01 of each
+  other and 0.019 of final from epoch 5, so: five epochs.
+- "Seeds 0 and 1 sit on the control curve almost exactly" -- seed 1 does
+  (0.758 vs 0.757); seed 0 sits visibly right of it (0.772 vs 0.754). Now
+  names seed 1 and seed 2, and the note places seed 0.
+- draw_auroc's docstring claimed the seeds lie within 0.003 after the first
+  epoch. They differ by 0.1375 there. Corrected, and the docstring now also
+  records that the curve is the training run's own per-epoch AUROC while the
+  grey band is the probe's control -- different sets, same predicate -- which
+  the page note now states too, since the control has no determinacy head and
+  a per-epoch control curve does not exist to plot.
 
-One thing the channel does buy, and the deck says so: stage X's uniform
-accuracy tax is gone on both converged seeds (+0.0003 and -0.0005 against
--0.0042/-0.0063/-0.0055), and stage X's collapse of the solved/unsolved call
-does not reappear. The cost is convergence time -- seed 0 leaves its plateau
-only at epoch 41, seed 2 never does, and seed 2 is why Y4 fails.
+Three numbers that were typed are now computed from the histories: seed 0's
+pre-step gap and how long it took to close, and stage X's accuracy tax range.
+A typed number in a note is the one thing check_claims() cannot catch.
 
-Pages that exist because a reader has seen no other deck from this project:
-the determinacy predicate, the guard, the conditional denominator, the gauge
-argument, stage X and its null result, the static-ranking vs counterfactual-
-responsiveness distinction, finding 74's re-ranking shape, the channel's
-equation with every symbol defined, the zero-init and the bug it replaced,
-and the four knobs deliberately not turned.
-
-SUFFICIENCY is dropped from the shared explanation set -- no residual against
-the isotonic ladder is reported here. CENSOR is kept and is load-bearing:
-seed 2's rho_50 is genuinely censored.
-
-No cell retrained. No published number moves.
+The first render, with the deck's full rationale in its message, is b288a76.
 MSG
     echo "commit rc=$?"
 fi

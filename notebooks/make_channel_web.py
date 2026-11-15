@@ -53,7 +53,7 @@ from notebooks.make_staget_web import WebDeck
 from scripts.ddguard_score import ratio
 from scripts.guard_shape import shape
 from scripts.n96_fallscan_analysis import rho_50
-from scripts.step_epoch_census import FLOOR, level, step_epoch
+from scripts.step_epoch_census import FLOOR, MIN_EP, level, step_epoch
 import scripts.stagey_score as sy
 
 DECK = "/home/users/hshunt/slides/decks/spin-gnn/channel"
@@ -231,6 +231,26 @@ def panels(d, name, claim, draw, note=None):
     d.savefig(fig)
 
 
+def _zoom(axes, series, first, label):
+    """Scale the shared y-axis to the epochs after the initial collapse.
+
+    Both training figures here are about differences of 0.02 and 0.07 sitting
+    on top of an initial drop of 0.2 and 1.7. On the full range the claim --
+    seed 0 leaving its plateau, seed 2 never leaving its own -- is a kink a
+    few pixels tall. The axis is cut at `first` and the fact that earlier
+    epochs run off it is written on the figure, because a clipped curve with
+    no note is a figure that lies about its own range.
+    """
+    vals = [v for s in series for e, v in s if e >= first]
+    lo, hi = min(vals), max(vals)
+    pad = 0.10 * (hi - lo)
+    axes[0].set_ylim(lo - pad, hi + pad)
+    clipped = any(v > hi + pad or v < lo - pad for s in series for _, v in s)
+    if clipped:
+        axes[0].text(0.03, 0.03, label, transform=axes[0].transAxes,
+                     fontsize=7.5, color=MUTED, va="bottom")
+
+
 def draw_acc(D):
     def inner(axes):
         for i, ax in enumerate(axes):
@@ -247,6 +267,10 @@ def draw_acc(D):
                            "no channel", color=SERIES[0], dy=9)
                 label_line(ax, ys[-1]["epoch"], ys[-1]["accuracy"],
                            "channel", color=SERIES[1], dy=-11)
+        _zoom(axes,
+              [[(r["epoch"], r["accuracy"]) for r in h]
+               for h in D["hy"] + D["hs"]], 2,
+              "epochs 0-1 run below the axis")
     return inner
 
 
@@ -262,15 +286,18 @@ def draw_nll(D):
             style_axes(ax, xlabel="epoch",
                        ylabel="train NLL" if i == 0 else None)
             ax.set_title("seed %d" % i, fontsize=9, color=MUTED)
-            if i == 0:
-                ax.text(0.98, FLOOR + 0.004, "the 1.600 floor line",
-                        transform=ax.get_yaxis_transform(), ha="right",
-                        fontsize=8, color=MUTED)
             if i == 2:
                 label_line(ax, ss[-1]["epoch"], ss[-1]["train_nll"],
                            "no channel", color=SERIES[0], dy=-11)
                 label_line(ax, ys[-1]["epoch"], ys[-1]["train_nll"],
                            "channel", color=SERIES[1], dy=9)
+        # MIN_EP is the project's own boundary for "the initial collapse out
+        # of initialisation has finished", and the step detector starts there
+        # for the same reason this axis does.
+        _zoom(axes,
+              [[(r["epoch"], r["train_nll"]) for r in h]
+               for h in D["hy"] + D["hs"]], MIN_EP,
+              "epochs 0-%d run above the axis" % (MIN_EP - 1))
     return inner
 
 
@@ -327,9 +354,15 @@ def draw_outcome(D):
 def draw_auroc(D):
     """Per-epoch AUROC of the channel against the control's measured band.
 
-    The three seeds lie within 0.003 of each other after the first epoch, so
-    they are one colour with one label: three labels here would say only that
-    the curves coincide, and would collide while saying it.
+    The three seeds separate by 0.14 at epoch 1 and are within 0.01 of each
+    other from epoch 5 on, so they are one colour with one label: three
+    labels would say only that the curves coincide, and would collide while
+    saying it.
+
+    The curve is the per-epoch AUROC on the training run's own validation
+    split; the grey band is the probe's control, which is the only place a
+    control AUROC exists at all, because the control has no determinacy head
+    to read. Different sets, same predicate, and the note on the page says so.
     """
     band = [D["auroc"][("S", s)][0] for s in range(3)]
 
@@ -618,6 +651,16 @@ def main():
     s_out = [sum(p[1] for p in c) / len(c)
              for c in grid(SCAN_S, JOB_S, "outcome_accuracy")]
 
+    # Seed 0's gap and how long it took to close, measured rather than typed.
+    # The gap is read at the epoch before the registered step; the close is
+    # the first later epoch within 0.002 of the control's final accuracy.
+    ya0 = {r["epoch"]: r["accuracy"] for r in D["hy"][0]}
+    sa0 = {r["epoch"]: r["accuracy"] for r in D["hs"][0]}
+    gap0 = sa0[steps[0] - 1] - ya0[steps[0] - 1]
+    close0 = next((e for e in sorted(ya0)
+                   if e >= steps[0] and ya0[e] >= sacc[0] - 0.002), max(ya0))
+    xtax = sorted(abs(xacc[i] - sacc[i]) for i in range(3))
+
     rho_txt = ["censored" if D["censored"][i] else "%.3f" % D["rho"][i]
                for i in range(3)]
     head = "Determinacy got its own channel and still nothing refuses"
@@ -724,8 +767,9 @@ def main():
     panels(d, "acc_trajectory",
            "Two seeds reach the control late; the third never does",
            draw_acc(D),
-           note="Matched seeds, matched epochs. Seed 0 sits 0.022 below its "
-                "control for 40 epochs and then closes the gap in four.")
+           note="Matched seeds, matched epochs. Seed 0 sits %.3f below its "
+                "control for %d epochs, then closes it in %d."
+                % (gap0, steps[0] - 1, close0 - steps[0]))
 
     d.table_page(
         "The channel delays convergence rather than changing where it lands",
@@ -769,10 +813,10 @@ def main():
         highlight_row=2)
 
     panels(d, "rho_curve",
-           "Seeds 0 and 1 sit on the control curve almost exactly",
+           "Seed 1 lands on the control; seed 2 never crosses one half",
            draw_rho(D),
-           note="Same 14 densities, 400 instances each, free generation. "
-                "Dashed line is where $\\rho_{50}$ is read.")
+           note="Same 14 densities, 400 instances each. Seed 0's curve sits "
+                "slightly right of its control. Dashed line is $\\rho_{50}$.")
 
     d.points_page(
         "A censored seed is reported as censored, not dropped",
@@ -805,10 +849,10 @@ def main():
              "process. The channel is scored by no bar, for the reason below.")
 
     d.claim_page(
-        "The AUROC is won in one epoch, then sits still",
+        "The AUROC is won in five epochs, then sits still",
         draw_auroc(D), "auroc",
-        note="Grey band is the same model with no channel. Installing the "
-             "signal is easy and is not what costs anything.")
+        note="Curve is the per-epoch value during training; grey band is the "
+             "probe's control. Installing the signal is easy.")
 
     d.points_page(
         "AUROC is deliberately not a bar in this registration",
@@ -884,7 +928,8 @@ def main():
 
     d.points_page(
         "What the channel did buy: stage X's accuracy tax back",
-        ["Stage X cost 0.004-0.006 of token accuracy on every seed.",
+        ["Stage X cost %.4f to %.4f of token accuracy on every seed."
+         % (xtax[0], xtax[-1]),
          "The channel's two converged seeds cost %+0.4f and %+0.4f."
          % (acc[0] - sacc[0], acc[1] - sacc[1]),
          "Separating the two losses does remove the interference stage X had."])
