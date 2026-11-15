@@ -47,7 +47,7 @@ python3 -m py_compile spin_gnn/sudoku_pair.py spin_gnn/sat_dataset2.py \
     spin_gnn/config.py scripts/stagepair_smoke.py
 
 echo
-echo "=== 2. the seven assertions, three of them about magnitude ======="
+echo "=== 2. the eight assertions, four of them about magnitude ========"
 python3 scripts/stagepair_smoke.py
 
 echo

@@ -197,7 +197,7 @@ print("cuda", torch.cuda.get_device_name(0))
 PY
 
 echo
-echo "=== the seven assertions of the margin, in the job ==="
+echo "=== the eight assertions of the margin, in the job ==="
 # Three of these are about MAGNITUDE and that is the point of running them at
 # all: finding 76 is a stage whose first array died because five algebraically
 # correct assertions never looked at the scale of the term they asserted. At

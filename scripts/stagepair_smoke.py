@@ -271,10 +271,53 @@ def main():
                     "the 320-vector" % (float(hinge0), float(hinge1),
                                         float(gap1.mean()))))
 
+    # ---- 8. the same scale, measured where the margin can actually reach ----
+    # WHY THIS EXISTS, and it is the lesson of 52423780. Check 5 measures the
+    # ratio at initialization, where det_scale = 0 -- and dg/dh = det_scale * E_v
+    # is then identically zero, so the margin CANNOT touch the body no matter how
+    # large it is. Check 4 asserts exactly that. So check 5's reassuring 0.729 was
+    # true and vacuous: it bounded a quantity that is zero by construction at the
+    # only point it looked, and the thing it was supposed to rule out happens
+    # later, once the channel is live and the hinge's gradient flows through BOTH
+    # forward passes into the shared block. That is finding 76's mistake again one
+    # level up -- checking a magnitude at the one point where it is degenerate.
+    #
+    # det_scale is set to the magnitude a real run actually reaches: 52430713
+    # measured |s| = 0.4267 after 750 steps, so 0.024 per component over 320 of
+    # them gives 0.024*sqrt(320) = 0.429. Not 1.0, which is check 6's probe value
+    # and far outside anything training visits.
+    m.zero_grad(set_to_none=True)
+    with torch.no_grad():
+        m.det_scale.fill_(0.024)
+    body = [p for n, p in m.named_parameters()
+            if p.requires_grad and n != "det_scale"]
+    hinge_live, gap_live = pair_terms(m)
+    hinge_live.backward()
+    pair_body = float(torch.cat([p.grad.flatten() for p in body
+                                 if p.grad is not None]).norm())
+    m.zero_grad(set_to_none=True)
+    z_live, _g = m(x, valid_mask=mask, return_determinacy=True)
+    sat2_nll_loss(z_live, y, mask).backward()
+    main_body = float(torch.cat([p.grad.flatten() for p in body
+                                 if p.grad is not None]).norm())
+    with torch.no_grad():
+        m.det_scale.zero_()
+    body_ratio = pair_body / main_body if main_body else float("inf")
+    # An auxiliary term at lambda = 1 must not out-pull the objective it is
+    # auxiliary to, on the parameters they share. Above 1.0 the margin is
+    # steering the shared block and the main task is the passenger, which is
+    # what 52423780 looked like from the outside: main pinned at uniform while
+    # the body's gradient ran 40x the control's.
+    ok.append(check("8 scale with a live channel", body_ratio < 1.0,
+                    "at |s|=%.3f, ||dL_pair/dbody|| %.3e vs ||dL_main/dbody|| "
+                    "%.3e, ratio %.3f (mean gap %+.4f)"
+                    % (0.024 * (CELL["d_model"] ** 0.5), pair_body, main_body,
+                       body_ratio, float(gap_live.mean()))))
+
     print("\nregistered: margin %.3f  lambda_pair %.3f  trainable %s (unchanged "
           "from stage Y)" % (sp.MARGIN, sp.LAMBDA_PAIR, format(sp.N_TRAINABLE, ",")))
     assert sp.N_TRAINABLE == TRAINABLE == m.trainable_parameter_count()
-    print("%s" % ("all seven pass" if all(ok) else "SOMETHING FAILED"))
+    print("%s" % ("all eight pass" if all(ok) else "SOMETHING FAILED"))
     return 0 if all(ok) else 1
 
 
