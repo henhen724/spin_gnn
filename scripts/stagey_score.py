@@ -277,6 +277,59 @@ the observation that makes a warmup schedule or a smaller lambda tempting;
 both are new knobs, the registration fixed lambda a priori, and best-val
 selection is a knob this project already closed. If the basin finding
 survives the finished cells it is a NEW stage with its own registration.
+
+================================================================================
+THE PREDICTION SCORED, 2026-11-14 22:25, all 50 epochs done. IT MISSED ON
+SEED 0, AND THE MISS IS THE INTERESTING PART.
+================================================================================
+
+                    predicted        measured
+    seed 0            0.4617          0.4825      MISS by 0.021
+    seed 1            0.4828          0.4825      hit, 0.0003
+    seed 2            0.4565          0.4572      hit, 0.0007
+
+Seeds 1 and 2 landed within 0.0007. Seed 0 did not: it sat on the plateau for
+THIRTY-FIVE epochs (0.4570 at epoch 6, 0.4602 at epoch 40) and then escaped
+abruptly between epochs 41 and 45 -- 0.4676, 0.4729, 0.4805, 0.4819, 0.4828 --
+with train NLL dropping 1.6441 -> 1.6006 over the same five epochs. The
+prediction said in as many words that this was "a basin they are stuck in and
+not a delay". For seed 0 that was wrong: it was a delay, of 35 epochs.
+
+Y4 SEEDS EXPECTED TO PASS: 1. MEASURED: 2. The bar still fails, on seed 2
+alone, so the registered verdict is unchanged -- but it fails for a different
+reason than the one predicted, and a prediction that gets the verdict right
+by the wrong route is not a hit.
+
+WHAT THIS DOES TO THE MID-RUN CLAIMS, one at a time:
+
+  "The channel learns determinacy as well as the readout did" -- STANDS.
+  Final det_bce 0.2736 / 0.2804 / 0.2875 and AUROC 0.9425 / 0.9434 / 0.9424,
+  still stage X's numbers.
+
+  "It costs three times what stage X cost" -- WITHDRAWN. The final deficits
+  against the control are +0.0003 / -0.0005 / -0.0261, mean -0.0088, not
+  -0.0168. Two of three seeds are accuracy-NEUTRAL, which stage X never was:
+  stage X paid -0.0042 / -0.0063 / -0.0055, uniformly, on every seed. So
+  separating the BCE's parameters from the readout's DID buy back the
+  uniform accuracy tax -- the mid-run reading got this backwards by treating
+  two unconverged plateaus as outcomes.
+
+  "The damage is a basin lottery" -- STANDS, but one seed wide, not two, and
+  the spread is now 0.0253 against the control's 0.0011 (same ~23x).
+
+  The implied rho_50 is now 0.749 / 0.765 / 1.185: seeds 0 and 1 AT the
+  control rather than off the grid, seed 2 still predicted censored '>top'.
+  One censored seed is enough to keep the probe's new flag handling live.
+
+THE LESSON, and it is a reusable one: 50 epochs is not obviously enough for
+THIS arm. Two of three cells needed more than 40 epochs to leave a plateau
+the control left by epoch 32, and a run that stops at 50 cannot tell "costs
+accuracy" from "has not converged yet". That is a question about the
+EXPERIMENT's length, not a knob on the model, and it is NOT acted on here:
+the registration fixed 50 epochs, W already closed 2x budget as a way to buy
+accuracy, and extending now would be choosing a run length after seeing which
+seeds escaped. A future arm carrying this channel should register either a
+longer budget or an explicit convergence criterion UP FRONT.
 """
 import os
 import sys
@@ -346,6 +399,37 @@ def predict_rho50(y_acc=Y_ACC_AT_32, s_acc=S_ACC_AT_32):
                                          for a in y_acc),
         "seeds_expected_censored_above_grid": sum(p > GRID_TOP
                                                   for p in predicted),
+    }
+
+
+# ---- The prediction SCORED, 2026-11-14 22:25, from the finished histories.
+# Still not a bar; score() reads none of it. Kept beside the prediction so the
+# miss cannot be quietly dropped.
+Y_ACC_FINAL = (0.4825, 0.4825, 0.4572)        # epoch 49, seeds 0/1/2
+S_ACC_FINAL = (0.4822, 0.4830, 0.4833)        # the control, epoch 49
+X_ACC_FINAL = (0.4780, 0.4767, 0.4778)        # stage X, epoch 49
+Y_BCE_FINAL = (0.2736, 0.2804, 0.2875)
+Y_AUROC_FINAL = (0.9425, 0.9434, 0.9424)
+SEED0_ESCAPE = (41, 45)   # the epochs over which seed 0 left the plateau
+
+
+def score_the_prediction():
+    """How the epoch-32 prediction did. Returns the per-seed error in final
+    accuracy and the two counts the prediction committed to, so a reader can
+    see the miss without reconstructing it."""
+    p = predict_rho50()
+    err = [m - q for m, q in zip(Y_ACC_FINAL, p["predicted_final_acc"])]
+    return {
+        "predicted_final_acc": p["predicted_final_acc"],
+        "measured_final_acc": list(Y_ACC_FINAL),
+        "error_per_seed": err,
+        "worst_error": max(abs(e) for e in err),
+        "y4_seeds_predicted": p["seeds_expected_to_pass_y4"],
+        "y4_seeds_measured": sum(a >= ACC_BAR for a in Y_ACC_FINAL),
+        "final_deficit_per_seed": [y - s for y, s
+                                   in zip(Y_ACC_FINAL, S_ACC_FINAL)],
+        "stagex_deficit_per_seed": [x - s for x, s
+                                    in zip(X_ACC_FINAL, S_ACC_FINAL)],
     }
 
 
@@ -435,6 +519,20 @@ def _self_test():
                for i, y in enumerate(p["predicted_rho50_per_seed"])), p
     assert max(abs(y - x) for y, x in zip(Y_BCE_AT_32, X_BCE_AT_32)) < 0.006, (
         Y_BCE_AT_32, X_BCE_AT_32)
+
+    # The prediction scored. Pinned as a MISS, so nobody later reads the
+    # epoch-32 section as though it had been right: seed 0 was off by 0.021
+    # and the Y4 seed count was one short. The two claims that survived are
+    # pinned too -- the BCE still matches stage X's at the end, and two of
+    # three seeds are accuracy-neutral where stage X's three never were.
+    q = score_the_prediction()
+    assert q["worst_error"] > 0.020, q
+    assert q["y4_seeds_predicted"] == 1 and q["y4_seeds_measured"] == 2, q
+    assert sum(a >= ACC_BAR for a in Y_ACC_FINAL) < len(Y_ACC_FINAL), q
+    assert max(abs(y - x) for y, x in zip(Y_BCE_FINAL, X_BCE_AT_32)) < 0.010, (
+        Y_BCE_FINAL, X_BCE_AT_32)
+    assert sum(abs(d) < 0.0010 for d in q["final_deficit_per_seed"]) == 2, q
+    assert all(abs(d) > 0.0040 for d in q["stagex_deficit_per_seed"]), q
     print("ok")
 
 
