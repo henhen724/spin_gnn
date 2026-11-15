@@ -266,7 +266,7 @@ def draw_pairs(within, total):
                 ha="center", va="center", color="white", fontsize=13)
         label_line(ax, 1.0, 0, "%.0f%% share\na count" % (100 * within / total),
                    color=SERIES[0], dx=8)
-        ax.set_ylim(-0.6, 0.6)
+        ax.set_ylim(-0.38, 0.38)
         ax.set_xlim(0, 1.0)
         ax.set_yticks([])
         ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
@@ -701,11 +701,14 @@ def main():
     d._add(REGISTERED)
 
     # ---- results
+    # NOT "does not move": g moves by about 0.01, and a title that said
+    # otherwise would be false against its own figure. What the figure shows is
+    # that it moves no more than under an edit that changes nothing.
     panels(d, "response",
-           "The channel's score does not move when determinacy is destroyed",
+           "The channel moves no more under the corruption than under the placebo",
            draw_response(R),
-           note="Cumulative distributions over 350 cases. Corruption and "
-                "placebo lie on top of each other, far left of g's own spread.")
+           note="Cumulative distributions over 350 cases per seed. The two lie "
+                "on top of each other, far left of g's own spread.")
 
     d.table_page(
         "Against its own placebo the corruption is a coin flip",
@@ -752,8 +755,9 @@ def main():
     d.claim_page(
         "The same signal scores 0.80 across instances and 0.49 under intervention",
         draw_scale(S, mp, pp), "scale",
-        note="Both ends of this axis are exact by construction and asserted by "
-             "the probe: the count is 0.5, the predicate 1.0.")
+        note="One dot per seed. Both ends of this axis are exact by "
+             "construction and asserted by the probe: the count 0.5, the "
+             "predicate 1.0.")
 
     d.table_page(
         "Two of three seeds rank the broken prompt above the intact one",
