@@ -237,11 +237,11 @@ def _covariates(adj, trace, vocab, tokens):
                          "n_known_colors": n_known_colors_out}
 
 
-def covariate_auroc(sudoku_cfg, vocab, n_instances, seed_start):
+def covariate_auroc(instances, vocab):
     """AUROC of model-free covariates over determinacy_targets' scored cells."""
     labels, cols = [], {}
     n_cells = n_scored = 0
-    for adj, colors, hints, trace in build_instances(sudoku_cfg, n_instances, seed_start):
+    for adj, colors, hints, trace in instances:
         tokens = encode_instance(adj, trace, vocab)
         ref_pos, ref_target = determinacy_targets(adj, trace, vocab, tokens)
         pos, target, cov = _covariates(adj, trace, vocab, tokens)
@@ -259,10 +259,90 @@ def covariate_auroc(sudoku_cfg, vocab, n_instances, seed_start):
     y = np.concatenate(labels)
     out = {k: float(auroc(np.concatenate(v), y)) for k, v in cols.items()}
     return out, {
-        "n_instances": n_instances, "seed_start": seed_start,
+        "n_instances": len(instances),
         "n_cells": n_cells, "n_scored": n_scored,
         "frac_scored": n_scored / n_cells,
         "positive_rate": float(y.mean()),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Z3
+# ---------------------------------------------------------------------------
+def within_stratum_auroc(scores, labels, strata):
+    """P(a positive outranks a negative WITH THE SAME stratum value), pooled
+    over strata by pair count.
+
+    The pooled AUROC mixes two different rankings: "a node with more revealed
+    neighbours over one with fewer" and "a forced node over an unforced one at
+    the same degree of revelation". Only the second is the predicate.
+    Conditioning on the covariate removes the first by construction, which is
+    why the covariate's own value here is exactly 0.5 -- it is constant inside
+    its own stratum, so every pair ties and `auroc` averages them.
+    """
+    scores = np.asarray(scores, dtype=np.float64)
+    labels = np.asarray(labels).astype(bool)
+    strata = np.asarray(strata)
+    num = den = 0.0
+    per = {}
+    for s in np.unique(strata):
+        m = strata == s
+        y = labels[m]
+        n_pos, n_neg = int(y.sum()), int((~y).sum())
+        rec = {"n": int(m.sum()), "n_pos": n_pos, "n_neg": n_neg}
+        if n_pos and n_neg:
+            a = float(auroc(scores[m], y))
+            rec["auroc"] = a
+            # weight by the number of (positive, negative) pairs the stratum
+            # contributes, so the pooled value is still a probability over
+            # pairs and a stratum with three cells cannot swing it
+            num += a * n_pos * n_neg
+            den += n_pos * n_neg
+        else:
+            rec["auroc"] = None      # no pair to rank; contributes nothing
+        per[int(s)] = rec
+    return (num / den if den else float("nan")), per
+
+
+def run_stratified(model, vocab, device, instances):
+    """Z3 for one checkpoint, plus the two covariates that calibrate the scale.
+
+    One forward per instance rather than the batched path evaluate_determinacy
+    uses: the covariates are aligned to determinacy_targets' (P, N) layout, and
+    reproducing make_token_batch_aux's padding to keep that alignment would be
+    a second place for the two to drift. The pooled AUROC is returned so it can
+    be checked against the published figure, which is the proof that this reads
+    the same cells.
+    """
+    scores, labels, strata, colors = [], [], [], []
+    for adj, c, h, trace in instances:
+        tokens = encode_instance(adj, trace, vocab)
+        ref_pos, ref_target = determinacy_targets(adj, trace, vocab, tokens)
+        pos, target, cov = _covariates(adj, trace, vocab, tokens)
+        assert np.array_equal(pos, ref_pos) and np.array_equal(target, ref_target)
+        with torch.no_grad():
+            _z, g = model(torch.from_numpy(tokens).unsqueeze(0).to(device),
+                          return_determinacy=True)
+        gp = g[0].float().cpu().numpy()[pos]          # (P, N), same gather as evaluate_determinacy
+        scored = target != MASKED
+        scores.append(gp[scored])
+        labels.append(target[scored] == 1)
+        strata.append(cov["n_known_nbrs"][scored])
+        colors.append(cov["n_known_colors"][scored])
+
+    s = np.concatenate(scores)
+    y = np.concatenate(labels)
+    k = np.concatenate(strata)
+    kc = np.concatenate(colors)
+    model_within, per_stratum = within_stratum_auroc(s, y, k)
+    # the two ends of the scale, both exact by construction
+    nbrs_within, _ = within_stratum_auroc(k, y, k)
+    cols_within, _ = within_stratum_auroc(kc, y, k)
+    return {
+        "model": model_within,
+        "model_pooled": float(auroc(s, y)),
+        "per_stratum": per_stratum,
+        "tautologies": {"n_known_nbrs": nbrs_within, "n_known_colors": cols_within},
     }
 
 
@@ -296,6 +376,7 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     per_seed, cases, vocab, sudoku_cfg = [], None, None, None
+    det_instances, strat_seeds = None, []
     for i, ckpt in enumerate(args.checkpoint):
         model, vocab, config = load_checkpoint(ckpt, device=args.device)
         model.eval()
@@ -348,17 +429,44 @@ def main():
               f"{s['clean_emits_v']:.4f}/{s['corrupt_emits_v']:.4f}/{s['placebo_emits_v']:.4f}",
               flush=True)
 
+        # Z3, on the determinacy set rather than the guard cases. Built once
+        # and shared: it is the same 600 instances the published AUROCs were
+        # measured on, and rebuilding it per checkpoint is the expensive part.
+        if det_instances is None:
+            det_instances = list(build_instances(
+                sudoku_cfg, args.auroc_n_instances, args.auroc_seed_start))
+        st = run_stratified(model, vocab, args.device, det_instances)
+        st["checkpoint"] = ckpt
+        strat_seeds.append(st)
+        print(f"  Z3 within-stratum AUROC {st['model']:.4f}   "
+              f"(pooled {st['model_pooled']:.4f}; 0.5 = the count, 1.0 = the predicate)",
+              flush=True)
+
     print("\n=== Z2: covariate ceiling ===", flush=True)
-    cov, meta = covariate_auroc(sudoku_cfg, vocab,
-                                args.auroc_n_instances, args.auroc_seed_start)
+    cov, meta = covariate_auroc(det_instances, vocab)
     print(f"  {meta['n_scored']} scored cells of {meta['n_cells']} "
           f"({meta['frac_scored']:.3f}), positive rate {meta['positive_rate']:.3f}")
     for k, v in cov.items():
         print(f"  AUROC({k:>16s}) = {v:.4f}")
 
+    taut = strat_seeds[0]["tautologies"]
+    print("\n=== Z3: within-stratum AUROC, given n_known_nbrs ===")
+    print(f"  scale ends (asserted): n_known_nbrs {taut['n_known_nbrs']:.4f} "
+          f"(must be 0.5000), n_known_colors {taut['n_known_colors']:.4f} (must be 1.0000)")
+    assert abs(taut["n_known_nbrs"] - 0.5) < 1e-9, "the stratification is not what it claims"
+    assert abs(taut["n_known_colors"] - 1.0) < 1e-9, "scored cells are not the uncoloured ones"
+    for st in strat_seeds:
+        print(f"  {st['model']:.4f}   (pooled {st['model_pooled']:.4f})")
+    # the proof that Z3 reads the same cells as the published AUROC column
+    print("  pooled vs published 0.9493/0.9478/0.9480: "
+          + "/".join(f"{st['model_pooled']:.4f}" for st in strat_seeds))
+
     out = {"per_seed": per_seed, "covariate_auroc": cov, "covariate_meta": meta,
            "guard_case_set": {"n_instances": args.n_instances, "n_cases": len(cases),
-                              "seed_start": args.seed_start}}
+                              "seed_start": args.seed_start},
+           "stratified": {"per_seed": strat_seeds, "tautologies": taut,
+                          "n_instances": len(det_instances),
+                          "seed_start": args.auroc_seed_start}}
     with open(os.path.join(args.out_dir, "cfresp_summary.json"), "w") as fh:
         json.dump(out, fh, indent=2)
     print(f"\nwrote {args.out_dir}/cfresp_summary.json", flush=True)

@@ -140,6 +140,52 @@ MIN_SEEDS = 2                        # of 3, as every stage in this project
 # published 0.95 is not evidence of a predicate computation.
 COV_BAR = 0.90
 
+# -------------------------------------------------------------------------
+# Z3, REGISTERED 2026-11-15 AFTER Z1 AND Z2 RETURNED THE UNREGISTERED OUTCOME.
+# -------------------------------------------------------------------------
+# Z1 and Z2 together landed on "neither predicate nor count": the channel does
+# not respond to the corruption at all (win rate 0.4914/0.5171/0.4571, flip
+# fraction 0.0000 over 236/228/217) and yet the plain count tops out at 0.8857
+# against the model's 0.9493. The model therefore knows something past the
+# count. Z3 asks how much, on a scale whose two ends are fixed by construction:
+#
+#   WITHIN-STRATUM AUROC = P(a forced cell outranks an unforced cell WITH THE
+#   SAME n_known_nbrs), pooled over strata by pair count.
+#
+#     n_known_nbrs    -> exactly 0.5  (constant within its own stratum, all ties)
+#     n_known_colors  -> exactly 1.0  (the target is a threshold of it)
+#
+# Both ends are asserted by the probe, so the scale is self-calibrating and the
+# model's value is directly interpretable: 0.5 means the published 0.95 is the
+# count and nothing else, 1.0 means it resolves the predicate given the count.
+#
+# This is the question Z2 was too coarse to settle. A pooled AUROC mixes "ranks
+# a 5-neighbour node over a 2-neighbour node" with "ranks a forced node over an
+# unforced one at the same degree of revelation", and only the second is the
+# predicate. Stratifying removes the first by construction.
+WITHIN_BAR = 0.90        # at or above: it resolves the predicate given the count
+WITHIN_FLOOR = 0.70      # below: the extra information is weak and diffuse
+# Registered prediction: between the two, nearer the top. The model beats the
+# count by 0.064 of pooled AUROC, which is not nothing, but Z1 shows whatever it
+# has is not wired to the token that carries it.
+PRED_WITHIN = 0.80
+PRED_WITHIN_TOL = 0.08
+
+
+def check_z3(within, tautologies):
+    """`tautologies` is {covariate: within-stratum AUROC}; the two known ends
+    must come back exact or the stratification is not what it claims."""
+    nbrs = tautologies.get("n_known_nbrs")
+    cols = tautologies.get("n_known_colors")
+    return {
+        "within_stratum_auroc": within,
+        "scale_calibrated": bool(nbrs is not None and cols is not None
+                                 and abs(nbrs - 0.5) < 1e-9 and abs(cols - 1.0) < 1e-9),
+        "resolves_predicate_given_count": bool(within >= WITHIN_BAR),
+        "extra_information_is_weak": bool(within < WITHIN_FLOOR),
+        "prediction_within_tolerance": bool(abs(within - PRED_WITHIN) <= PRED_WITHIN_TOL),
+    }
+
 # The registered point prediction, scored like every other prediction here.
 PRED_COV_AUROC = 0.920
 PRED_COV_TOL = 0.040
@@ -191,6 +237,19 @@ def verdict(z1, z2):
     return "neither_predicate_nor_count__unregistered"
 
 
+def verdict_with_z3(z1, z2, z3):
+    """Z3 splits the unregistered outcome Z1+Z2 landed on. Only reached when
+    the stratified measurement is present."""
+    if z1["responsive"]:
+        return "representation_is_responsive__failure_is_the_coupling"
+    if z3["resolves_predicate_given_count"]:
+        # it computes the predicate and the emission ignores it anyway
+        return "computes_the_predicate_and_does_not_use_it"
+    if z3["extra_information_is_weak"]:
+        return "signal_is_the_count_plus_diffuse_residue"
+    return "partial_predicate_not_causally_wired"
+
+
 def score(out_dir):
     """Apply the bars to the probe's own output. Reads, never assumes."""
     with open(os.path.join(out_dir, "cfresp_summary.json")) as fh:
@@ -198,12 +257,26 @@ def score(out_dir):
     per_seed = s["per_seed"]
     cov = s["covariate_auroc"]["n_known_nbrs"]
     z1, z2 = check_z1(per_seed), check_z2(cov)
-    return {
+    out = {
         "z1": z1,
         "z2": z2,
         "prediction": score_the_prediction(per_seed, cov),
         "verdict": verdict(z1, z2),
     }
+    strat = s.get("stratified")
+    if strat:
+        # pooled across seeds the same way every other stage pools: per seed,
+        # then reported together, never averaged into one number that hides a
+        # seed. The verdict uses the median.
+        withins = [c["model"] for c in strat["per_seed"]]
+        srt = sorted(withins)
+        med = srt[len(srt) // 2] if len(srt) % 2 else 0.5 * (srt[len(srt) // 2 - 1]
+                                                             + srt[len(srt) // 2])
+        z3 = check_z3(float(med), strat["tautologies"])
+        z3["per_seed"] = withins
+        out["z3"] = z3
+        out["verdict"] = verdict_with_z3(z1, z2, z3)
+    return out
 
 
 def _self_test():
@@ -227,6 +300,27 @@ def _self_test():
     assert not score_the_prediction(blind, 0.74)["cov_auroc_within_tolerance"]
     # the bars must be two-sided: a responsive channel has to be reportable
     assert check_z1(live)["seeds_clearing_win_bar"] == 3
+
+    # Z3. The scale's two ends are asserted, so a mis-stratified run cannot
+    # report a plausible-looking middle value and pass.
+    taut = {"n_known_nbrs": 0.5, "n_known_colors": 1.0}
+    assert check_z3(0.95, taut)["scale_calibrated"]
+    assert not check_z3(0.95, {"n_known_nbrs": 0.61, "n_known_colors": 1.0})["scale_calibrated"]
+    assert check_z3(0.95, taut)["resolves_predicate_given_count"]
+    assert check_z3(0.62, taut)["extra_information_is_weak"]
+    assert not check_z3(0.80, taut)["resolves_predicate_given_count"]
+    assert not check_z3(0.80, taut)["extra_information_is_weak"]
+    assert check_z3(0.80, taut)["prediction_within_tolerance"]
+    assert not check_z3(0.55, taut)["prediction_within_tolerance"]
+    # all three Z3 verdicts reachable, and Z1 still overrides
+    assert verdict_with_z3(z1b, check_z2(0.74), check_z3(0.95, taut)) \
+        == "computes_the_predicate_and_does_not_use_it"
+    assert verdict_with_z3(z1b, check_z2(0.74), check_z3(0.62, taut)) \
+        == "signal_is_the_count_plus_diffuse_residue"
+    assert verdict_with_z3(z1b, check_z2(0.74), check_z3(0.80, taut)) \
+        == "partial_predicate_not_causally_wired"
+    assert verdict_with_z3(z1l, check_z2(0.74), check_z3(0.95, taut)) \
+        .startswith("representation_is_responsive")
     print("ok")
 
 

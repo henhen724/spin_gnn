@@ -35,6 +35,18 @@
 #       logit, already measured above.
 #   Z2  the AUROC of the model-free count n_known_nbrs over exactly the cells
 #       determinacy_targets scores. No model loaded.
+#   Z3  the same AUROC STRATIFIED by n_known_nbrs, added after the first run
+#       (52413267) returned the unregistered outcome: the channel does not
+#       respond at all (win rate 0.4914/0.5171/0.4571, flip fraction 0.0000
+#       over 236/228/217) and yet the plain count tops out at 0.8857 against
+#       the model's 0.9493, so the model knows something past the count. Z3
+#       measures how much on a scale whose ends are fixed by construction --
+#       n_known_nbrs is constant inside its own stratum so it scores exactly
+#       0.5, n_known_colors is the predicate's threshold so it scores exactly
+#       1.0, and both are ASSERTED. Registered before this run as check_z3.
+#
+# This run SUPERSEDES 52413267 and writes the same directory. Z1 and Z2 are
+# recomputed identically from the same streams; "stratified" is the new key.
 #
 # NOTHING IS TRAINED. Three checkpoints are read; no weight is written. There
 # is no fine-tune path in this repo in any case -- load_checkpoint restores
@@ -105,9 +117,10 @@ if [ -e .git/index.lock ]; then
     echo "FAILING CLOSED: .git/index.lock exists. Nothing staged or committed."
     exit 1
 fi
-git add spin_gnn/sudoku_cfresp.py scripts/slurm/stagez_cfresp_2026-11-15.sbatch \
-        "$OUT/cfresp_summary.json" "$OUT/stagez_verdict.json" \
-        "$OUT"/cfresp_s*.csv
+# runs/ is gitignored and stays that way -- results live on $SCRATCH and in the
+# deck, never in the repo. Only source is committed here.
+git add spin_gnn/sudoku_cfresp.py scripts/stagez_score.py \
+        scripts/slurm/stagez_cfresp_2026-11-15.sbatch
 git diff --cached --name-only | sed 's/^/  staged /'
 if ! git diff --cached --quiet; then
     git -c user.name='Claude (hshunt)' -c user.email='hshunt@stanford.edu' \
@@ -146,6 +159,23 @@ producing a number that looks fine.
 The prompt for the job was in stage Y's own stored CSVs: against the placebo's
 noise floor the corruption's effect on the deciding logit is a coin flip, at
 0.489/0.500/0.483 for Y and 0.497/0.494/0.603 for X.
+
+Z3 was added after the first run (52413267) returned the registered-but-
+unexpected third outcome, "neither predicate nor count". The channel does not
+respond to the corruption at all -- win rate 0.4914/0.5171/0.4571 against
+chance 0.500, median |dg| 0.0103 under the corruption versus 0.0102 under the
+placebo against a spread of 3.5, and flip fraction 0.0000 over 236/228/217 --
+and yet the plain count reaches only 0.8857 against the model's 0.9493. So the
+mechanism this stage was written to test is not the whole story, and Z3 asks
+what the remaining 0.064 of AUROC is by conditioning on the count.
+
+The stratified scale calibrates itself at both ends and the probe asserts
+both: n_known_nbrs is constant inside its own stratum so every pair ties and
+it scores exactly 0.5, and n_known_colors is the predicate's own threshold so
+it scores exactly 1.0. A mis-stratified run therefore fails the job instead of
+reporting a plausible middle value. The pooled AUROC is reported alongside so
+it can be checked against the published 0.9493/0.9478/0.9480, which is the
+proof that Z3 reads the same cells.
 MSG
     echo "commit rc=$?"
 fi
