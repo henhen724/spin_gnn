@@ -168,6 +168,20 @@ def check_claims(S, mp, pp):
         bad.append("k=5 is no longer all-positive; the 'answers itself' page is wrong")
     if strat[0]["per_stratum"]["5"]["n_pos"] != 10238:
         bad.append("the k=5 count on the strata page has drifted")
+    # The strata table prints one determined/undetermined column for all three
+    # seeds, taken from seed 0. That is only honest if the cells really are the
+    # same cells: determinacy_targets does not consult the model, so they
+    # should be, and here that is checked rather than assumed.
+    cells = [[(v["n_pos"], v["n_neg"]) for _, v in sorted(c["per_stratum"].items())]
+             for c in strat]
+    if cells[1] != cells[0] or cells[2] != cells[0]:
+        bad.append("the per-stratum cell counts differ between seeds")
+    # The 'a counter settles 47%' page rests on these two totals.
+    low = sum(strat[0]["per_stratum"][str(k)]["n_pos"] for k in (0, 1, 2))
+    if low != 0:
+        bad.append("k<=2 is no longer all-undetermined")
+    if sum(strat[0]["per_stratum"][str(k)]["n_neg"] for k in (0, 1, 2)) != 53918:
+        bad.append("the all-undetermined total on the settles-47% page has drifted")
 
     # the headline contrast, in the direction the deck claims it
     if not all(m < 0.60 for m in mp):
@@ -178,6 +192,12 @@ def check_claims(S, mp, pp):
         bad.append("the 'two of three seeds' page no longer has two seeds")
     if not all(0.40 < p < 0.60 for p in pp):
         bad.append("the placebo control left chance; it is no longer a control")
+    # The CLOSES page quotes seed 0's medians in prose rather than reading them,
+    # because the sentence needs the two side by side. Pinned here.
+    if ("%.4f" % per[0]["median_abs_dg_corrupt"] != "0.0103"
+            or "%.4f" % per[0]["median_abs_dg_placebo"] != "0.0102"
+            or "%.1f" % per[0]["median_g_spread"] != "3.5"):
+        bad.append("seed 0's medians have drifted from the CLOSES page's prose")
     if bad:
         raise AssertionError("check_claims failed:\n  " + "\n  ".join(bad))
 
@@ -561,8 +581,10 @@ not expected. Its prediction was $0.80 \pm 0.08$.
 CLOSES = r"""## What this rules out, stated as plainly as it can be
 
 **It is not the coupling.** Stage Y's null could have meant the channel was wired
-too weakly to the output. It was not: the channel's score does not move under the
-intervention, so there was nothing for any coupling to transmit. A larger weight
+too weakly to the output. It was not: the channel's score moves no more under the
+intervention than under an edit chosen to be irrelevant -- a median $0.0103$
+against $0.0102$, on a quantity whose spread across nodes is $3.5$ -- so there was
+nothing for any coupling to transmit. A larger weight
 on the term, a wider channel, or a third place to write it all act on a quantity
 that is already inert.
 
@@ -712,7 +734,11 @@ def main():
 
     d.table_page(
         "Against its own placebo the corruption is a coin flip",
-        ["seed", "win rate", "median $|\\Delta g|$ corrupt", "placebo", "g's spread"],
+        # \lvert ... \rvert, NOT |...|: a bare pipe inside a math span is still a
+        # pipe to the markdown table parser, which would split this header into
+        # seven columns against a five-column body. Caught in the read-back.
+        ["seed", "win rate", "median $\\lvert \\Delta g \\rvert$ corrupt",
+         "placebo", "g's spread"],
         [[i, "%.4f" % per[i]["win_rate"],
           "%.4f" % per[i]["median_abs_dg_corrupt"],
           "%.4f" % per[i]["median_abs_dg_placebo"],
@@ -740,6 +766,8 @@ def main():
              "the prediction 0.920 ± 0.040."
              % (format(meta["n_scored"], ","), meta["n_instances"]))
 
+    pos34 = sum(strat[0]["per_stratum"][str(k)]["n_pos"] for k in (3, 4))
+    neg34 = sum(strat[0]["per_stratum"][str(k)]["n_neg"] for k in (3, 4))
     d.table_page(
         "Holding the count fixed, the channel still ranks determinacy at 0.80",
         ["stratum $k$", "determined", "undetermined", "seed 0", "seed 1", "seed 2"],
@@ -747,10 +775,16 @@ def main():
           format(strat[0]["per_stratum"][str(k)]["n_neg"], ",")]
          + ["%.4f" % strat[i]["per_stratum"][str(k)]["auroc"] for i in range(3)]
          for k in (3, 4)]
-        + [["pooled by pairs", "", ""] + ["%.4f" % c["model"] for c in strat]],
+        # Not "" in the two count cells: highlight_row bolds every cell it is
+        # given, and bolding an empty string emits a literal **** . The pooled
+        # row's pairs come from exactly these two strata -- every other stratum
+        # holds one label and contributes no pair -- so the column totals are
+        # the honest entry as well as the one that renders.
+        + [["pooled by pairs", format(pos34, ","), format(neg34, ",")]
+           + ["%.4f" % c["model"] for c in strat]],
         highlight_row=2,
-        note="The other four strata hold only one label each, so no pair inside "
-             "them can be ordered at all.")
+        note="Each other stratum holds one label, so no pair inside it can be "
+             "ordered. The pooled row weights these two by their pairs.")
 
     d.claim_page(
         "The same signal scores 0.80 across instances and 0.49 under intervention",
