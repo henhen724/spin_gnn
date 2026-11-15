@@ -57,6 +57,8 @@ def run_one(args):
         deterministic=args.deterministic,
         determinacy_weight=args.determinacy_weight,
         determinacy_channel=args.determinacy_channel,
+        pair_weight=args.pair_weight,
+        pair_margin=args.pair_margin,
     )
     result = train_sudoku_model(sudoku_cfg, model_cfg, train_cfg)
 
@@ -138,6 +140,14 @@ def run_one(args):
         # share d_model, depth, weight and seed, so without this they collide
         # on disk and the directory name lies about which model is in it.
         + ("_chan" if args.determinacy_channel else "")
+        # And one stage further. A stage-PAIR cell is a stage-Y cell in every
+        # respect a directory name or a state dict can see -- same architecture,
+        # same 614,138 tensors, same weight, same channel, same seed -- and
+        # differs only in that one extra term trained it. Without this segment
+        # the two collide on disk and nothing in the artifact distinguishes
+        # them. Only present when the term is on, so every tag written before
+        # 2026-11-15 is byte-identical.
+        + (f"_pw{args.pair_weight:g}" if args.pair_weight else "")
         + (f"_s{args.seed:02d}" if args.seed else "")
     )
     out_dir = os.path.join(args.out_dir, tag)
@@ -174,7 +184,11 @@ def run_one(args):
         "deterministic": args.deterministic,
         "determinacy_weight": args.determinacy_weight,
         "determinacy_channel": args.determinacy_channel,
+        "pair_weight": args.pair_weight,
+        "pair_margin": args.pair_margin,
         "final_determinacy_auroc": result["history"][-1].get("determinacy_auroc"),
+        "final_pair_hinge": result["history"][-1].get("train_pair_hinge"),
+        "final_pair_gap": result["history"][-1].get("train_pair_gap"),
         "checkpoint_dir": out_dir,
     }
 
@@ -273,6 +287,17 @@ if __name__ == "__main__":
                          "and emit z + log sigma(g) on the node block. One learned vector, "
                          "d_model parameters (320 at d=320, +0.05%). OFF by default, which "
                          "is stage X exactly. Requires --determinacy-weight > 0.")
+    ap.add_argument("--pair-weight", type=float, default=0.0,
+                    help="stage PAIR: weight on a hinge over the determinacy channel's "
+                         "CONTRAST between a prompt and the same prompt with one hint "
+                         "colour recoloured so node v stops being forced -- "
+                         "max(0, m - (g_clean[p,v] - g_broken[p,v])). Adds no parameters "
+                         "and about 2x the step time (measured 1.978x), since the margin "
+                         "needs a second forward. Requires --determinacy-channel. 0.0 "
+                         "(default) reproduces stage Y exactly, including the batch order.")
+    ap.add_argument("--pair-margin", type=float, default=1.0,
+                    help="the hinge's margin m, in units of g. NOT a knob to sweep: 1.0 is "
+                         "registered a priori in scripts/stagepair_score.py.")
     ap.add_argument("--n-train-instances", type=int, default=5000)
     ap.add_argument("--n-val-instances", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=32)

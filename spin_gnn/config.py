@@ -371,3 +371,37 @@ class SudokuReasoningTrainConfig:
     # Only meaningful with determinacy_weight > 0; the trainer refuses the
     # combination that builds the channel and never trains it.
     determinacy_channel: bool = False
+    # Stage PAIR. Weight on a hinge over the determinacy channel's CONTRAST
+    # between a clean prompt and the same prompt with one hint colour recoloured
+    # so that node v stops being forced:
+    #
+    #     L_pair = max(0, pair_margin - (g_clean[p, v] - g_broken[p, v]))
+    #
+    # with p the position whose next token is v's round-0 node token and v the
+    # node the edit un-forces. Both come from spin_gnn.sudoku_pair, which reuses
+    # stage Z's own case finder so the training population is built exactly like
+    # the probe's.
+    #
+    # Motivated by finding 78, partial_predicate_not_causally_wired: stage Y's
+    # channel ranks nodes by determinacy at AUROC 0.806 WITHIN a stratum of
+    # fixed revealed-neighbour count, and yet on a matched clean/corrupted pair
+    # it orders the two at 0.4457/0.5714/0.4543, chance, with median |delta g|
+    # 0.0103 against g's own spread of 3.5. Stage X and Y only ever supervised a
+    # static ranking on clean inputs; nothing in either objective ever asked g
+    # to MOVE when the thing it names stops being true. This term asks for
+    # exactly that and for nothing else.
+    #
+    # Costs no parameter -- it reads the channel stage Y already has -- and
+    # about 2x the step time, because the margin needs g on the corrupted prompt
+    # too and the backward runs through both forwards (measured 1.978x at d320
+    # L16, runs/2026-11-15_stagepair_price).
+    #
+    # Requires determinacy_channel=True: the hinge reads g. 0.0 reproduces every
+    # run before stage PAIR exactly, including the batch order, since at 0 the
+    # pair index is never even built.
+    pair_weight: float = 0.0
+    # The hinge's margin, in the units of g, which is an unnormalized logit. Not
+    # swept: 1.0 is registered a priori in scripts/stagepair_score.py and is the
+    # scale at which log sigma(g) actually bends (sigma(1) - sigma(0) = 0.23),
+    # against g's measured spread of ~3.5 in the trained stage-Y channel.
+    pair_margin: float = 1.0

@@ -37,7 +37,10 @@ import numpy as np
 import torch
 
 from .config import SudokuReasoningConfig, SudokuReasoningModelConfig, SudokuReasoningTrainConfig
-from .sat_dataset2 import SATTokenDataset, iterate_token_batches, make_token_batch, make_token_batch_aux
+from .sat_dataset2 import (
+    SATTokenDataset, iterate_token_batches, make_token_batch, make_token_batch_aux,
+    make_token_batch_pair,
+)
 from .sat_transformer2 import SATReasoningTransformer, sat2_accuracy, sat2_nll_loss
 from .sudoku_dd import planted_regular_graph, removal_path
 from .sudoku_determinacy import (
@@ -531,8 +534,34 @@ def train_sudoku_model(
     else:
         train_aux = val_aux = None
 
+    # Stage PAIR. Built only when the term is on, like the determinacy targets
+    # above and for the same reason: at weight 0 nothing is scanned and the run
+    # is the control's, batch order included.
+    pair_w = float(getattr(train_cfg, "pair_weight", 0.0) or 0.0)
+    pair_margin = float(getattr(train_cfg, "pair_margin", 1.0))
+    if pair_w > 0 and not det_channel_cfg:
+        raise ValueError(
+            "pair_weight > 0 needs determinacy_channel=True: the margin is a "
+            "hinge on the channel's g, and without the channel there is no g "
+            "to contrast. Stage PAIR is stage Y's cell plus one term.")
+    if pair_w > 0:
+        from .sudoku_pair import build_pair_index, summarize_pairs
+        # Seeded off the instance seed, so the scan is reproducible; it drives
+        # only the placebo search, which training never reads.
+        train_pair = build_pair_index(train_instances, train_tokens, vocab,
+                                      sudoku_cfg.seed + 500_000_000)
+        pstats = summarize_pairs(train_pair)
+        print(f"pair index: weight={pair_w:g} margin={pair_margin:g} "
+              f"yield={pstats['yield']:.4f} ({pstats['n_pairs']:,}/{pstats['n']:,} "
+              f"instances carry a case) predict_pos "
+              f"{pstats.get('predict_pos_min')}-{pstats.get('predict_pos_max')} "
+              f"(mean {pstats.get('predict_pos_mean', float('nan')):.1f})")
+    else:
+        train_pair = None
+
     max_len = train_cfg.max_len or None
-    train_dataset = SATTokenDataset(train_tokens, max_len=max_len, aux=train_aux)
+    train_dataset = SATTokenDataset(train_tokens, max_len=max_len, aux=train_aux,
+                                   pair=train_pair)
     val_dataset = SATTokenDataset(val_tokens, max_len=max_len, aux=val_aux)
     if len(train_dataset) == 0 or len(val_dataset) == 0:
         raise ValueError(f"empty dataset: train={len(train_dataset)}, val={len(val_dataset)}")
@@ -590,7 +619,10 @@ def train_sudoku_model(
         model.train()
         epoch_loss, epoch_n = 0.0, 0
         epoch_det, epoch_det_n = 0.0, 0
-        collate = make_token_batch_aux if det_w > 0 else make_token_batch
+        epoch_pair, epoch_pair_gap, epoch_pair_n = 0.0, 0.0, 0
+        epoch_pair_active, epoch_pair_rows = 0, 0
+        collate = (make_token_batch_pair if pair_w > 0 else
+                   make_token_batch_aux if det_w > 0 else make_token_batch)
         for batch in iterate_token_batches(train_dataset, train_indices, train_cfg.batch_size,
                                            rng=rng, collate=collate):
             x, y, mask = (t.to(device) for t in batch[:3])
@@ -611,6 +643,36 @@ def train_sudoku_model(
                     n_scored = int((atgt >= 0).sum().item())
                     epoch_det += det.item() * n_scored
                     epoch_det_n += n_scored
+            if pair_w > 0:
+                # STAGE PAIR. One token written into a copy of the batch, a
+                # second forward, and a hinge on the channel's contrast at the
+                # ONE (position, node) the edit is about. The corrupted forward
+                # feeds the margin and NOTHING else: after the edit the planted
+                # trace is no longer a correct continuation, so its readout is
+                # computed and deliberately unread -- which is part of the
+                # measured 1.978x, not an oversight.
+                pair = batch[5].to(device)
+                epoch_pair_rows += int(pair.shape[0])
+                sel = (pair[:, 0] >= 0).nonzero(as_tuple=True)[0]
+                if sel.numel():
+                    epos, etok = pair[sel, 0], pair[sel, 1]
+                    ppos, vnode = pair[sel, 2], pair[sel, 3]
+                    # The whole batch is cloned and forwarded, including rows
+                    # with no case, because that is the shape
+                    # runs/2026-11-15_stagepair_price timed. Those rows are read
+                    # by nothing: only g[sel, ...] enters the loss.
+                    xb = x.clone()
+                    xb[sel, epos] = etok
+                    _zb, gb = model(xb, valid_mask=mask, return_determinacy=True)
+                    gap = g[sel, ppos, vnode] - gb[sel, ppos, vnode]
+                    hinge = torch.clamp(pair_margin - gap, min=0)
+                    pair_loss = hinge.mean()
+                    loss = loss + pair_w * pair_loss
+                    n_sel = int(sel.numel())
+                    epoch_pair += pair_loss.item() * n_sel
+                    epoch_pair_gap += float(gap.detach().sum().item())
+                    epoch_pair_active += int((hinge > 0).sum().item())
+                    epoch_pair_n += n_sel
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -634,6 +696,22 @@ def train_sudoku_model(
                                                batch_size=train_cfg.batch_size))
             det_note = (f" det_bce={record['train_determinacy_bce']:.4f} "
                         f"val_det_auroc={record['determinacy_auroc']:.4f}")
+        if pair_w > 0:
+            # train_pair_gap is the quantity finding 78 measured as ~0 and this
+            # stage exists to move; the hinge is what the optimizer sees. Both
+            # are recorded because the hinge saturates at 0 once the margin is
+            # met and then says nothing about how far past it the gap went.
+            record["train_pair_hinge"] = (epoch_pair / epoch_pair_n
+                                          if epoch_pair_n else float("nan"))
+            record["train_pair_gap"] = (epoch_pair_gap / epoch_pair_n
+                                        if epoch_pair_n else float("nan"))
+            record["train_pair_active"] = (epoch_pair_active / epoch_pair_n
+                                           if epoch_pair_n else float("nan"))
+            record["train_pair_frac"] = (epoch_pair_n / epoch_pair_rows
+                                         if epoch_pair_rows else float("nan"))
+            det_note += (f" pair_hinge={record['train_pair_hinge']:.4f} "
+                         f"gap={record['train_pair_gap']:+.4f} "
+                         f"active={record['train_pair_active']:.3f}")
         history.append(record)
         print(f"epoch {epoch}: train_nll={record['train_nll']:.4f} val_nll={val_metrics['nll']:.4f} "
               f"val_accuracy={val_metrics['accuracy']:.4f} lr={lr_now:.2e}{det_note}")
@@ -725,6 +803,16 @@ def save_checkpoint(out_dir, sudoku_cfg, model_cfg, model, vocab, model_max_len,
             # gets a shape error rather than a wrong number, which is the
             # failure mode to prefer.
             "determinacy_channel": bool(getattr(train_cfg, "determinacy_channel", False)),
+            # Absent on every checkpoint before 2026-11-15, where it reads 0.0
+            # -- correct for them, no run before stage PAIR ever supervised the
+            # channel's contrast under an intervention. Unlike
+            # determinacy_channel this one does NOT change the state dict: a
+            # stage-PAIR checkpoint and a stage-Y checkpoint are the same 614,138
+            # tensors and load into each other without complaint, so this key is
+            # the only thing in the artifact that says which objective trained
+            # them. The read-back in the launcher asserts it for that reason.
+            "pair_weight": float(getattr(train_cfg, "pair_weight", 0.0) or 0.0),
+            "pair_margin": float(getattr(train_cfg, "pair_margin", 1.0)),
             # Absent on every checkpoint before 2026-11-02, where it reads 0 --
             # correct for them, their max_len IS the longest training sequence.
             # Recorded because that is otherwise unrecoverable: without it a

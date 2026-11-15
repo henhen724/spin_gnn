@@ -11,14 +11,22 @@ import torch
 
 
 class SATTokenDataset:
-    def __init__(self, token_sequences, max_len=None, aux=None):
+    def __init__(self, token_sequences, max_len=None, aux=None, pair=None):
         """aux, when given, is a list parallel to token_sequences of
         (pos, target) pairs -- see spin_gnn.sudoku_determinacy. It is filtered
         in lockstep with the sequences, so a dropped instance never shifts the
         alignment between a sequence and its targets. None reproduces every
-        dataset built before stage X exactly."""
+        dataset built before stage X exactly.
+
+        pair, when given, is a list parallel to token_sequences of stage PAIR's
+        four integers -- see spin_gnn.sudoku_pair -- and is filtered in the same
+        lockstep, for the same reason and with a sharper consequence: the
+        entries hold POSITIONS, so a shift would not merely mislabel an instance
+        but index into a different sequence's token stream."""
         if aux is not None and len(aux) != len(token_sequences):
             raise ValueError(f"aux has {len(aux)} entries for {len(token_sequences)} sequences")
+        if pair is not None and len(pair) != len(token_sequences):
+            raise ValueError(f"pair has {len(pair)} entries for {len(token_sequences)} sequences")
         keep = [i for i, s in enumerate(token_sequences) if s.shape[0] >= 2]
         dropped_short = len(token_sequences) - len(keep)
         if max_len:
@@ -30,6 +38,7 @@ class SATTokenDataset:
         sequences = [token_sequences[i] for i in keep]
         self.sequences = sequences
         self.aux = [aux[i] for i in keep] if aux is not None else None
+        self.pair = [pair[i] for i in keep] if pair is not None else None
         if dropped_short:
             print(f"SATTokenDataset: dropped {dropped_short}/{len(token_sequences)} instances with < 2 tokens")
         if dropped_long:
@@ -86,6 +95,25 @@ def make_token_batch_aux(dataset, indices):
         aux_pos[i, :length] = torch.from_numpy(p)
         aux_target[i, :length] = torch.from_numpy(t)
     return x, y, mask, aux_pos, aux_target
+
+
+def make_token_batch_pair(dataset, indices):
+    """make_token_batch_aux plus stage PAIR's edit for the same instances.
+
+    Returns x, y, mask, aux_pos, aux_target, pair with pair (B, 4) int64, rows
+    (edit position, edit token, predict position, node index). An instance with
+    no case carries sudoku_pair.PAIR_NONE, whose leading -1 the trainer selects
+    on -- so a miss needs no separate mask and a batch where every instance
+    misses simply contributes no margin.
+
+    The positions are indices into x, which make_token_batch LEFT-ALIGNS at
+    position 0 and pads on the right. That is what makes storing a bare integer
+    safe: padding never shifts a real position, so an index computed on the
+    whole sequence is still correct inside the batch.
+    """
+    x, y, mask, aux_pos, aux_target = make_token_batch_aux(dataset, indices)
+    pair = torch.tensor([dataset.pair[i] for i in indices], dtype=torch.long)
+    return x, y, mask, aux_pos, aux_target, pair
 
 
 def iterate_token_batches(dataset, indices, batch_size, rng=None, shuffle=True, collate=make_token_batch):
