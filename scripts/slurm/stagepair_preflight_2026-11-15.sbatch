@@ -123,12 +123,23 @@ print("epoch 0: hinge %.4f  gap %+.4f  active %.3f  applied to %.3f of rows"
          h[0]["train_pair_active"], h[0]["train_pair_frac"]))
 print("epoch 1: hinge %.4f  gap %+.4f  active %.3f"
       % (h[1]["train_pair_hinge"], h[1]["train_pair_gap"], h[1]["train_pair_active"]))
-# At det_scale = 0 the gap is identically zero, so epoch 0's AVERAGE hinge is
-# the margin minus however much the first steps already bought. It cannot be
-# above the margin and it must not be near zero.
-assert 0.3 < h[0]["train_pair_hinge"] <= 1.0 + 1e-6, (
-    "epoch 0's hinge is %.4f, which is not where a margin of 1.0 starting from "
-    "g == 0 can be" % h[0]["train_pair_hinge"])
+# At det_scale = 0 the gap is identically zero, so the hinge STARTS at exactly
+# the margin and epoch 0's average is the margin plus or minus whatever the
+# first steps moved it. BOTH SIGNS ARE LEGAL and the band is two-sided for that
+# reason: gap = g_clean - g_broken is signed and unbounded below, so
+# max(0, m - gap) is unbounded ABOVE, and a mean gap of -0.0002 -- which is what
+# 52423273 measured, a model 2 epochs into 320 instances at val accuracy 0.03 --
+# reads as a mean hinge of 1.0002. An earlier version of this check asserted
+# `<= 1.0` on the false premise that the margin caps it; that is what failed,
+# in this assertion and not in anything the trainer did.
+#
+# So what this band is actually for: the margin is 1.0 and not 0 (a dead term
+# reads 0.0) and not some other number (a misread config reads far off). It is
+# NOT evidence the term is learning -- 2 epochs on 320 instances cannot show
+# that, and smoke assertion 7 is where the descent direction is checked.
+assert 0.5 < h[0]["train_pair_hinge"] < 1.5, (
+    "epoch 0's hinge is %.4f, which is not a margin of 1.0 being computed at all"
+    % h[0]["train_pair_hinge"])
 assert 0.6 < h[0]["train_pair_frac"] < 0.95, (
     "the term reached %.4f of rows; the scan was priced at 0.8034"
     % h[0]["train_pair_frac"])
