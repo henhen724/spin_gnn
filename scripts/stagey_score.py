@@ -201,7 +201,84 @@ that the channel's contribution is constant across the node axis at init
 and moves after one BCE step, since nothing in the first five looks at the
 SCALE of the perturbation -- which is how a design error passed a smoke
 test that asserts the forward map is algebraically right.
+
+================================================================================
+MID-RUN PREDICTION, written 2026-11-14 19:30 at epoch 32 of 50 of 52348732,
+BEFORE any cell finished and before rho_50 or the guard rate existed for any
+of them. THE BARS ABOVE ARE NOT TOUCHED. Recorded so Y4 and Y1 are a test of
+this rather than a story told afterwards. This is the second use of the
+instrument; the first, stage X's `f95e2b7`, landed 0.007 from the measured
+value.
+================================================================================
+
+All three cells are healthy -- no crash, no plateau, the init bug is gone --
+and three things are already readable off the training logs.
+
+  THE CHANNEL LEARNS DETERMINACY EXACTLY AS WELL AS THE READOUT DID, AND THIS
+  IS THE SURPRISE. At the same epoch 32, stage Y's det_bce is 0.2773 / 0.2858
+  / 0.2937 against stage X's 0.2787 / 0.2869 / 0.2882, and stage Y's val
+  AUROC is 0.9444 / 0.9424 / 0.9410 against stage X's ~0.940. Separating the
+  BCE's parameters from the readout's -- finding 75's diagnosis and half the
+  reason this stage exists -- did not change WHAT the determinacy term
+  learns. Whatever it changes, it is not the quality of the representation.
+
+  AND IT COSTS THREE TIMES WHAT STAGE X COST. Against the stage-S control at
+  the SAME epoch (0.4832 / 0.4829 / 0.4822), stage Y's val token accuracy
+  runs -0.0225 / -0.0011 / -0.0267, mean -0.0168, against stage X's -0.0060.
+  The gap this whole line of work exists to close is +0.0011 (stage V's NEED,
+  derived not typed), so the cost is about FIFTEEN TIMES the target, the
+  wrong way.
+
+  THE DAMAGE IS A BASIN LOTTERY, NOT A UNIFORM TAX, AND THAT IS NEW. Seeds 0
+  and 2 plateau by epoch 6 at 0.4570 / 0.4508 and gain +0.004 over the next
+  26 epochs; seed 1 sits at the control's level, 0.4818 against 0.4829. The
+  seed spread is 0.0263 against the control's 0.0010 and stage X's 0.0022 --
+  more than TWENTY TIMES either. The control's seed 2 escaped a plateau of
+  this depth between epochs 10 and 32 (0.4583 -> 0.4822); stage Y's two have
+  not moved, so this is read as a basin they are stuck in and not a delay.
+  Finding 67 said pinning the kernels does not remove the seed lottery; this
+  says the channel AMPLIFIES it.
+
+THE PREDICTION, per seed because the seeds are bimodal and a mean would hide
+it, pushed through the same S4 accuracy-to-solve slope stage V used and stage
+X's prediction used (ACC_GAP of accuracy per RHO_GAP of rho_50, imported and
+never retyped):
+
+    Y4 IS EXPECTED TO FAIL on seeds 0 and 2 and pass on seed 1, so score()
+    will return "Y4 failed, Y1-Y3 not interpreted". Stage X's epoch-32 to
+    epoch-49 climb was +0.0010, so the final accuracies are expected near
+    0.462 / 0.483 / 0.457 against a bar of 0.4800.
+
+    Y1 IS EXPECTED TO FAIL, AND TO FAIL OFF THE END OF THE GRID. The per-seed
+    deficits predict rho_50 near 1.12 / 0.78 / 1.20 against the control's
+    0.754 / 0.757 / 0.765. Two of those are ABOVE GRID_TOP = 0.95, i.e. the
+    prediction is that seeds 0 and 2 never reach a 0.5 solve rate anywhere on
+    the 14-point grid and rho_50 comes back CENSORED with flag '>top'.
+
+That last line has an operational consequence, which is why it is written
+down before the fact: `stagey_guard_2026-11-14.sbatch` asserted flag == 'ok'
+and would have died on the assertion before writing stagey_verdict.json. It
+now reports the flag and maps '>top' to +inf, which is a Y1 failure by every
+route and cannot flatter the hypothesis -- a model that never crosses 0.5 is
+worse than any value the grid can return. score() is untouched.
+
+WHY THE RUN IS NOT CANCELLED, and the reasoning is stage X's. Y2 and Y3 are
+the mechanism questions and they get SHARPER, not weaker, when the accuracy
+moves the wrong way: the probe still measures the guard rate and its shape on
+every cell and prints both. Y4's veto means the registered scorer declines to
+INTERPRET them, which is the registration working as written -- but the
+numbers will exist, and "the channel reached stage X's AUROC, cost 3x stage
+X's accuracy, and did or did not produce a conditional guard" is the sentence
+stage Z has to start from either way. Cancelling would delete it.
+
+AND NO LAMBDA SWEEP, NO WARMUP ON THE CHANNEL, NO BEST-VAL SELECTION IS
+STARTED ON THE STRENGTH OF THIS. Two seeds landing in a bad basin is exactly
+the observation that makes a warmup schedule or a smaller lambda tempting;
+both are new knobs, the registration fixed lambda a priori, and best-val
+selection is a knob this project already closed. If the basin finding
+survives the finished cells it is a NEW stage with its own registration.
 """
+import os
 import sys
 
 CONTROL_ACC = (0.4830, 0.4830, 0.4833)
@@ -218,6 +295,58 @@ MIN_SEEDS = 2
 LAMBDA = 1.0
 FREE_LINE = 0.740
 NEW_PARAMS = 320
+
+
+# ---- The mid-run prediction of 2026-11-14 19:30, read off both arms' logs at
+# epoch 32 of 50, before any cell finished. NOT A BAR. Nothing above this line
+# was touched when these were added; see the MID-RUN PREDICTION section of the
+# docstring. score() never reads any of it.
+Y_ACC_AT_32 = (0.4607, 0.4818, 0.4555)        # stage Y, epoch 32, seeds 0/1/2
+S_ACC_AT_32 = (0.4832, 0.4829, 0.4822)        # stage S, the SAME epoch
+X_ACC_AT_32 = (0.4770, 0.4768, 0.4748)        # stage X, the same epoch again
+Y_BCE_AT_32 = (0.2773, 0.2858, 0.2937)        # the channel's BCE
+X_BCE_AT_32 = (0.2787, 0.2869, 0.2882)        # stage X's, on the readout
+Y_AUROC_AT_32 = (0.9444, 0.9424, 0.9410)
+GRID_TOP = 0.95        # the easiest density on the 14-point grid
+LATE_CLIMB = 0.0010    # stage X's measured epoch 32 -> 49 gain in accuracy
+
+
+def predict_rho50(y_acc=Y_ACC_AT_32, s_acc=S_ACC_AT_32):
+    """What the epoch-32 accuracy deficit implies for rho_50, PER SEED,
+    pushed through the same accuracy-to-solve slope stage V used to set its
+    own bar and stage X's prediction used before this one. Imported from
+    scripts.stagev_score, never retyped, and imported lazily so a job that
+    wants only this file's constants does not pay for stage V's import chain.
+
+    Per seed rather than on the mean because stage Y's seeds are bimodal: one
+    at the control and two in a lower basin. A mean of those predicts a
+    number no seed is near, and would hide the only new thing in the run.
+
+    A negative deficit predicts a HIGHER rho_50, which is worse. A prediction
+    above GRID_TOP means the grid cannot measure it -- the model is expected
+    never to reach a 0.5 solve rate at any density, so rho_50 comes back
+    censored with flag '>top' rather than as a number.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    import scripts.stagev_score as sv
+    slope = sv.RHO_GAP / sv.ACC_GAP                 # rho_50 per unit accuracy
+    deficits = [y - s for y, s in zip(y_acc, s_acc)]
+    predicted = [c - d * slope for c, d in zip(CONTROL_RHO50, deficits)]
+    return {
+        "acc_deficit_per_seed": deficits,
+        "acc_deficit_mean": sum(deficits) / len(deficits),
+        "slope_rho50_per_acc": slope,
+        "need_to_close_the_gap": sv.NEED,
+        "deficit_in_units_of_need": (sum(deficits) / len(deficits)) / sv.NEED,
+        "predicted_rho50_per_seed": predicted,
+        "predicted_final_acc": [a + LATE_CLIMB for a in y_acc],
+        "seeds_expected_to_pass_y4": sum(a + LATE_CLIMB >= ACC_BAR
+                                         for a in y_acc),
+        "seeds_expected_censored_above_grid": sum(p > GRID_TOP
+                                                  for p in predicted),
+    }
 
 
 def check_y4(acc):
@@ -279,6 +408,33 @@ def _self_test():
                  (0.3, 0.3, 0.3),
                  [{"node_token": 0.05, "still_forced": 0.01}] * 3)
     assert stop["verdict"] == "design refuted: guard is stop-shaped again", stop
+
+    # A censored rho_50 is +inf by the time it reaches score(): the probe maps
+    # '>top' there because a model that never crosses 0.5 is worse than any
+    # value the grid can return. Asserted so the mapping cannot be quietly
+    # inverted later into something that flatters the arm.
+    cens = score((0.4841, 0.4852, 0.4833), (float("inf"), 0.78, float("inf")),
+                 (0.42, 0.51, 0.88),
+                 [{"node_token": 0.95, "still_forced": 0.72}] * 3)
+    assert cens["Y1"]["pass"] is False, cens["Y1"]
+    assert cens["Y1"]["clears_free_line_separately"] is False, cens["Y1"]
+    assert cens["verdict"] == "refuted", cens
+
+    # The mid-run prediction. Pinned so that if stage V's slope is ever edited
+    # the prediction recorded on 2026-11-14 stops matching and somebody has to
+    # say which of the two numbers changed. Four claims -- a deficit many times
+    # the gap, two seeds below the Y4 bar, two rho_50 predictions off the top
+    # of the grid, and a channel whose BCE matches stage X's readout -- and
+    # none of them is a bar.
+    p = predict_rho50()
+    assert -0.0180 < p["acc_deficit_mean"] < -0.0150, p
+    assert p["deficit_in_units_of_need"] < -13.0, p
+    assert p["seeds_expected_to_pass_y4"] == 1, p
+    assert p["seeds_expected_censored_above_grid"] == 2, p
+    assert all(y > CONTROL_RHO50[i]
+               for i, y in enumerate(p["predicted_rho50_per_seed"])), p
+    assert max(abs(y - x) for y, x in zip(Y_BCE_AT_32, X_BCE_AT_32)) < 0.006, (
+        Y_BCE_AT_32, X_BCE_AT_32)
     print("ok")
 
 

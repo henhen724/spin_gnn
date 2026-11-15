@@ -170,9 +170,31 @@ for i in range(3):
         curve = [(float(r["realized_rho"]), float(r["solve_rate"]))
                  for r in csv.DictReader(f)]
     v, flag = rho_50(curve)
-    assert flag == "ok", ("censored rho_50, reported with its flag and not "
-                          "silently used", i, v, flag)
-    rho.append(v)
+    # A censored rho_50 is REPORTED, never silently used -- but it must not
+    # kill the job either, because Y2 and Y3 are already measured above and
+    # the verdict file is the only place the four bars are read together.
+    # This is plumbing; stagey_score.score() is untouched.
+    #
+    # '>top' means the solve rate never rises to 0.5 anywhere on the grid, so
+    # the model is worse than any value the grid can return: +inf fails Y1 and
+    # the free line by every route and cannot flatter the arm. The mid-run
+    # prediction committed at epoch 32 expects exactly this on seeds 0 and 2.
+    # '<floor' is the opposite censoring and would be a spectacular pass; it
+    # is NOT auto-scored, because the floor understates how good it is and no
+    # number this file could substitute would be honest.
+    if flag == "ok":
+        rho.append(v)
+    elif flag == ">top":
+        print("  seed %d  rho_50 CENSORED '>top': the solve rate never reaches "
+              "0.5 on the grid (top point %.3f). Scored as +inf, which fails "
+              "Y1 either way." % (i, v))
+        rho.append(float("inf"))
+    else:
+        raise AssertionError(
+            "rho_50 came back '%s' (%.3f) for seed %d. '<floor' means the "
+            "model beats the grid's easiest-to-hardest span and the number "
+            "is a bound, not a value; score it by hand with a wider grid "
+            "rather than letting this job invent one." % (flag, v, i))
 acc = [json.load(open("%s/history.json" % p))[-1]["accuracy"] for p in ckpts]
 
 print()
