@@ -131,8 +131,17 @@ def check_claims(S, mp, pp):
         bad.append("flip denominators are not 236/228/217")
     if any(p["n_cases"] != 350 for p in per):
         bad.append("the guard case count is not 350")
-    if not all(abs(p["clean_emits_v"] - sz.Y_EMITS_V[0]) < 1e-12 for p in per):
-        bad.append("clean_emits_v no longer matches the published rate")
+    # The published emit rate is PER SEED (0.6743/0.6514/0.6200 = 236/228/217
+    # of 350), not one number for all three -- sz.Y_EMITS_V holds seed 0's
+    # clean/corrupt/placebo triple and nothing else. The real per-seed check is
+    # the probe's own cross-check against the published skip_summary.json, so
+    # that is what is asserted here, together with the identity that makes the
+    # denominators on the flip page exactly those rates.
+    if not all(p["cross_check_vs_skip_summary"] == "exact" for p in per):
+        bad.append("the probe's cross-check against skip_summary is no longer exact")
+    if not all(p["flip_denom"] == round(p["clean_emits_v"] * p["n_cases"])
+               for p in per):
+        bad.append("flip_denom is not clean_emits_v x 350; the flip page is wrong")
 
     # Z2
     cov = S["covariate_auroc"]
