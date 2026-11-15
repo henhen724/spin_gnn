@@ -13,8 +13,12 @@ token it changes is a hint that removes v's forcing. A function that fires on
 PLACEBO is the discriminator and it is free: it recolours a hint that is NOT a
 neighbour of v, so v stays forced. It is never trained on and appears only here.
 
-NOT A STAGE. One seed, not three; it reads the registered bars but cannot score
-the arm, and `check_p1` will say so itself rather than my saying it for it.
+SEEDS. `PAIR_SEED` picks which stage Y body to warm from, 0/1/2, and seed 0's
+path is untouched so `PAIR_SEED=0` reruns 52452867 bit-for-bit. A second seed
+means a different BODY, not just a different data order -- stage Y trained three
+and the basin lottery is what needs replicating. Run with one seed it is NOT a
+stage: it reads the registered bars but cannot score the arm, and `check_p1`
+says so itself rather than my saying it for it.
 
 THE CONVERGENCE RULE AND THIS ARM COLLIDE, and that is worth knowing before the
 numbers. `stagepair_score.converged` admits a seed at `final_train_nll <= 1.600 +
@@ -69,25 +73,39 @@ from spin_gnn.sudoku_skip import find_unforceable_deductions
 from spin_gnn.sudoku_tokens import encode_instance
 from spin_gnn.train_sudoku_transformer import build_instances, build_vocab
 
-CKPT_DIR = ("/scratch/users/hshunt/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b/"
-            "t00_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s0/"
-            "d0320_h04_L16_ff01024_lr1e-03_pre_shuf_fall_noff_tied_det_dw1_chan")
-OUT_DIR = "/scratch/users/hshunt/spin_gnn/runs/stagepair_pairprobe_2026-11-15"
+_Y = "/scratch/users/hshunt/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b"
+_CELL = "d0320_h04_L16_ff01024_lr1e-03_pre_shuf_fall_noff_tied_det_dw1_chan"
+# Warm-starting a second seed means a DIFFERENT BODY, not just a different data
+# order: stage Y trained three and the basin lottery is the thing being
+# replicated. Seed 0's path is unchanged, so `PAIR_SEED=0` reruns bit-for-bit
+# what 52452867 ran.
+Y_DIRS = {
+    0: f"{_Y}/t00_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s0/{_CELL}",
+    1: f"{_Y}/t01_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s1/{_CELL}_s01",
+    2: f"{_Y}/t02_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s2/{_CELL}_s02",
+}
 
 # Training: the same numbers 52441962 ran, so arm L1 reproduces its trajectory.
 N_INSTANCES = 30_000
 BATCH = 32
 STEPS = 3_000
 LOG_EVERY = 500
-SEED = 0
+SEED = int(os.environ.get("PAIR_SEED", "0"))
+assert SEED in Y_DIRS, "no stage Y checkpoint for seed %d" % SEED
+CKPT_DIR = Y_DIRS[SEED]
+OUT_DIR = ("/scratch/users/hshunt/spin_gnn/runs/stagepair_pairprobe_2026-11-15"
+           + ("" if SEED == 0 else f"_s{SEED}"))
 DATA_SEED = SEED + 777
 MARGIN = SP.MARGIN
 MAX_LEN = 512
 LR = 1e-3
 # What 52441962 finished at, for the reproduction check. GPU reductions are not
 # bit-reproducible across runs, so this is printed and compared loosely, never
-# asserted -- a hard assert here would fail on noise and block the eval.
-REPRO = {"warm L0": 1.5865, "warm L1": 1.6688}
+# asserted -- a hard assert here would fail on noise and block the eval. Only
+# seed 0 has anything to reproduce; the other seeds print nan rather than a
+# number that was measured on a different body.
+REPRO = ({"warm L0": 1.5865, "warm L1": 1.6688} if SEED == 0 else
+         {"warm L0": float("nan"), "warm L1": float("nan")})
 
 # Evaluation: imported, never retyped. These are the registered streams.
 EVAL_SEED_START = SP.PAIR_EVAL_SEED_START
@@ -99,8 +117,10 @@ AUROC_N_INSTANCES = 600
 
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 os.makedirs(OUT_DIR, exist_ok=True)
-print(f"device={dev}  eval seed_start={EVAL_SEED_START:,}  "
+print(f"device={dev}  SEED={SEED}  eval seed_start={EVAL_SEED_START:,}  "
       f"cases={EVAL_N_CASES:,}  steps={STEPS:,}/arm", flush=True)
+print(f"stage Y body: {CKPT_DIR}", flush=True)
+print(f"out: {OUT_DIR}", flush=True)
 
 with open(os.path.join(CKPT_DIR, "config.json")) as fh:
     config = json.load(fh)
@@ -223,11 +243,18 @@ for w, label in [(0.0, "warm L0"), (1.0, "warm L1")]:
                     "final_hinge": hv, "final_sat": sv, "lambda": w}
 models["Y"] = fresh_from_Y()
 models["Y"].eval()
-# Stage Y's own published final train nll, not re-measured here: the arm it is a
-# control for is the one being scored, and Y's number is already registered.
-train["Y"] = {"final_train_nll": 1.5610, "mean_train_nll_last250": 1.5610,
+# Stage Y's own train nll, READ from this seed's history rather than hardcoded.
+# The 1.5610 that used to sit here was seed 0's and is a single-batch figure;
+# the epoch means are 1.5969 / 1.5933 / 1.6577, so seed 2 ends ABOVE the 1.630
+# convergence threshold before any margin term exists. Y is never passed to
+# `converged` -- only the lambda=1 arm is -- so this is reporting, not scoring.
+with open(os.path.join(CKPT_DIR, "history.json")) as fh:
+    y_nll = float(json.load(fh)[-1]["train_nll"])
+train["Y"] = {"final_train_nll": y_nll, "mean_train_nll_last250": y_nll,
               "final_hinge": float("nan"), "final_sat": float("nan"),
               "lambda": None}
+print(f"\nstage Y seed {SEED} ended at epoch-mean train_nll {y_nll:.4f} "
+      f"(convergence threshold {SP.FLOOR + SP.STUCK_TOL:.3f})", flush=True)
 
 # ---------------------------------------------------------------------------
 # one case list, all three models
