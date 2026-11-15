@@ -69,6 +69,12 @@ echo "=== 4. two epochs end to end, 320 instances, thrown away ========="
 # Everything is the real path except the sizes: the same CLI, the same cell, the
 # same flags, the same save_checkpoint. --n-per-bin 2 keeps the generation eval
 # to seconds; it is not a measurement and is not read.
+#
+# --n-val-instances must be at least --batch-size. iterate_token_batches drops
+# the last PARTIAL batch, so 20 validation instances at batch 32 yields zero
+# batches and evaluate() divides by zero -- which is what 52422951 did, in the
+# trainer's own code and not in anything stage PAIR added. The real array runs
+# 300 and never meets this.
 python3 -m spin_gnn.sudoku_hparam_sweep \
     --n-nodes 48 --degree 5 --n-colors 4 --shuffle-adj --fall \
     --d-model 320 --nhead 4 --dim-feedforward 1024 \
@@ -77,7 +83,7 @@ python3 -m spin_gnn.sudoku_hparam_sweep \
     --determinacy-weight 1.0 --determinacy-channel \
     --pair-weight 1.0 --pair-margin 1.0 \
     --n-train-instances 320 --epochs 2 \
-    --n-val-instances 20 --batch-size 32 --n-per-bin 2 \
+    --n-val-instances 64 --batch-size 32 --n-per-bin 2 \
     --out-dir "$TMP"
 
 echo
@@ -96,7 +102,18 @@ c = json.load(open(cks[0]))
 assert float(c["pair_weight"]) == 1.0, ("pair_weight did not round-trip", c.get("pair_weight"))
 assert float(c["pair_margin"]) == 1.0, ("pair_margin did not round-trip", c.get("pair_margin"))
 assert c["determinacy_channel"] is True
-assert c["n_trainable_params"] == 614138, c["n_trainable_params"]
+# NOT 614,138 here, and the difference is the preflight's own, not the term's:
+# max_len is sized to the longest sequence in the TRAINING set plus a margin, the
+# positional table is trainable, and 320 instances do not contain the 408-token
+# trace that 240,000 do. So the count is asserted against the formula at this
+# cell's own max_len -- which still pins the channel's +320 and the absence of
+# any other new parameter, the only thing this check is for. The array asserts
+# the literal 614,138, where max_len is 512 and must be.
+d, ml = c["d_model"], c["max_len"]
+want = (630 * d + 58) + (4 * d * d + 8 * d) + d - (512 - ml) * d
+assert c["n_trainable_params"] == want, (c["n_trainable_params"], want, ml)
+print("trainable %s at max_len=%d (= 614,138 - %d unreached positions x %d)"
+      % (format(c["n_trainable_params"], ","), ml, 512 - ml, d))
 h = json.load(open(os.path.join(cell, "history.json")))
 need = ("train_pair_hinge", "train_pair_gap", "train_pair_active", "train_pair_frac")
 missing = [k for k in need if k not in h[0]]
