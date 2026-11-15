@@ -1,4 +1,4 @@
-# STATUS — spin_gnn, branch `sudoku-dd` (2026-11-14 14:05; **STAGE X SCORED AND PUBLISHED; STAGE Y CANCELLED FOR AN INIT BUG AND RESUBMITTED, 52348732 + 52348737**)
+# STATUS — spin_gnn, branch `sudoku-dd` (2026-11-14 19:45; **STAGE Y RUNNING AND HEALTHY AT EPOCH 32/50, 52348732 + 52375912; MID-RUN PREDICTION COMMITTED `3d0a3a6`**)
 
 **`FINDINGS.md` archives findings 1–54 in full** (grep it, never read it whole). **Findings 55–75 all live in `LOG.md`** — search it, never read it in full — and in the decks. This file is the handoff and is deliberately short.
 
@@ -24,7 +24,7 @@
 
 ## Running
 
-- **`52348732_[0-2]` — STAGE Y, RESUBMITTED 2026-11-14 14:03 at commit `ca7e5ab`, 3 cells, `sganguli`, 20:00:00.** Expect ~9.5 h/cell (stage X's measured 9h15–9h31; the channel adds one 48×320 matmul per position). Out: **`$SCRATCH/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b/`** — a NEW dated directory, so 52336800's abandoned cells are kept and cannot be mistaken for these. **`52348737` is chained `--dependency=afterok`** and runs Y2 (finding 68's probe unchanged), Y3 (`guard_shape`) and prints `stagey_score.score`'s verdict for all four bars into `runs/2026-11-14b_stagey_guard/stagey_verdict.json`. **Nothing to poll** — if 52348737 produces that file, the stage is scored.
+- **`52348732_[0-2]` — STAGE Y, RESUBMITTED 2026-11-14 14:03 at commit `ca7e5ab`, 3 cells, `sganguli`, 20:00:00.** Expect ~9.5 h/cell (stage X's measured 9h15–9h31; the channel adds one 48×320 matmul per position). Out: **`$SCRATCH/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b/`** — a NEW dated directory, so 52336800's abandoned cells are kept and cannot be mistaken for these. **`52375912` is chained `--dependency=afterok`** and runs Y2 (finding 68's probe unchanged), Y3 (`guard_shape`) and prints `stagey_score.score`'s verdict for all four bars into `runs/2026-11-14b_stagey_guard/stagey_verdict.json`. **Nothing to poll** — if 52375912 produces that file, the stage is scored.
 - **The probe is now `52375912`, not `52348737`** — same script, resubmitted with the same `afterok:52348732`. **Slurm spools the batch script at SUBMIT time**, so editing a queued job's file changes nothing; a fix to a chained probe means cancel and resubmit, every time.
 - **`52336800` + `52336801` were CANCELLED at 2h29 (fix attempt 1 of 3; see the new entry under Open problems).** The only change in `ca7e5ab` is `det_scale`'s initialization, ones → **zeros**. Design, four bars and the `a05847a` registration untouched — nothing was readable from a cancelled array, so no bar could have been moved after seeing a number.
 - Stage X is finished: `52285051_[0-2]` COMPLETED 0:0 (9h15–9h31 each, 50/50 epochs); `52285735` COMPLETED 0:0 in 43 s. Out: `$SCRATCH/spin_gnn/sudoku_n48_determinacy_X_2026-11-13/` and `runs/2026-11-13_stagex_guard/`.
