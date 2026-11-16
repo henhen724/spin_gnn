@@ -59,8 +59,10 @@ def read_seeds(suffix):
 
 LRN = read_seeds("")
 FIX = read_seeds("_fixed")
+FST = read_seeds("_fixed_first")          # finding 90, the corrected calibration
 print("learned-c seeds on disk:", sorted(LRN))
 print("forced-c  seeds on disk:", sorted(FIX))
+print("first-cal seeds on disk:", sorted(FST))
 assert LRN, "finding 87's artifacts are missing -- nothing to draw"
 
 SEEDS = sorted(LRN)
@@ -400,6 +402,247 @@ if FIX_ARMS:
 
 
 # ---------------------------------------------------------------------------
+# finding 89: the geometry of the injection, and what the calibration actually
+# set. CPU job 52484098, one summary for all three bodies.
+# ---------------------------------------------------------------------------
+DIRF = os.path.join(ROOT, "runs/stageloop_direction_2026-11-15",
+                    "direction_summary.json")
+DIR = json.load(open(DIRF)) if os.path.isfile(DIRF) else None
+if DIR:
+    DSEEDS = sorted(int(k) for k in DIR["per_seed"])
+    dcols = series_colors(len(DSEEDS))
+
+    def dseed(s):
+        return DIR["per_seed"][str(s)]
+
+    def dmode(s, mode):
+        return dseed(s)["modes"][mode]
+
+    # 12. THE HEADLINE OF 89: what "10% of h" actually set. The first injection
+    # at the c finding 88 solved for, as a multiple of the stream it is added to.
+    fig, ax = plt.subplots(figsize=(7.8, 4.0))
+    first = [100 * dseed(s)["c_solved"] * dmode(s, "closed")[0]["r1"]
+             for s in DSEEDS]
+    bars = [("asked for", 10.0)] + [(f"seed {s} actually got", v)
+                                    for s, v in zip(DSEEDS, first)]
+    ax.barh(range(len(bars)), [b[1] for b in bars], height=0.62,
+            color=[MUTED] + list(dcols), rasterized=True)
+    ax.set_yticks(range(len(bars)))
+    ax.set_yticklabels([b[0] for b in bars], fontsize=11)
+    ax.invert_yaxis()
+    ax.set_xscale("log")
+    for i, (_n, v) in enumerate(bars):
+        ax.text(v * 1.25, i, f"{v:,.0f}%", va="center", color=MUTED,
+                fontsize=11)
+    ax.set_xlim(right=max(first) * 6)
+    style_axes(ax, xlabel="first injection as % of $\\overline{|h|}$ "
+                          "(log scale)")
+    save(fig, "direction_first_injection.png")
+
+    # 13. WHY THE CALIBRATION MISSED: on the body's own trajectory the ratio is
+    # large at every application and RISES; the number 88 divided by was read at
+    # the last one with the loop already open, which is a different quantity.
+    fig, ax = plt.subplots(figsize=(7.8, 4.3))
+    implied = [dseed(s)["r1_implied_by_calibration"] for s in DSEEDS]
+    ax.axhspan(min(implied), max(implied), color=MUTED, alpha=0.18, zorder=0)
+    for k, s in enumerate(DSEEDS):
+        rows = dmode(s, "closed")
+        ax.plot([r["t"] for r in rows], [r["r1"] for r in rows], "o-",
+                color=dcols[k], lw=1.8, ms=5, rasterized=True)
+    ax.set_yscale("log")
+    ax.set_ylim(0.02, 30)
+    # the band sits at 0.04-0.08 and the curves run across the top, so the only
+    # clear strip is just above the band
+    ax.text(0.2, 0.115, "shaded: the ratio finding 88's calibration divided by",
+            color=MUTED, fontsize=10, va="bottom")
+    style_axes(ax, xlabel="application $t$ of the shared block",
+               ylabel="injection / $\\overline{|h|}$ at $c=1$ (log scale)")
+    label_ends(ax, 14, [(dmode(s, "closed")[-1]["r1"], f"seed {s}", dcols[k])
+                        for k, s in enumerate(DSEEDS)])
+    save(fig, "direction_ratio_vs_t.png")
+
+    # 14. the registered question: is the injection common-mode? One panel per
+    # body, three series each -- the injection and its two controls.
+    fig, axes = plt.subplots(1, 3, figsize=(10.4, 3.9), sharey=True)
+    # three DISTINCT colours, not highlight+mute: the two controls run within
+    # 0.05 of each other and cross, so two greys made them one curve with two
+    # labels -- caught in the first read-back of this page
+    cc = list(SERIES[:3])
+    for k, s in enumerate(DSEEDS):
+        a = axes[k]
+        rows = dmode(s, "closed")
+        t = [r["t"] for r in rows]
+        for j, (key, name) in enumerate((("cos_delta", "the injection"),
+                                         ("cos_dh", "the block's own update"),
+                                         ("cos_h", "the stream $h$"))):
+            a.plot(t, [r[key] for r in rows], "-", color=cc[j], lw=2.0,
+                   rasterized=True)
+        a.set_ylim(-0.05, 1.0)
+        a.set_title(f"seed {s}", fontsize=11, color=MUTED)
+        style_axes(a, xlabel="application $t$",
+                   ylabel="mean cosine between positions" if k == 0 else None)
+    # labelled once, on the right-hand panel, at each series' own right end
+    label_ends(axes[2], 14,
+               [(dmode(DSEEDS[-1], "closed")[-1][key], name, cc[j])
+                for j, (key, name) in enumerate(
+                    (("cos_delta", "the injection"),
+                     ("cos_dh", "the block's update"),
+                     ("cos_h", "the stream $h$")))])
+    save(fig, "direction_cosine.png")
+
+
+# ---------------------------------------------------------------------------
+# finding 90: the SAME forced-loop experiment with r1 read at the FIRST
+# application, i.e. the mild loop 88 meant to run. Job 52484423, arms
+# `fix0.10 L0` and `fix0.10 L1` in `..._fixed_first`.
+# ---------------------------------------------------------------------------
+if FST:
+    TSEEDS = sorted(FST)
+    tcols = series_colors(len(TSEEDS))
+    TARMS = ["Y", "pair L1", "fix0.10 L0", "fix0.10 L1"]
+    TP = {"Y": "stage Y", "pair L1": r"pair $\lambda{=}1$",
+          "fix0.10 L0": "$c$ at 10%\n" + r"$\lambda{=}0$",
+          "fix0.10 L1": "$c$ at 10%\n" + r"$\lambda{=}1$"}
+    T_L0, T_L1 = "fix0.10 L0", "fix0.10 L1"
+
+    # 15. THE HEADLINE OF 90: at a correct calibration the body is untouched.
+    # 88's forced rows are drawn as a shaded reference band rather than three
+    # more curves -- six series on one panel is past this deck's limit, and the
+    # contrast is a range, not a trajectory.
+    fig, ax = plt.subplots(figsize=(8.4, 4.3))
+    if FIX_ARMS:
+        f88 = [FIX[s_]["per_arm"][l1]["val_accuracy"] for s_ in sorted(FIX)]
+        ax.axhspan(min(f88), max(f88), color=MUTED, alpha=0.16, zorder=0)
+        ax.text(-0.14, max(f88) + 0.012,
+                "shaded: finding 88's same arm, broken calibration",
+                color=MUTED, fontsize=10, va="bottom")
+    # seeds 0 and 1 agree to 0.001 on every arm here, so an unjittered seed 0
+    # is drawn and then painted over -- two visible curves under three labels,
+    # the same failure the cosine page was caught on. A 0.05 offset on an axis
+    # whose ticks are 1.0 apart separates them without moving a point off its
+    # arm.
+    for k, s_ in enumerate(TSEEDS):
+        xs = [i + (k - 1) * 0.05 for i in range(len(TARMS))]
+        ax.plot(xs, [FST[s_]["per_arm"][a]["val_accuracy"] for a in TARMS],
+                "o-", color=tcols[k], lw=1.6, ms=7, rasterized=True)
+    ax.set_xticks(range(len(TARMS)))
+    ax.set_xticklabels([TP[a] for a in TARMS], fontsize=10)
+    ax.set_xlim(-0.2, len(TARMS) - 0.55)
+    ax.set_ylim(0.0, 0.56)
+    style_axes(ax, ylabel="held-out token accuracy")
+    label_ends(ax, len(TARMS) - 1,
+               [(FST[s_]["per_arm"][TARMS[-1]]["val_accuracy"], f"seed {s_}",
+                 tcols[k]) for k, s_ in enumerate(TSEEDS)])
+    save(fig, "first_val_accuracy.png")
+
+    # 16. the first forward pass is still damaged -- and 500 steps repair it.
+    # Same axes as `fixed_nll_trajectory.png` deliberately, so the two pages can
+    # be compared by eye; this one ends on the body's own line instead of above
+    # uniform.
+    fig, ax = plt.subplots(figsize=(8.0, 4.3))
+    for k, s_ in enumerate(TSEEDS):
+        rows = FST[s_]["history"][T_L1]
+        x = [r["step"] for r in rows] + [FST[s_]["train"]["steps"]]
+        y = ([r["train_nll"] for r in rows]
+             + [FST[s_]["per_arm"][T_L1]["final_train_nll"]])
+        ax.plot(x, y, "o-", color=tcols[k], lw=1.8, ms=5, rasterized=True)
+    ax.axhline(float(np.log(58)), color=MUTED, ls="--", lw=1.2)
+    ax.text(1500, float(np.log(58)) + 0.15,
+            r"$\log 58 = 4.06$: uniform over the vocabulary", color=MUTED,
+            fontsize=10, ha="center", va="bottom")
+    ybody = FST[TSEEDS[0]]["per_arm"]["Y"]["final_train_nll"]
+    ax.axhline(ybody, color=MUTED, ls=":", lw=1.2)
+    ax.text(1500, ybody - 0.2, "the stage Y body it started from: 1.60",
+            color=MUTED, fontsize=10, ha="center", va="top")
+    ax.set_ylim(0.0, 10.2)                       # identical to finding 88's
+    style_axes(ax, xlabel="training step", ylabel="training nll (nats)")
+    label_ends(ax, 3000, [(FST[s_]["per_arm"][T_L1]["final_train_nll"],
+                           f"seed {s_}", tcols[k])
+                          for k, s_ in enumerate(TSEEDS)])
+    save(fig, "first_nll_trajectory.png")
+
+    # 17. the frozen scalar now holds its share, which 88's never did
+    fig, ax = plt.subplots(figsize=(7.8, 4.3))
+    band = FST[TSEEDS[0]]["prediction"]["fb_rel_last_band"]
+    ax.axhspan(100 * band[0], 100 * band[1], color=MUTED, alpha=0.16, zorder=0)
+    ax.text(60, 100 * band[1] + 0.6, "registered prediction: the ratio ends in "
+            "this band", color=MUTED, fontsize=10, va="bottom")
+    for k, s_ in enumerate(TSEEDS):
+        rows = FST[s_]["history"][T_L1]
+        x = [r["step"] for r in rows] + [FST[s_]["train"]["steps"]]
+        y = [100 * r["fb_rel"] for r in rows] + [
+            100 * FST[s_]["per_arm"][T_L1]["fb_rel"]]
+        ax.plot(x, y, "o-", color=tcols[k], lw=1.8, ms=5, rasterized=True)
+    ax.set_xlim(-60, 3000 * 1.14)
+    ax.set_ylim(0, 30)
+    style_axes(ax, xlabel="training step",
+               ylabel=r"last application as % of $\overline{|h|}$")
+    label_ends(ax, 3000, [(100 * FST[s_]["per_arm"][T_L1]["fb_rel"],
+                           f"seed {s_}", tcols[k])
+                          for k, s_ in enumerate(TSEEDS)])
+    save(fig, "first_fb_rel.png")
+
+    # 18. the predicate, same two panels as finding 87's page
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 4.0), sharey=True)
+    for ax, key, ttl in zip(axes, ["pair_auroc_corrupt", "pair_auroc_placebo"],
+                            ["corrupt (a neighbour of $v$)",
+                             "placebo (not a neighbour)"]):
+        for k, s_ in enumerate(TSEEDS):
+            ax.plot(range(len(TARMS)),
+                    [FST[s_]["per_arm"][a][key] for a in TARMS],
+                    "o-", color=tcols[k], lw=1.6, ms=7, rasterized=True)
+        ax.set_xticks(range(len(TARMS)))
+        ax.set_xticklabels([TP[a] for a in TARMS], fontsize=10)
+        ax.set_title(ttl, color=MUTED, fontsize=13)
+        ax.set_xlim(-0.3, len(TARMS) - 0.7)
+        style_axes(ax)
+    axes[0].axhline(SP.PAIR_BAR, color=MUTED, ls="--", lw=1.2)
+    axes[0].set_ylim(0.35, 0.99)
+    axes[0].text(-0.2, 0.965, "dashed: P1 bar 0.65", color=MUTED, fontsize=11,
+                 va="top")
+    axes[1].axhspan(*SP.PLACEBO_BAND, color=MUTED, alpha=0.16, zorder=0)
+    axes[1].text(0.04, SP.PLACEBO_BAND[1] + 0.018, "P2 band", color=MUTED,
+                 fontsize=11)
+    fin = sorted(((FST[s_]["per_arm"][TARMS[-1]]["pair_auroc_placebo"], s_,
+                   tcols[k]) for k, s_ in enumerate(TSEEDS)), reverse=True)
+    for rank, (yv, s_, c) in enumerate(fin):
+        label_line(axes[1], len(TARMS) - 1, yv, f"seed {s_}", color=c,
+                   dy=(1 - rank) * 14)
+    axes[0].set_ylabel("matched-pair AUROC", color=MUTED, fontsize=13)
+    save(fig, "first_predicate.png")
+
+    # 19. THE LOAD-BEARING PAGE, and the only way to read it honestly: the same
+    # margin arm trained three times -- no loop, a loop the optimizer shut, and
+    # a loop forced open at a corrected 10%. The spread between the first two is
+    # the envelope the third has to beat, and it is not a bar anyone registered;
+    # it is simply what two trainings of one arm do.
+    X3 = [r"pair $\lambda{=}1$" + "\nno loop",
+          r"loop $\lambda{=}1$" + "\n$c$ learned, $10^{-3}$",
+          r"loop $\lambda{=}1$" + "\n$c$ forced, $0.02$"]
+    for key, ylab, fname, ylim in (
+            ("guard_rate", "guard rate, conditional on clean emits $v$",
+             "first_guard_three_trainings.png", None),
+            ("total_flips", "cases of 1,000 where one edit flips $v$",
+             "first_flips_three_trainings.png", (0, 210))):
+        fig, ax = plt.subplots(figsize=(7.8, 4.3))
+        for k, s_ in enumerate(TSEEDS):
+            y = [FST[s_]["per_arm"]["pair L1"][key],
+                 LRN[s_]["per_arm"]["loop L1"][key],
+                 FST[s_]["per_arm"][T_L1][key]]
+            ax.plot(range(3), y, "o-", color=tcols[k], lw=2.0, ms=8,
+                    rasterized=True)
+        ax.set_xticks(range(3))
+        ax.set_xticklabels(X3, fontsize=10)
+        ax.set_xlim(-0.2, 2.45)
+        if ylim:
+            ax.set_ylim(*ylim)
+        style_axes(ax, ylabel=ylab)
+        label_ends(ax, 2, [(FST[s_]["per_arm"][T_L1][key], f"seed {s_}",
+                            tcols[k]) for k, s_ in enumerate(TSEEDS)])
+        save(fig, fname)
+
+
+# ---------------------------------------------------------------------------
 # check_claims: every number the deck's prose states, asserted against the JSON
 # ---------------------------------------------------------------------------
 def check_claims():
@@ -510,9 +753,193 @@ def check_claims():
         chk("seed 0's end-of-training ratio",
             100 * FIX[0]["per_arm"][a10_1]["fb_rel"], 377.0, 0.5)
 
+    # ---- finding 89, the geometry job ------------------------------------
+    if DIR:
+        cl = {s: [r["cos_delta"] for r in dmode(s, "closed")] for s in [0, 1, 2]}
+        dh = {s: [r["cos_dh"] for r in dmode(s, "closed")] for s in [0, 1, 2]}
+        ch = {s: [r["cos_h"] for r in dmode(s, "closed")] for s in [0, 1, 2]}
+        for s, (a_, b_) in zip([0, 1, 2], [(0.70, 0.82), (0.65, 0.83),
+                                           (0.37, 0.61)]):
+            chk(f"cos(delta) min seed {s}", min(cl[s]), a_, 0.005)
+            chk(f"cos(delta) max seed {s}", max(cl[s]), b_, 0.005)
+        # the two controls, quoted as one range across all seeds and all t
+        chk("cos(dh) min", min(min(v) for v in dh.values()), 0.06, 0.005)
+        chk("cos(dh) max", max(max(v) for v in dh.values()), 0.30, 0.005)
+        chk("cos(h) min", min(min(v) for v in ch.values()), 0.06, 0.005)
+        chk("cos(h) max", max(max(v) for v in ch.values()), 0.16, 0.005)
+        # the gap the deck reports is the PER-APPLICATION minimum, which is the
+        # statistic the registered prediction named ("at every application")
+        for s, g_ in zip([0, 1, 2], [0.50, 0.53, 0.15]):
+            chk(f"cos gap min seed {s}",
+                min(a - b for a, b in zip(cl[s], dh[s])), g_, 0.005)
+        for s in [0, 1, 2]:
+            assert min(a - b for a, b in zip(cl[s], dh[s])) > DIR[
+                "prediction"]["falsifier_cos_gap_below"], s
+        ok.append("the registered falsifier did not fire on any seed")
+        for s, r_ in zip([0, 1, 2], [4.66, 3.94, 4.90]):
+            chk(f"first injection r1 seed {s}", dmode(s, "closed")[0]["r1"],
+                r_, 0.005)
+        for s, c_ in zip([0, 1, 2], [2.57, 1.29, 2.68]):
+            chk(f"89's read of 88's c seed {s}", dseed(s)["c_solved"], c_,
+                0.005)
+        for s, p_ in zip([0, 1, 2], [1197, 508, 1315]):
+            chk(f"first injection % seed {s}",
+                100 * dseed(s)["c_solved"] * dmode(s, "closed")[0]["r1"], p_,
+                1.0)
+        for s, r_ in zip([0, 1, 2], [0.0402, 0.0785, 0.0384]):
+            chk(f"_fb_rel at c=1 seed {s}", dseed(s)["r1_unit_last"], r_,
+                5e-5)
+        for s, d_ in zip([0, 1, 2], [3.5, 1.2, 2.9]):
+            chk(f"reproduction of 88's c seed {s}",
+                100 * dseed(s)["r1_rel_diff"], d_, 0.05)
+        allr = [r["r1"] for s in [0, 1, 2] for r in dmode(s, "closed")]
+        chk("ratio range low", min(allr), 3.94, 0.005)
+        chk("ratio range high", max(allr), 8.16, 0.005)
+        for s in [0, 1, 2]:          # larger at the end than at the start, 3/3
+            assert dmode(s, "closed")[-1]["r1"] > dmode(s, "closed")[0]["r1"], s
+        ok.append("the ratio is larger at t=14 than at t=0 on 3/3")
+        chk("open-mode cos(dh) at t=14", dmode(0, "open")[-1]["cos_dh"], 0.99,
+            0.005)
+        chk("open-mode cos(h) at t=14", dmode(0, "open")[-1]["cos_h"], 0.95,
+            0.005)
+
+    # ---- finding 90, the corrected calibration ---------------------------
+    if FST:
+        assert sorted(FST) == [0, 1, 2], sorted(FST)
+        A1, A0 = "fix0.10 L1", "fix0.10 L0"
+        for s, c_ in zip([0, 1, 2], [0.021342, 0.025401, 0.020268]):
+            chk(f"90 c seed {s}", FST[s]["per_arm"][A1]["loop_scale"], c_,
+                5e-7)
+        # the body survives: the registered reading, and the first thing read
+        for s, v_ in zip([0, 1, 2], [0.4749, 0.4749, 0.4498]):
+            chk(f"90 L1 val seed {s}", FST[s]["per_arm"][A1]["val_accuracy"],
+                v_, 5e-5)
+        for s, v_ in zip([0, 1, 2], [0.4828, 0.4821, 0.4564]):
+            chk(f"90 Y val seed {s}", FST[s]["per_arm"]["Y"]["val_accuracy"],
+                v_, 5e-5)
+        for s in [0, 1, 2]:
+            d = abs(FST[s]["per_arm"][A1]["val_accuracy"]
+                    - FST[s]["per_arm"]["Y"]["val_accuracy"])
+            assert d <= 0.008, (s, d)
+            assert FST[s]["per_arm"][A1]["val_accuracy"] > FST[s][
+                "prediction"]["break_val_acc_below"], s
+            assert FST[s]["per_arm"][A1]["final_train_nll"] < FST[s][
+                "prediction"]["nll_below"], s
+        ok.append("90: val within 0.008 of Y, neither falsifier fires, 3/3")
+        for s, n_ in zip([0, 1, 2], [5.2816, 4.9908, 5.8986]):
+            chk(f"90 step-0 nll seed {s}",
+                FST[s]["history"][A1][0]["train_nll"], n_, 0.005)
+        for s, n_ in zip([0, 1, 2], [1.6887, 1.6871, 1.8617]):
+            chk(f"90 step-500 nll seed {s}",
+                FST[s]["history"][A1][1]["train_nll"], n_, 0.005)
+        assert [r["step"] for r in FST[0]["history"][A1]][1] == 500
+        for s, n_ in zip([0, 1, 2], [1.6851, 1.6737, 1.7132]):
+            chk(f"90 final nll seed {s}",
+                FST[s]["per_arm"][A1]["final_train_nll"], n_, 0.005)
+        # the ratio stayed where it was put, which 88's never did
+        for s, f_ in zip([0, 1, 2], [5.1, 7.4, 5.0]):
+            chk(f"90 end fb% seed {s}", 100 * FST[s]["per_arm"][A1]["fb_rel"],
+                f_, 0.05)
+        for s in [0, 1, 2]:
+            lo_, hi_ = FST[s]["prediction"]["fb_rel_last_band"]
+            assert lo_ <= FST[s]["per_arm"][A1]["fb_rel"] <= hi_, s
+        ok.append("90: the last application's ratio ends inside 5-25%, 3/3")
+        # the predicate
+        for s, a_ in zip([0, 1, 2], [0.8710, 0.8680, 0.8680]):
+            chk(f"90 P1 seed {s}", FST[s]["per_arm"][A1]["pair_auroc_corrupt"],
+                a_, 5e-5)
+        for s, a_ in zip([0, 1, 2], [0.4430, 0.4420, 0.4410]):
+            chk(f"90 P2 seed {s}", FST[s]["per_arm"][A1]["pair_auroc_placebo"],
+                a_, 5e-5)
+        for s, a_ in zip([0, 1, 2], [0.9210, 0.9163, 0.9132]):
+            chk(f"90 pooled seed {s}", FST[s]["per_arm"][A1]["pooled_auroc"],
+                a_, 5e-5)
+        for s in [0, 1, 2]:
+            p = FST[s]["per_arm"][A1]
+            assert p["pair_auroc_corrupt"] >= SP.PAIR_BAR, s
+            assert SP.PLACEBO_BAND[0] < p["pair_auroc_placebo"] < SP.PLACEBO_BAND[1], s
+            assert p["pooled_auroc"] >= SP.POOLED_BAR, s
+        ok.append("90: P1, P2 and P3 on 3/3")
+        # the denominator did NOT collapse this time
+        for s, d_ in zip([0, 1, 2], [481, 480, 451]):
+            chk(f"90 L1 denom seed {s}", FST[s]["per_arm"][A1]["guard_denom"],
+                d_, 0)
+        for s, d_ in zip([0, 1, 2], [506, 502, 429]):
+            chk(f"90 pair denom seed {s}",
+                FST[s]["per_arm"]["pair L1"]["guard_denom"], d_, 0)
+        # the load-bearing column, and the envelope it has to beat
+        for s, g_ in zip([0, 1, 2], [0.1622, 0.1646, 0.1530]):
+            chk(f"90 L1 guard seed {s}", FST[s]["per_arm"][A1]["guard_rate"],
+                g_, 5e-5)
+        for s, d_ in zip([0, 1, 2], [0.0535, -0.0426, -0.0102]):
+            chk(f"90 guard delta seed {s}",
+                FST[s]["per_arm"][A1]["guard_rate"]
+                - FST[s]["per_arm"]["pair L1"]["guard_rate"], d_, 5e-5)
+        beats = sum(FST[s]["per_arm"][A1]["guard_rate"]
+                    >= FST[s]["per_arm"]["pair L1"]["guard_rate"]
+                    for s in [0, 1, 2])
+        assert beats == 1, beats          # the deck says 1 of 3; needed 2
+        ok.append("90: the guard beats its own pair row on exactly 1 of 3")
+        for s, n_ in zip([0, 1, 2], [166, 184, 157]):
+            chk(f"90 L1 flips seed {s}", FST[s]["per_arm"][A1]["total_flips"],
+                n_, 0)
+        under = sum(FST[s]["per_arm"][A1]["total_flips"]
+                    <= FST[s]["per_arm"]["pair L1"]["total_flips"]
+                    for s in [0, 1, 2])
+        assert under == 1, under
+        ok.append("90: churn at or below its own pair row on exactly 1 of 3")
+        # no seed has BOTH a higher guard and no more churn -- the overturn
+        # condition the sbatch registered, checked rather than asserted away
+        both = sum((FST[s]["per_arm"][A1]["guard_rate"]
+                    > FST[s]["per_arm"]["pair L1"]["guard_rate"])
+                   and (FST[s]["per_arm"][A1]["total_flips"]
+                        <= FST[s]["per_arm"]["pair L1"]["total_flips"])
+                   for s in [0, 1, 2])
+        assert both == 0, both
+        ok.append("90: the overturn condition is met on 0 of 3")
+        # the same column in cases rather than rates: rate x denom is an
+        # integer count of withheld emissions and the deck states it as one
+        for s, (a_, p_) in zip([0, 1, 2], [(78, 55), (79, 104), (69, 70)]):
+            for arm, want in ((A1, a_), ("pair L1", p_)):
+                r = FST[s]["per_arm"][arm]
+                chk(f"withheld count {arm} seed {s}",
+                    round(r["guard_rate"] * r["guard_denom"]), want, 0)
+        # the placebo floor, reported but NOT applied: whether P4 should be the
+        # raw conditional or this excess is hshunt's call, not this script's
+        for s, g_ in zip([0, 1, 2], [0.0936, 0.0938, 0.1153]):
+            chk(f"90 placebo guard seed {s}",
+                FST[s]["per_arm"][A1]["placebo_guard_rate"], g_, 5e-5)
+        for s, g_ in zip([0, 1, 2], [0.0672, 0.0777, 0.1026]):
+            chk(f"pair placebo guard seed {s}",
+                FST[s]["per_arm"]["pair L1"]["placebo_guard_rate"], g_, 5e-5)
+        # the no-margin control, and 87's closed-loop control for its churn
+        for s, g_ in zip([0, 1, 2], [0.0016, 0.0032, 0.0035]):
+            chk(f"90 L0 guard seed {s}", FST[s]["per_arm"][A0]["guard_rate"],
+                g_, 5e-5)
+        for s, n_ in zip([0, 1, 2], [9, 10, 10]):
+            chk(f"90 L0 flips seed {s}", FST[s]["per_arm"][A0]["total_flips"],
+                n_, 0)
+        for s, n_ in zip([0, 1, 2], [7, 5, 11]):
+            chk(f"87 L0 flips seed {s}", LRN[s]["per_arm"]["loop L0"]
+                ["total_flips"], n_, 0)
+        for s, n_ in zip([0, 1, 2], [4, 1, 7]):
+            chk(f"Y flips again seed {s}", FST[s]["per_arm"]["Y"]
+                ["total_flips"], n_, 0)
+        # the guard spread across three trainings of the same margin arm, which
+        # is the number the deck uses to say the movement is not a movement
+        for s, (a_, b_) in zip([0, 1, 2], [(0.1072, 0.1622), (0.1646, 0.2211),
+                                           (0.1416, 0.1632)]):
+            vals = [FST[s]["per_arm"]["pair L1"]["guard_rate"],
+                    LRN[s]["per_arm"]["loop L1"]["guard_rate"],
+                    FST[s]["per_arm"][A1]["guard_rate"]]
+            chk(f"guard spread low seed {s}", min(vals), a_, 5e-5)
+            chk(f"guard spread high seed {s}", max(vals), b_, 5e-5)
+
     print(f"\ncheck_claims: {len(ok)} assertions pass")
     print("forced-arm pages:", "built" if FIX_ARMS else "SKIPPED (52478871 "
           "has not landed; the deck must not state its numbers)")
+    print("finding 89 pages:", "built" if DIR else "SKIPPED")
+    print("finding 90 pages:", "built" if FST else "SKIPPED")
     return ok
 
 
