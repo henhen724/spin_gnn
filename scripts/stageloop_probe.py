@@ -180,6 +180,71 @@ PREDICTION = {
     "break_val_acc_below": 0.30,
 }
 
+# ---------------------------------------------------------------------------
+# THE FORCED LOOP (`LOOP_FIX=0.10,0.30`), AND THE SECOND REGISTERED HYPOTHESIS,
+# WRITTEN 2026-11-15 AFTER FINDING 87 AND BEFORE ANY FORCED RUN EXISTS.
+#
+# Finding 87 came back a null of a particular kind: `loop L1` ends at |c| =
+# 0.0007 / 0.0006 / 0.0002 on the three seeds, with the feedback at 0.5% / 0.7% /
+# 0.4% of the residual stream, and every other column lands on stage PAIR's
+# published row inside the noise 84-86 measured (corrupt 0.8720 / 0.8710 / 0.8680
+# against 0.8710 / 0.8620 / 0.8710; guard 0.1072 / 0.2211 / 0.1416 against 0.1087
+# / 0.2072 / 0.1632). The loop was available, differentiable and free, and three
+# independent trainings all left it shut.
+#
+# That is a measurement about the OBJECTIVE, not about the architecture, and the
+# two are worth separating. Adam moves a scalar by ~lr per step regardless of
+# gradient size, so 3,000 steps could have carried c to 3.0; |c| staying at 1e-3
+# means the sign of dL/dc kept flipping. The delta is exactly LINEAR in c, so the
+# useful range is set by the body: at ||s|| = 7.05 the gate is large, and one
+# Adam step of 1e-3 is already ~1% of h. The arm explored that range and declined
+# it. What it cannot say is what a body that MUST read its own determinacy
+# estimate would do -- and that is the architectural question.
+#
+# `LOOP_FIX` sets c to a measured constant and FREEZES it. The constant is not
+# guessed: with c = 1 the delta's size is measured on one batch of this very
+# body, and because the delta is linear in c, `c = target / r1` puts the feedback
+# at exactly `target` of the residual stream at the warm start. So `LOOP_FIX=0.10`
+# means "ten per cent of h, on this body, by measurement". A frozen scalar is not
+# trainable, so the count returns to the registered 614,138 exactly.
+#
+# THE PREDICTIONS, registered here and read back at the end:
+#   * THE BODY SURVIVES THE MILD SETTING. `fix0.10 L1` ends within 0.02 of this
+#     job's own Y validation token accuracy; `fix0.30 L1` within 0.05. A bigger
+#     drop at 0.30 means that setting is too strong to read as anything but
+#     damage, and it is reported as damage.
+#   * THE PREDICATE STILL ARRIVES. `fix0.10 L1` clears P1 (>= 0.65) and stays in
+#     P2's (0.40, 0.60) band on 3/3. The margin is unchanged; only its reach is.
+#   * THE LOAD-BEARING ONE, same claim as 87's and now with the loop actually
+#     open: `fix0.10 L1`'s raw guard is at least its own `pair L1` row on >= 2 of
+#     3 seeds, at flips no higher than that row's.
+#   * THE LOOP IS A NOISE CHANNEL UNTIL SHOWN OTHERWISE -- and this is the
+#     reading I expect to win, because it explains 87. A changed hint changes g
+#     at many nodes at once, so an open loop propagates that change into the
+#     computation: `fix0.10 L0`, which has NO margin at all, should still show
+#     more flips than stage Y's 4 / 1 / 7 on 3/3. If it does, the optimizer's
+#     refusal in 87 was not indifference -- it was avoidance, and the honest
+#     reading of the whole stage-LOOP arm is that the feedback is a noise channel
+#     rather than a control channel.
+#
+# WHAT WOULD OVERTURN THAT: `fix0.10 L1` showing a HIGHER guard at LOWER churn
+# than `pair L1` on >= 2 of 3. That is the result this whole line has been
+# looking for, and it is exactly what 87's null did not deliver.
+#
+# Nothing registered changes here either, and no verdict is printed.
+FIX_TARGETS = tuple(float(t) for t in
+                    os.environ.get("LOOP_FIX", "").split(",") if t.strip())
+assert all(0 < t < 1 for t in FIX_TARGETS), FIX_TARGETS
+if FIX_TARGETS:
+    OUT_DIR += "_fixed"
+    PREDICTION = {
+        **PREDICTION,
+        "fix_targets": list(FIX_TARGETS),
+        "val_acc_tol_vs_Y": 0.02,        # at the mild setting
+        "val_acc_tol_strong": 0.05,      # at 0.30, where damage is expected
+        "l0_flips_above_Y": True,        # the noise-channel reading
+    }
+
 # A SMOKE RUN IS NOT A MEASUREMENT. `LOOP_SMOKE=1` shrinks every size so the
 # path runs end to end in ~2 minutes and a crash costs that instead of a GPU
 # hour. Every number it prints is wrong on purpose; it writes to its own
@@ -287,12 +352,40 @@ print(f"validation set={len(val_ds):,}", flush=True)
 # ---------------------------------------------------------------------------
 # the two trained arms
 # ---------------------------------------------------------------------------
-def train_arm(pair_w, label):
+def calibrate_c(model, target):
+    """Set c so the feedback is `target` of the residual stream, and FREEZE it.
+
+    The delta is exactly linear in c, so one forward at c = 1 on one batch of
+    this body measures the whole scaling: c = target / r1. Guessing the constant
+    from another body is what findings 76 and 79 are about -- at ||s|| = 7.05 a c
+    of 0.1 is a different perturbation from a c of 0.1 at ||s|| = 2.
+    """
+    batch = next(iter(iterate_token_batches(ds, idx, BATCH, shuffle=False,
+                                            collate=make_token_batch_pair)))
+    x, _y, mask = (t.to(dev) for t in batch[:3])
+    with torch.no_grad():
+        model.loop_scale.fill_(1.0)
+        model(x, valid_mask=mask)
+        r1 = float(model._fb_rel)
+        c = target / r1
+        model.loop_scale.fill_(c)
+    model.loop_scale.requires_grad_(False)
+    n = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n == SP.N_TRAINABLE, "a frozen c must leave the registered count: %s" % n
+    print(f"  calibrated: mean|delta|/mean|h| = {r1:.4f} at c=1, so c = "
+          f"{c:.6f} for a target of {target:.2f}  (c is FROZEN)", flush=True)
+    return c
+
+
+def train_arm(pair_w, label, fix_target=None):
     """3,000 steps from stage Y with the loop on. Same loop as the pairprobe."""
-    print(f"\n=== {label}: lambda={pair_w:g}, feedback ON " + "=" * 24,
-          flush=True)
+    print(f"\n=== {label}: lambda={pair_w:g}, feedback ON"
+          + (f", c FIXED at {fix_target:.2f} of h " if fix_target else " ")
+          + "=" * 20, flush=True)
     torch.manual_seed(SEED)
     model = build(True, y_state)
+    if fix_target is not None:
+        calibrate_c(model, fix_target)
     opt = torch.optim.Adam([p for p in model.parameters() if p.requires_grad],
                            lr=LR)
     rng = np.random.default_rng(SEED)
@@ -363,12 +456,25 @@ def train_arm(pair_w, label):
                    "lambda": pair_w, "loop_scale": c,
                    "fb_rel": float(model._fb_rel),
                    "det_scale_norm": float(model.det_scale.norm()),
-                   "history": hist}
+                   "fix_target": fix_target, "history": hist}
 
+
+# The learned-c arms are finding 87 and are NOT re-run when a forced arm is
+# asked for: `LOOP_FIX` writes to its own directory and leaves 87's artifact
+# alone. The mild target carries the lambda=0 control, because the noise-channel
+# reading is a claim about an open loop with no margin at all.
+if FIX_TARGETS:
+    T0 = FIX_TARGETS[0]
+    TO_TRAIN = ([(0.0, f"fix{T0:.2f} L0", T0)]
+                + [(1.0, f"fix{t:.2f} L1", t) for t in FIX_TARGETS])
+else:
+    TO_TRAIN = [(0.0, "loop L0", None), (1.0, "loop L1", None)]
+L0_LABEL = TO_TRAIN[0][1]
+L1_LABEL = TO_TRAIN[1][1]
 
 models, train = {}, {}
-for w, label in [(0.0, "loop L0"), (1.0, "loop L1")]:
-    m, tr = train_arm(w, label)
+for w, label, fx in TO_TRAIN:
+    m, tr = train_arm(w, label, fx)
     m.eval()
     models[label], train[label] = m, tr
 
@@ -380,7 +486,7 @@ with open(os.path.join(CKPT_DIR, "history.json")) as fh:
 train["Y"] = {"final_train_nll": y_nll, "mean_train_nll_last250": y_nll,
               "final_hinge": float("nan"), "final_sat": float("nan"),
               "lambda": None, "loop_scale": float("nan"),
-              "fb_rel": float("nan"),
+              "fb_rel": float("nan"), "fix_target": None,
               "det_scale_norm": float(models["Y"].det_scale.norm())}
 models["pair L1"] = build(False, pair_state)
 models["pair L1"].eval()
@@ -390,9 +496,9 @@ train["pair L1"] = {
     "final_hinge": PAIR_PUBLISHED["final_hinge"],
     "final_sat": PAIR_PUBLISHED["final_sat"], "lambda": 1.0,
     "loop_scale": float("nan"), "fb_rel": float("nan"),
-    "det_scale_norm": float(models["pair L1"].det_scale.norm())}
+    "fix_target": None, "det_scale_norm": float(models["pair L1"].det_scale.norm())}
 
-ARMS = ("Y", "pair L1", "loop L0", "loop L1")
+ARMS = ("Y", "pair L1") + tuple(label for _w, label, _f in TO_TRAIN)
 
 # ---------------------------------------------------------------------------
 # VALIDATION TOKEN ACCURACY FIRST. It never censors.
@@ -408,7 +514,7 @@ for label in ARMS:
     models[label].eval()
 
 # ---------------------------------------------------------------------------
-# one case list, all four rows
+# one case list, every row
 # ---------------------------------------------------------------------------
 print(f"\nbuilding the eval case list at seed_start {EVAL_SEED_START:,}",
       flush=True)
@@ -512,11 +618,11 @@ print(f"\nwrote {OUT_DIR}/loop_summary.json")
 # the table, and the hypothesis read against it
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 94)
-print(f"{'arm':<9} {'val acc':>8} {'corrupt':>8} {'placebo':>8} {'pooled':>7} "
+print(f"{'arm':<11} {'val acc':>8} {'corrupt':>8} {'placebo':>8} {'pooled':>7} "
       f"{'guard':>7} {'denom':>6} {'flips':>6} {'c':>8} {'nll':>8}")
 for label in ARMS:
     p = per_arm[label]
-    print(f"{label:<9} {p['val_accuracy']:8.4f} {p['pair_auroc_corrupt']:8.4f} "
+    print(f"{label:<11} {p['val_accuracy']:8.4f} {p['pair_auroc_corrupt']:8.4f} "
           f"{p['pair_auroc_placebo']:8.4f} {p['pooled_auroc']:7.4f} "
           f"{p['guard_rate']:7.4f} {p['guard_denom']:6d} "
           f"{p['total_flips']:6d} {p['loop_scale']:+8.4f} "
@@ -527,16 +633,24 @@ print(f"\nbars, imported and read rather than applied: P1 corrupt >= "
 print(f"P3 pooled >= {SP.POOLED_BAR}, P4 guard >= {SP.GUARD_BAR}. One seed per "
       f"job, so scoring needs the assembly step.")
 
-l1, l0, pr_ = per_arm["loop L1"], per_arm["loop L0"], per_arm["pair L1"]
+l1, l0, pr_ = per_arm[L1_LABEL], per_arm[L0_LABEL], per_arm["pair L1"]
 lo, hi = PREDICTION["loop_scale_abs"]
 print("\nthe registered predictions, read against the table:")
-print(f"  1. the loop opens: |c| = {abs(l1['loop_scale']):.4f} on loop L1 "
-      f"(predicted {lo}-{hi}), {abs(l0['loop_scale']):.4f} on loop L0; "
-      f"feedback magnitude mean|delta|/mean|h| = {l1['fb_rel']:.4f}")
+if FIX_TARGETS:
+    print(f"  1. c is FIXED, not learned: {l1['loop_scale']:+.6f} on {L1_LABEL} "
+          f"for a target of {l1['fix_target']:.2f} of the residual stream, "
+          f"measured feedback {l1['fb_rel']:.4f}. Finding 87's LEARNED c ended "
+          f"at 0.0007 / 0.0006 / 0.0002, which is what this arm exists to "
+          f"bypass.")
+else:
+    print(f"  1. the loop opens: |c| = {abs(l1['loop_scale']):.4f} on "
+          f"{L1_LABEL} (predicted {lo}-{hi}), "
+          f"{abs(l0['loop_scale']):.4f} on {L0_LABEL}; feedback magnitude "
+          f"mean|delta|/mean|h| = {l1['fb_rel']:.4f}")
 print(f"  2. the predicate survives: corrupt {l1['pair_auroc_corrupt']:.4f} "
       f"(P1 {SP.PAIR_BAR}), placebo {l1['pair_auroc_placebo']:.4f} "
       f"(P2 {list(SP.PLACEBO_BAND)})")
-print(f"  3. THE LOAD-BEARING ONE: loop L1 guard {l1['guard_rate']:.4f} of "
+print(f"  3. THE LOAD-BEARING ONE: {L1_LABEL} guard {l1['guard_rate']:.4f} of "
       f"{l1['guard_denom']} vs pair L1 {pr_['guard_rate']:.4f} of "
       f"{pr_['guard_denom']} -- "
       f"{'HIGHER' if l1['guard_rate'] >= pr_['guard_rate'] else 'LOWER'} "
@@ -545,7 +659,7 @@ print(f"  4. and not by being louder: flips {l1['total_flips']} vs pair L1's "
       f"{pr_['total_flips']} -- "
       f"{'at most' if l1['total_flips'] <= pr_['total_flips'] else 'MORE THAN'}"
       f" the control")
-print(f"  5. the loop alone buys no guard: loop L0 guard "
+print(f"  5. the loop alone buys no guard: {L0_LABEL} guard "
       f"{l0['guard_rate']:.4f} of {l0['guard_denom']} "
       f"({'below' if l0['guard_rate'] < SP.GUARD_BAR else 'AT OR ABOVE'} "
       f"{SP.GUARD_BAR})")
@@ -555,7 +669,29 @@ print(f"  6. it does not break the solver: val accuracy {l0['val_accuracy']:.4f}
       f" / {l1['val_accuracy']:.4f} against Y's "
       f"{per_arm['Y']['val_accuracy']:.4f} (|d| {dv0:.4f} / {dv1:.4f}, "
       f"predicted <= {PREDICTION['val_acc_tol_vs_Y']})")
-broken = [lab for lab in ("loop L0", "loop L1")
+
+# the two read-backs that exist only for the forced arm. Both are claims about
+# an OPEN loop, which finding 87 never had, so neither has a learned-c analogue.
+if FIX_TARGETS:
+    tol_s = PREDICTION["val_acc_tol_strong"]
+    for _w, lab, fx in TO_TRAIN[2:]:
+        dv = abs(per_arm[lab]["val_accuracy"] - per_arm["Y"]["val_accuracy"])
+        print(f"  6b. the STRONG setting is allowed to hurt, up to {tol_s}: "
+              f"{lab} val accuracy {per_arm[lab]['val_accuracy']:.4f}, |d| "
+              f"{dv:.4f} vs Y -- "
+              f"{'within' if dv <= tol_s else 'BEYOND'} it"
+              f"{'' if dv <= tol_s else '; read that row as damage, not as a guard'}")
+    # the noise-channel reading, and the one I expect to win. Stage Y's flips on
+    # the three seeds of finding 87 were 4 / 1 / 7; this job measures its own Y
+    # row on its own cases, so BOTH are printed and the in-job one is the test.
+    yf = per_arm["Y"]["total_flips"]
+    print(f"  7. THE NOISE-CHANNEL READING: {L0_LABEL} has no margin at all, and "
+          f"flips\n      {l0['total_flips']} of {EVAL_N_CASES} against "
+          f"this job's own Y row at {yf} (finding 87's stage Y: 4 / 1 / 7) -- "
+          f"{'MORE' if l0['total_flips'] > yf else 'not more'} than Y. "
+          f"{'An open loop moves the computation even with nothing asking it to, so 87 was avoidance rather than indifference.' if l0['total_flips'] > yf else 'The open loop alone does not churn, so the feedback is not a noise channel on this seed.'}")
+
+broken = [lab for _w, lab, _f in TO_TRAIN
           if per_arm[lab]["final_train_nll"] > PREDICTION["break_nll_above"]
           or per_arm[lab]["val_accuracy"] < PREDICTION["break_val_acc_below"]]
 print(f"  the break falsifier (train nll > {PREDICTION['break_nll_above']} or "
