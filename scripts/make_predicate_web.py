@@ -440,6 +440,163 @@ if TRAJ:
 
 
 # ---------------------------------------------------------------------------
+# 10-12. the same trajectory on all three bodies: 52466922_[1-2], finding 85
+# ---------------------------------------------------------------------------
+# The identical probe at TRAJ_SEED=1 and 2, with its predictions committed to git
+# (`stagepair_trajectory.PREDICTION`) before it was submitted. Two of those
+# predictions fail on seed 2 -- including the load-bearing one -- so these pages
+# CORRECT finding 84 rather than extend it, and the figures are built to show the
+# disagreement rather than the average.
+TRAJ_ALL = {}
+for _s in (0, 1, 2):
+    _f = os.path.join(ROOT, "runs/stagepair_trajectory_2026-11-15"
+                      + ("" if _s == 0 else "_s%d" % _s),
+                      "trajectory_summary.json")
+    if os.path.isfile(_f):
+        TRAJ_ALL[_s] = json.load(open(_f))["per_step"]
+print("trajectory seeds on disk:", sorted(TRAJ_ALL))
+
+# The measured run-to-run noise on a guard RATE, from finding 84: the same code,
+# recipe and cases moved seed 0's raw guard 0.1087 -> 0.1399. It is drawn on the
+# crossing figure because seed 2's crossing guard sits 0.0056 above the bar, which
+# is a fifth of that noise -- a figure that showed the point without the bar would
+# be claiming a resolution the instrument does not have.
+GUARD_NOISE = 0.03
+
+
+def _crossing(rows):
+    """The first snapshot where corrupt clears P1, with its whole row."""
+    return next((r for r in rows if r["pair_auroc_corrupt"] >= SP.PAIR_BAR), None)
+
+
+if len(TRAJ_ALL) == 3:
+    _seeds = sorted(TRAJ_ALL)
+    _cross = {s: _crossing(TRAJ_ALL[s]) for s in _seeds}
+    assert all(c is not None for c in _cross.values()), "a seed never crossed P1"
+
+    # ---- 10. the predicate's arrival, faceted --------------------------------
+    # Six curves on one axis would need a legend and the three corrupt endpoints
+    # land within 0.007 of each other (0.8720 / 0.8680 / 0.8650), so right-end
+    # labels would overlap illegibly. Small multiples instead, per the deck rule.
+    fig, axes = plt.subplots(1, 3, figsize=(11.2, 3.7), sharex=True, sharey=True)
+    for ax, s in zip(axes, _seeds):
+        rows = TRAJ_ALL[s]
+        st = [r["step"] for r in rows]
+        ax.axhspan(*SP.PLACEBO_BAND, color=MUTED, alpha=0.12, lw=0)
+        ax.axhline(SP.PAIR_BAR, color=MUTED, lw=1.1, ls="--")
+        ax.plot(st, [r["pair_auroc_corrupt"] for r in rows], "o-",
+                color=SERIES[0], lw=1.8, ms=4)
+        ax.plot(st, [r["pair_auroc_placebo"] for r in rows], "o-",
+                color=SERIES[1], lw=1.8, ms=4)
+        ax.plot([_cross[s]["step"]], [_cross[s]["pair_auroc_corrupt"]], "o",
+                color=SERIES[0], ms=11, mfc="none", mew=2)
+        ax.set_title("seed %d" % s, fontsize=10)
+        ax.set_xlabel("steps from stage Y")
+        style_axes(ax)
+    # One label per colour, on the LEFT panel only: repeating it three times is
+    # the clutter small multiples exist to avoid.
+    axes[0].annotate("broken prompt", (3000, TRAJ_ALL[0][-1]["pair_auroc_corrupt"]),
+                     textcoords="offset points", xytext=(-4, -12), ha="right",
+                     color=SERIES[0], fontsize=9)
+    axes[0].annotate("placebo", (3000, TRAJ_ALL[0][-1]["pair_auroc_placebo"]),
+                     textcoords="offset points", xytext=(-4, 6), ha="right",
+                     color=SERIES[1], fontsize=9)
+    # The circle and the two reference marks have to be NAMED or the reader sees
+    # an unexplained ring, an unexplained dashed line and an unexplained grey
+    # band -- the first PNG pass on this figure had exactly those three holes.
+    # The ring note goes in the left panel, where the gap between 0.65 and the
+    # curve is widest; the bar and band notes go in the right panel, whose
+    # mid-height is empty in all three because the curves sit at 0.86 and 0.44.
+    axes[0].annotate("first snapshot\npast the bar", (125, 0.7480),
+                     textcoords="offset points", xytext=(34, -26), ha="left",
+                     color=SERIES[0], fontsize=9,
+                     arrowprops=dict(arrowstyle="-", color=SERIES[0], lw=0.7,
+                                     shrinkA=2, shrinkB=9))
+    axes[2].annotate("P1 bar 0.65", (1600, SP.PAIR_BAR),
+                     textcoords="offset points", xytext=(0, -7), ha="center",
+                     va="top", color=MUTED, fontsize=9)
+    axes[2].annotate("P2 band", (1600, SP.PLACEBO_BAND[1]),
+                     textcoords="offset points", xytext=(0, -7), ha="center",
+                     va="top", color=MUTED, fontsize=9)
+    axes[0].set_ylabel("matched-pair AUROC")
+    axes[0].set_ylim(0.38, 0.95)
+    save(fig, "traj_seeds_auroc.png")
+
+    # ---- 11. the guard where the predicate arrives ---------------------------
+    # THE finding's figure: three points, one bar, and the instrument's own noise.
+    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    gx = [_cross[s]["guard_rate"] for s in _seeds]
+    cols = series_colors(len(_seeds), highlight=_seeds.index(2))
+    ax.axhline(SP.GUARD_BAR, color=MUTED, lw=1.2, ls="--")
+    # Asymmetric on purpose: a rate cannot go below zero, so the lower whisker is
+    # clipped at 0 by construction rather than hidden by the axis limit, which is
+    # what the first draft did to seed 0 (0.0140 - 0.03 = -0.016).
+    ax.errorbar(range(len(_seeds)), gx,
+                yerr=[[min(g, GUARD_NOISE) for g in gx],
+                      [GUARD_NOISE] * len(gx)],
+                fmt="o", ms=9, lw=0, elinewidth=1.4, capsize=5, ecolor=MUTED,
+                zorder=3)
+    for i, (s, g) in enumerate(zip(_seeds, gx)):
+        ax.plot([i], [g], "o", color=cols[i], ms=9, zorder=4)
+        ax.annotate("%.4f" % g, (i, g), textcoords="offset points",
+                    xytext=(12, 0), ha="left", va="center", color=cols[i],
+                    fontsize=9.5)
+    # Left of the points and above the line: the three markers occupy x = 0, 1, 2
+    # and the seed-2 error bar reaches 0.136, so the mid-right placement used on
+    # the single-seed guard figure would sit inside that bar here.
+    ax.annotate("P4 bar 0.10", (-0.42, SP.GUARD_BAR), textcoords="offset points",
+                xytext=(0, 5), ha="left", va="bottom", color=MUTED, fontsize=9)
+    # An unexplained whisker is worse than no whisker. Placed in headroom made
+    # for it at the top: at (0.08, 0.062) -- the first attempt -- seed 1's upper
+    # whisker ran straight through the word "guard" on the second line, and the
+    # bottom-right alternative collides with seed 1's own value label. A PNG pass
+    # caught the first; the second was ruled out by arithmetic before rendering.
+    _top = max(gx) + GUARD_NOISE + 0.05
+    # ONE line, not two: wrapped onto two lines in the headroom, the 0.175
+    # gridline ran between them and clipped the first line's descenders. The
+    # second PNG pass caught that.
+    ax.annotate("whiskers: $\\pm 0.03$, this instrument's own run-to-run noise "
+                "on a guard rate",
+                (-0.42, _top - 0.004), ha="left", va="top", color=MUTED,
+                fontsize=8.5)
+    ax.set_xticks(range(len(_seeds)))
+    ax.set_xticklabels(["seed %d\n(step %d)" % (s, _cross[s]["step"])
+                        for s in _seeds])
+    ax.set_xlim(-0.5, len(_seeds) - 0.4)
+    ax.set_ylim(0, _top)
+    ax.set_ylabel("raw guard rate at the snapshot\nwhere the predicate arrives")
+    style_axes(ax)
+    save(fig, "traj_seeds_cross.png")
+
+    # ---- 12. how much of the churn is already paid ---------------------------
+    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    shr = [100.0 * _cross[s]["total_flips"] / TRAJ_ALL[s][-1]["total_flips"]
+           for s in _seeds]
+    for i, (s, v) in enumerate(zip(_seeds, shr)):
+        ax.plot([i], [v], "o", color=cols[i], ms=9)
+        ax.annotate("%d%%  (%d of %d)" % (round(v), _cross[s]["total_flips"],
+                                          TRAJ_ALL[s][-1]["total_flips"]),
+                    (i, v), textcoords="offset points", xytext=(12, 0),
+                    ha="left", va="center", color=cols[i], fontsize=9.5)
+    # The registered cap, drawn so the miss is visible rather than asserted.
+    ax.axhline(35, color=MUTED, lw=1.2, ls="--")
+    ax.annotate("my registered cap, 35%", (-0.42, 35),
+                textcoords="offset points", xytext=(0, 5), ha="left",
+                va="bottom", color=MUTED, fontsize=9)
+    ax.set_xticks(range(len(_seeds)))
+    ax.set_xticklabels(["seed %d" % s for s in _seeds])
+    ax.set_xlim(-0.5, len(_seeds) - 0.25)
+    ax.set_ylim(0, max(shr) + 12)
+    ax.set_ylabel("flips already present at the crossing,\n"
+                  "as % of that body's own final count")
+    style_axes(ax)
+    save(fig, "traj_seeds_flips.png")
+else:
+    print("SKIPPED traj_seeds_*.png -- trajectory seeds on disk: %s"
+          % sorted(TRAJ_ALL))
+
+
+# ---------------------------------------------------------------------------
 # what the deck's prose says, asserted against what was read
 # ---------------------------------------------------------------------------
 def check_claims():
@@ -596,6 +753,135 @@ def check_claims():
               " 0.0471 -> 0.0730")
     else:
         print("  NOTE 52461470 absent; the deck must not claim a trajectory")
+
+    if len(TRAJ_ALL) == 3:
+        ss = sorted(TRAJ_ALL)
+        cr = {s: _crossing(TRAJ_ALL[s]) for s in ss}
+        fin = {s: TRAJ_ALL[s][-1] for s in ss}
+
+        # Same cross-process check as seed 0's, now on all three: step 0 is that
+        # seed's stage Y weights meeting that seed's case list, measured by a
+        # DIFFERENT job (52452867 / 52456376), so anything but equality is a
+        # pipeline disagreement. This is what localizes the guard noise to
+        # training rather than to the eval, and it now holds 3/3.
+        for s in ss:
+            z = TRAJ_ALL[s][0]
+            assert abs(z["pair_auroc_corrupt"]
+                       - seeds[s]["Y"]["pair_auroc_corrupt"]) < 5e-5, s
+            assert abs(z["pair_auroc_placebo"]
+                       - seeds[s]["Y"]["pair_auroc_placebo"]) < 5e-5, s
+            assert abs(z["guard_rate"]
+                       - seeds[s]["Y"]["guard_rate"]) < 5e-6, s
+        assert [TRAJ_ALL[s][0]["total_flips"] for s in ss] == [4, 1, 7]
+        print("  ok  step 0 == that seed's own stage Y row on 3/3, across"
+              " processes (flips 4 / 1 / 7)")
+
+        # P1 clears at the FIRST trained snapshot on all three bodies.
+        assert [cr[s]["step"] for s in ss] == [125, 125, 125]
+        assert [round(cr[s]["pair_auroc_corrupt"], 4)
+                for s in ss] == [0.7480, 0.8070, 0.8520]
+        print("  ok  corrupt clears 0.65 at step 125 on 3/3"
+              " (0.7480 / 0.8070 / 0.8520)")
+
+        # THE CORRECTION TO FINDING 84, AND THE WHOLE REASON THESE PAGES EXIST.
+        # The registered prediction was that the raw guard at the crossing is
+        # below P4's bar on both new seeds. It is not: seed 2 is at 0.1056.
+        gx = [round(cr[s]["guard_rate"], 4) for s in ss]
+        assert gx == [0.0140, 0.0345, 0.1056], gx
+        assert [cr[s]["guard_denom"] for s in ss] == [572, 580, 483]
+        assert sum(g >= SP.GUARD_BAR for g in gx) == 1
+        assert gx[2] >= SP.GUARD_BAR > gx[1] > gx[0]
+        # and the honest qualifier the page must carry: seed 2 clears the bar by
+        # 0.0056, which is a fifth of the instrument's own run-to-run noise
+        assert 0 < gx[2] - SP.GUARD_BAR < GUARD_NOISE / 4
+        print("  ok  crossing guard 0.0140 / 0.0345 / 0.1056 -- 1 of 3 seeds is"
+              " already at P4's bar,")
+        print("      and it clears it by 0.0056 against ~0.03 of run-to-run"
+              " noise")
+
+        # the registered 35% cap on the churn already paid at the crossing
+        shr = [round(100.0 * cr[s]["total_flips"] / fin[s]["total_flips"])
+               for s in ss]
+        assert shr == [18, 31, 77], shr
+        assert [cr[s]["total_flips"] for s in ss] == [29, 52, 127]
+        assert [fin[s]["total_flips"] for s in ss] == [160, 168, 166]
+        assert shr[0] < 35 and shr[1] < 35 and shr[2] > 35
+        print("  ok  churn already paid at the crossing: 18 / 31 / 77% --"
+              " the 35% cap holds on 2 of 3")
+
+        # P2 on every snapshot of every seed: 30 of 30, the one prediction that
+        # has now hit on all three bodies.
+        assert all(SP.PLACEBO_BAND[0] < r["pair_auroc_placebo"]
+                   < SP.PLACEBO_BAND[1]
+                   for s in ss for r in TRAJ_ALL[s]), "P2 left the band"
+        rhos = [round(stats.spearmanr([r["guard_rate"] for r in TRAJ_ALL[s]],
+                                      [r["total_flips"] for r in TRAJ_ALL[s]]
+                                      ).statistic, 3) for s in ss]
+        assert rhos == [0.879, 0.806, 0.881], rhos
+        assert all(r >= 0.7 for r in rhos)
+        print("  ok  P2 in band at 30 of 30 snapshots; Spearman(guard, flips)"
+              " +0.879 / +0.806 / +0.881")
+
+        # The reproduction caveat, now with three bodies instead of one: the
+        # AUROCs come back to 0.006 or better and the guard moves by up to 0.031.
+        # Seed 0's 0.0010 was the best of the three, not the typical case -- the
+        # deck says 0.006 on 3/3 and attributes 0.001 to seed 0 only.
+        da = [abs(fin[s]["pair_auroc_corrupt"]
+                  - seeds[s]["warm L1"]["pair_auroc_corrupt"]) for s in ss]
+        dg = [abs(fin[s]["guard_rate"]
+                  - GSEED[s]["warm L1"]["corrupt"]["rate_off_given_on"])
+              if s in GSEED else None for s in ss]
+        assert [round(x, 4) for x in da] == [0.0010, 0.0060, 0.0060], da
+        assert all(x <= 0.0061 for x in da)
+        if all(x is not None for x in dg):
+            assert [round(x, 4) for x in dg] == [0.0312, 0.0275, 0.0046], dg
+            assert max(dg) > 4 * max(da)
+        print("  ok  rerun: AUROCs within 0.006 on 3/3 (0.0010 / 0.0060 /"
+              " 0.0060), guard off by up to 0.031")
+
+        # THE LIMIT OF THE GRID, stated because the figure cannot show it: 125 is
+        # the first TRAINED snapshot, so every crossing is an upper bound. Seed 2
+        # is at 0.8520 there against a final 0.8650 -- 98% of the way -- which is
+        # the clearest sign the real crossing is earlier still.
+        assert min(r["step"] for r in TRAJ_ALL[0] if r["step"] > 0) == 125
+        assert (cr[2]["pair_auroc_corrupt"] / fin[2]["pair_auroc_corrupt"]
+                > 0.98)
+        print("  ok  125 is the first trained snapshot, so each crossing is an"
+              " UPPER BOUND (seed 2 is at 98%")
+        print("      of its final AUROC there)")
+
+        # the "share of final" column on the upper-bound page
+        shq = [round(100.0 * cr[s]["pair_auroc_corrupt"]
+                     / fin[s]["pair_auroc_corrupt"]) for s in ss]
+        assert shq == [86, 93, 98], shq
+
+        # the conjecture page: three columns that rank the seeds identically.
+        # Asserted as an ORDERING and never as a cause -- n = 3 and ||s|| is
+        # perfectly confounded with the stage Y train nll along this axis.
+        sn = [round(TRAJ_ALL[s][0]["det_scale_norm"], 3) for s in ss]
+        yn = [round(seeds[s]["Y"]["mean_train_nll_last250"], 4) for s in ss]
+        assert sn == [7.053, 7.774, 9.137], sn
+        assert yn == [1.5610, 1.5933, 1.6577], yn
+        assert sn == sorted(sn) and yn == sorted(yn) and gx == sorted(gx)
+        print("  ok  the conjecture page: ||s|| 7.053/7.774/9.137 and stage Y"
+              " nll 1.5610/1.5933/1.6577")
+        print("      rank the seeds the same way the crossing guard does"
+              " (ordering only, n = 3)")
+
+        # the P2 page's per-seed range, every cell of it
+        pr = [(round(min(r["pair_auroc_placebo"] for r in TRAJ_ALL[s]), 4),
+               round(max(r["pair_auroc_placebo"] for r in TRAJ_ALL[s]), 4))
+              for s in ss]
+        assert pr == [(0.4350, 0.5140), (0.4410, 0.4730), (0.4390, 0.5060)], pr
+        # the page claims the HIGHEST value in each row is step 0, i.e. stage Y
+        for s in ss:
+            assert TRAJ_ALL[s][0]["pair_auroc_placebo"] == max(
+                r["pair_auroc_placebo"] for r in TRAJ_ALL[s]), s
+        print("  ok  placebo ranges 0.4350-0.5140 / 0.4410-0.4730 /"
+              " 0.4390-0.5060, max at step 0 on 3/3")
+    elif TRAJ:
+        print("  NOTE trajectory seeds 1-2 absent; the deck must not claim a"
+              " replication")
 
     if len(seeds) > 1:
         for k in sorted(seeds):
