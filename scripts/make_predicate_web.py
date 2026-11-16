@@ -597,6 +597,178 @@ else:
 
 
 # ---------------------------------------------------------------------------
+# 13-15. the FINE grid: 52469567_[0-2], finding 86
+# ---------------------------------------------------------------------------
+# Findings 84 and 85 read the crossing at step 125 because 125 was the first
+# TRAINED snapshot: an upper bound wearing a measurement's clothes. The fine grid
+# adds 10, 25, 50, 75, 100 and keeps 125, 250 and 3,000, which is why these pages
+# can say "arrives at" where the earlier ones could only say "by". The x axis is
+# CATEGORICAL (one tick per snapshot) because a linear step axis crushes six of
+# the nine points into the left 4% of the panel and a log axis cannot show step 0,
+# which is the stage Y anchor and the whole reason step 0 is in the grid.
+TRAJ_FINE = {}
+for _s in (0, 1, 2):
+    _f = os.path.join(ROOT, "runs/stagepair_trajectory_2026-11-15"
+                      + ("" if _s == 0 else "_s%d" % _s) + "_fine",
+                      "trajectory_summary.json")
+    if os.path.isfile(_f):
+        TRAJ_FINE[_s] = json.load(open(_f))["per_step"]
+print("fine-grid seeds on disk:", sorted(TRAJ_FINE))
+
+if len(TRAJ_FINE) == 3:
+    _fs = sorted(TRAJ_FINE)
+    _fcross = {s: _crossing(TRAJ_FINE[s]) for s in _fs}
+    assert all(c is not None for c in _fcross.values()), "a fine seed never crossed"
+    _steps_f = [r["step"] for r in TRAJ_FINE[0]]
+    _xi = list(range(len(_steps_f)))
+    _xlab = [("%d" % st) if st < 1000 else "3k" for st in _steps_f]
+    _fcols = series_colors(len(_fs))
+
+    # ---- 13. the arrival, resolved ------------------------------------------
+    fig, axes = plt.subplots(1, 3, figsize=(11.2, 3.7), sharex=True, sharey=True)
+    for ax, s in zip(axes, _fs):
+        rows = TRAJ_FINE[s]
+        ax.axhspan(*SP.PLACEBO_BAND, color=MUTED, alpha=0.12, lw=0)
+        ax.axhline(SP.PAIR_BAR, color=MUTED, lw=1.1, ls="--")
+        ax.plot(_xi, [r["pair_auroc_corrupt"] for r in rows], "o-",
+                color=SERIES[0], lw=1.8, ms=4)
+        ax.plot(_xi, [r["pair_auroc_placebo"] for r in rows], "o-",
+                color=SERIES[1], lw=1.8, ms=4)
+        _k = _steps_f.index(_fcross[s]["step"])
+        ax.plot([_k], [_fcross[s]["pair_auroc_corrupt"]], "o", color=SERIES[0],
+                ms=11, mfc="none", mew=2)
+        ax.set_title("seed %d: crosses at step %d" % (s, _fcross[s]["step"]),
+                     fontsize=10)
+        ax.set_xlabel("snapshot (training steps)")
+        ax.set_xticks(_xi)
+        ax.set_xticklabels(_xlab, fontsize=8)
+        style_axes(ax)
+    # Named once, on the panel where each has room: the curves sit at 0.86 and
+    # 0.44 by the right edge on every panel, so mid-height is empty everywhere.
+    axes[0].annotate("broken prompt", (len(_xi) - 1, 0.80),
+                     textcoords="offset points", xytext=(-4, 0), ha="right",
+                     color=SERIES[0], fontsize=9)
+    axes[0].annotate("placebo", (len(_xi) - 1, 0.50),
+                     textcoords="offset points", xytext=(-4, 0), ha="right",
+                     color=SERIES[1], fontsize=9)
+    axes[1].annotate("ring: first snapshot\npast the bar",
+                     (_steps_f.index(_fcross[1]["step"]),
+                      _fcross[1]["pair_auroc_corrupt"]),
+                     textcoords="offset points", xytext=(18, -34), ha="left",
+                     color=SERIES[0], fontsize=9,
+                     arrowprops=dict(arrowstyle="-", color=SERIES[0], lw=0.7,
+                                     shrinkA=2, shrinkB=9))
+    axes[2].annotate("P1 bar 0.65", (4.2, SP.PAIR_BAR),
+                     textcoords="offset points", xytext=(0, -7), ha="center",
+                     va="top", color=MUTED, fontsize=9)
+    axes[2].annotate("P2 band", (4.2, SP.PLACEBO_BAND[1]),
+                     textcoords="offset points", xytext=(0, -7), ha="center",
+                     va="top", color=MUTED, fontsize=9)
+    axes[0].set_ylabel("matched-pair AUROC")
+    axes[0].set_ylim(0.38, 0.95)
+    save(fig, "traj_fine_auroc.png")
+
+    # ---- 14. THE figure: the guard where the predicate actually arrives ------
+    # Same construction as figure 11 so the two are directly comparable -- same
+    # bar, same +/-0.03 whiskers, same y label. The point of the pairing is that
+    # every value moved down by more than the whisker length.
+    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    gf = [_fcross[s]["guard_rate"] for s in _fs]
+    gc = [_crossing(TRAJ_ALL[s])["guard_rate"] for s in _fs] if TRAJ_ALL else None
+    ax.axhline(SP.GUARD_BAR, color=MUTED, lw=1.2, ls="--")
+    ax.errorbar(range(len(_fs)), gf,
+                yerr=[[min(g, GUARD_NOISE) for g in gf],
+                      [GUARD_NOISE] * len(gf)],
+                fmt="o", ms=9, lw=0, elinewidth=1.4, capsize=5, ecolor=MUTED,
+                zorder=3)
+    for i, (s, g) in enumerate(zip(_fs, gf)):
+        ax.plot([i], [g], "o", color=_fcols[i], ms=9, zorder=4)
+        ax.annotate("%.4f" % g, (i, g), textcoords="offset points",
+                    xytext=(12, 0), ha="left", va="center", color=_fcols[i],
+                    fontsize=9.5)
+    if gc is not None:
+        # The coarse reading at step 125, drawn hollow so the move is visible
+        # rather than asserted in prose. It is the SAME quantity at a LATER step,
+        # which the x tick labels and this note both say. Offset in x: at dx = 0
+        # seed 1's square (0.0345) lands exactly on its own whisker cap (0.0317)
+        # and the two read as one smudged marker.
+        ax.plot([i + 0.14 for i in range(len(_fs))], gc, "s", ms=8, mfc="none",
+                mew=1.4, color=MUTED, zorder=2)
+    # BOTH references get named. The whisker note was dropped from the first
+    # draft of this figure because the hollow-square note took its place, which
+    # left the error bars unexplained -- exactly the defect the companion figure
+    # already had to fix once. The white bbox is not decoration: without it the
+    # 0.150 and 0.175 gridlines run through these lines, which is the other
+    # defect a PNG pass caught on the companion.
+    _bb = dict(facecolor="white", edgecolor="none", pad=1.5)
+    ax.annotate("whiskers: $\\pm 0.03$, this instrument's own run-to-run noise "
+                "on a guard rate",
+                (-0.42, 0.197), ha="left", va="top", color=MUTED, fontsize=8.5,
+                bbox=_bb)
+    if gc is not None:
+        ax.annotate("hollow squares: the same guard read at step 125, where "
+                    "findings 84 and 85 had to read it",
+                    (-0.42, 0.172), ha="left", va="top", color=MUTED,
+                    fontsize=8.5, bbox=_bb)
+    ax.annotate("P4 bar 0.10", (-0.42, SP.GUARD_BAR), textcoords="offset points",
+                xytext=(0, 5), ha="left", va="bottom", color=MUTED, fontsize=9,
+                bbox=_bb)
+    ax.set_xticks(range(len(_fs)))
+    ax.set_xticklabels(["seed %d\n(step %d)" % (s, _fcross[s]["step"])
+                        for s in _fs])
+    ax.set_xlim(-0.5, len(_fs) - 0.4)
+    ax.set_ylim(0, SP.GUARD_BAR + GUARD_NOISE + 0.075)
+    ax.set_ylabel("raw guard rate at the snapshot\nwhere the predicate arrives")
+    style_axes(ax)
+    save(fig, "traj_fine_cross.png")
+
+    # ---- 15. the lead, as two dimensionless fractions ------------------------
+    # Both series are fractions of that body's own final value, so they share one
+    # axis and no dual y-axis is needed: p_A(t) = (A(t) - A(0)) / (A(3000) - A(0))
+    # for the corrupt AUROC, p_F(t) the same for the flip count. The claim is the
+    # vertical gap between them, which is why they are on the same panel.
+    fig, axes = plt.subplots(1, 3, figsize=(11.2, 3.7), sharex=True, sharey=True)
+    for ax, s in zip(axes, _fs):
+        rows = TRAJ_FINE[s]
+        a0, aN = rows[0]["pair_auroc_corrupt"], rows[-1]["pair_auroc_corrupt"]
+        f0, fN = rows[0]["total_flips"], rows[-1]["total_flips"]
+        pa = [(r["pair_auroc_corrupt"] - a0) / (aN - a0) for r in rows]
+        pf = [(r["total_flips"] - f0) / (fN - f0) for r in rows]
+        ax.plot(_xi, pa, "o-", color=SERIES[0], lw=1.8, ms=4)
+        ax.plot(_xi, pf, "o-", color=SERIES[2], lw=1.8, ms=4)
+        _k = _steps_f.index(_fcross[s]["step"])
+        ax.axvline(_k, color=MUTED, lw=1.0, ls=":")
+        ax.set_title("seed %d" % s, fontsize=10)
+        ax.set_xlabel("snapshot (training steps)")
+        ax.set_xticks(_xi)
+        ax.set_xticklabels(_xlab, fontsize=8)
+        style_axes(ax)
+    # Both curves END at 1.0 by construction, so a right-end label sits where the
+    # two series meet and the first draft had the blue curve running straight
+    # through the word "predicate" and the green one through "churn". Labelled
+    # instead BELOW each curve in the middle of the panel, where the two are
+    # ~0.5 apart and the space under each is empty.
+    axes[0].annotate("predicate", (_steps_f.index(50), 0.455),
+                     textcoords="offset points", xytext=(7, -15), ha="left",
+                     va="top", color=SERIES[0], fontsize=9)
+    axes[0].annotate("churn", (_steps_f.index(100), 0.147),
+                     textcoords="offset points", xytext=(8, -12), ha="left",
+                     va="top", color=SERIES[2], fontsize=9)
+    # The dotted rule is the crossing; unnamed it reads as a panel divider. At
+    # mid-height the green curve struck through it, so it goes at the TOP of the
+    # rule, where every panel is empty left of step 50.
+    axes[1].annotate("dotted: the crossing", (_steps_f.index(25), 1.02),
+                     textcoords="offset points", xytext=(8, 0), ha="left",
+                     va="top", color=MUTED, fontsize=9)
+    axes[0].set_ylabel("fraction of that body's own\nfinal rise (dimensionless)")
+    axes[0].set_ylim(-0.05, 1.05)
+    save(fig, "traj_fine_lead.png")
+else:
+    print("SKIPPED traj_fine_*.png -- fine-grid seeds on disk: %s"
+          % sorted(TRAJ_FINE))
+
+
+# ---------------------------------------------------------------------------
 # what the deck's prose says, asserted against what was read
 # ---------------------------------------------------------------------------
 def check_claims():
@@ -882,6 +1054,130 @@ def check_claims():
     elif TRAJ:
         print("  NOTE trajectory seeds 1-2 absent; the deck must not claim a"
               " replication")
+
+    # ---- the fine grid, finding 86 ----------------------------------------
+    if len(TRAJ_FINE) == 3:
+        fs = sorted(TRAJ_FINE)
+        fcr = {s: _crossing(TRAJ_FINE[s]) for s in fs}
+        ffin = {s: TRAJ_FINE[s][-1] for s in fs}
+
+        assert [r["step"] for r in TRAJ_FINE[0]] == [0, 10, 25, 50, 75, 100,
+                                                     125, 250, 3000]
+        xs = [fcr[s]["step"] for s in fs]
+        assert xs == [75, 25, 25], xs
+        print("  ok  the predicate clears P1 at step 75 / 25 / 25, not 125")
+
+        # THE LOAD-BEARING ONE. On the coarse grid these read 0.0140 / 0.0345 /
+        # 0.1056 and seed 2 was OVER the bar; resolved, every one of them is an
+        # order of magnitude below it, and below it by more than the +/-0.03
+        # noise, which is what makes this a resolution artifact rather than a
+        # disagreement between runs.
+        gf = [round(fcr[s]["guard_rate"], 4) for s in fs]
+        assert gf == [0.0052, 0.0017, 0.0019], gf
+        assert all(g < SP.GUARD_BAR for g in gf)
+        assert max(gf) + GUARD_NOISE < SP.GUARD_BAR
+        gcoarse = ([round(_crossing(TRAJ_ALL[s])["guard_rate"], 4) for s in fs]
+                   if len(TRAJ_ALL) == 3 else None)
+        if gcoarse:
+            assert gcoarse == [0.0140, 0.0345, 0.1056], gcoarse
+            assert all(a < b for a, b in zip(gf, gcoarse))
+        print("  ok  guard at the TRUE crossing 0.0052 / 0.0017 / 0.0019 --"
+              " below 0.10 on 3/3, by more")
+        print("      than the instrument's own 0.03 of noise")
+
+        # the churn at the crossing, against the same registered 35% cap that
+        # seed 2 missed at 77% on the coarse grid
+        fl = [fcr[s]["total_flips"] for s in fs]
+        fshr = [round(100.0 * fcr[s]["total_flips"] / ffin[s]["total_flips"])
+                for s in fs]
+        assert fl == [12, 9, 9], fl
+        assert [ffin[s]["total_flips"] for s in fs] == [139, 167, 147]
+        assert fshr == [9, 5, 6], fshr
+        assert all(v < 35 for v in fshr)
+        print("  ok  churn paid at the crossing: 12 / 9 / 9 flips = 9 / 5 / 6%"
+              " of final, cap 35% held 3/3")
+
+        # the lead page's two percentages, which are what figure 15 plots
+        pa, pf = [], []
+        for s in fs:
+            rows = TRAJ_FINE[s]
+            a0, aN = rows[0]["pair_auroc_corrupt"], rows[-1]["pair_auroc_corrupt"]
+            f0, fN = rows[0]["total_flips"], rows[-1]["total_flips"]
+            pa.append(round(100 * (fcr[s]["pair_auroc_corrupt"] - a0) / (aN - a0)))
+            pf.append(round(100 * (fcr[s]["total_flips"] - f0) / (fN - f0)))
+        assert pa == [60, 29, 57], pa
+        assert pf == [6, 5, 1], pf
+        assert all(a > b for a, b in zip(pa, pf))
+        print("  ok  at the crossing the predicate has made 60/29/57% of its"
+              " rise, the churn 6/5/1%")
+
+        # the EXISTENCE reading, registered separately from the first crossing
+        quiet = {s: [r["step"] for r in TRAJ_FINE[s]
+                     if r["pair_auroc_corrupt"] >= SP.PAIR_BAR
+                     and r["guard_rate"] < SP.GUARD_BAR] for s in fs}
+        assert [len(quiet[s]) for s in fs] == [4, 6, 4], quiet
+        assert quiet[2] == [25, 50, 75, 100], quiet[2]
+        print("  ok  quiet checkpoints exist on 3/3: 4 / 6 / 4 snapshots,"
+              " seed 2's at steps 25-100")
+
+        # P2 across the fine grid: 27 of 27
+        assert all(SP.PLACEBO_BAND[0] < r["pair_auroc_placebo"]
+                   < SP.PLACEBO_BAND[1]
+                   for s in fs for r in TRAJ_FINE[s]), "P2 left the band"
+        assert sum(len(TRAJ_FINE[s]) for s in fs) == 27
+        assert (sum(len(TRAJ_FINE[s]) for s in fs)
+                + sum(len(TRAJ_ALL[s]) for s in fs)) == 57
+        print("  ok  P2 in band at 27 of 27 fine-grid snapshots, 57 of 57"
+              " across both grids")
+
+        # THE CROSS-RUN CHECK step 125 gives for free, and the surprise in it:
+        # the corrupt AUROC is IDENTICAL to four decimals on 3/3, and the guard
+        # is identical on seeds 1 and 2 but not on seed 0. Partial determinism,
+        # which is a sharper statement than finding 84's blanket +/-0.03.
+        assert len(TRAJ_ALL) == 3, "the cross-run page needs the coarse grid too"
+        f125 = {s: next(r for r in TRAJ_FINE[s] if r["step"] == 125) for s in fs}
+        c125 = {s: next(r for r in TRAJ_ALL[s] if r["step"] == 125) for s in fs}
+        d_a = [round(abs(f125[s]["pair_auroc_corrupt"]
+                         - c125[s]["pair_auroc_corrupt"]), 4) for s in fs]
+        d_g = [round(abs(f125[s]["guard_rate"] - c125[s]["guard_rate"]), 4)
+               for s in fs]
+        assert d_a == [0.0, 0.0, 0.0], d_a
+        assert d_g == [0.0086, 0.0, 0.0], d_g
+        assert (f125[1]["guard_denom"] == c125[1]["guard_denom"]
+                and f125[2]["guard_denom"] == c125[2]["guard_denom"])
+        assert f125[0]["guard_denom"] != c125[0]["guard_denom"]
+        print("  ok  step 125 reruns IDENTICALLY on 3/3 for the AUROC and on 2/3"
+              " for the guard")
+
+        # the honest limit of THIS grid, stated because the figure cannot: two of
+        # three crossings are bracketed within 0.01 of the bar at the previous
+        # snapshot, so the step is known to a factor of ~2 and no better.
+        prev = {s: [r for r in TRAJ_FINE[s] if r["step"] < fcr[s]["step"]][-1]
+                for s in fs}
+        gap = [round(SP.PAIR_BAR - prev[s]["pair_auroc_corrupt"], 4) for s in fs]
+        assert gap == [0.0070, 0.0090, 0.0650], gap
+        # every cell of the bracket table and the two ratios the prose quotes
+        assert [prev[s]["step"] for s in fs] == [50, 10, 10]
+        assert [round(prev[s]["pair_auroc_corrupt"], 4) for s in fs] == [
+            0.6430, 0.6410, 0.5850]
+        assert [round(prev[s]["guard_rate"], 4) for s in fs] == [
+            0.0068, 0.0064, 0.0019]
+        assert round(gcoarse[2] / gf[2]) == 56
+        assert (SP.GUARD_BAR - gf[2]) / GUARD_NOISE > 3
+        assert [f125[s]["guard_denom"] for s in fs] == [576, 580, 483]
+        assert [c125[s]["guard_denom"] for s in fs] == [572, 580, 483]
+        # the step-3,000 divergence the same page quotes: coarse -> fine
+        assert [round(TRAJ_ALL[s][-1]["guard_rate"], 4) for s in fs] == [
+            0.1399, 0.1797, 0.1678]
+        dv = [round(ffin[s]["guard_rate"], 4) for s in fs]
+        assert dv == [0.1415, 0.2149, 0.1416], dv
+        assert all(prev[s]["guard_rate"] < SP.GUARD_BAR for s in fs)
+        print("  ok  seeds 0 and 1 sit 0.0070 / 0.0090 under the bar at the"
+              " PREVIOUS snapshot, so the step is")
+        print("      bracketed, not pinned -- but the guard is under 0.10 at"
+              " both ends of every bracket")
+    else:
+        print("  NOTE fine grid absent; the deck must not date the arrival")
 
     if len(seeds) > 1:
         for k in sorted(seeds):
