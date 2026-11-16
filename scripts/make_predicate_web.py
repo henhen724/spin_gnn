@@ -355,6 +355,91 @@ else:
 
 
 # ---------------------------------------------------------------------------
+# 7-9. the trajectory: 52461470, finding 84
+# ---------------------------------------------------------------------------
+# One lambda=1 arm re-run with the identical recipe and snapshotted ten times.
+# TRAJ is None when that job has not landed, and every page below is skipped
+# rather than faked -- the same rule the seed pages follow.
+_tj = os.path.join(ROOT, "runs/stagepair_trajectory_2026-11-15",
+                   "trajectory_summary.json")
+TRAJ = json.load(open(_tj))["per_step"] if os.path.exists(_tj) else None
+
+if TRAJ:
+    ts = [r["step"] for r in TRAJ]
+    tc = [r["pair_auroc_corrupt"] for r in TRAJ]
+    tp = [r["pair_auroc_placebo"] for r in TRAJ]
+    tf = [r["total_flips"] for r in TRAJ]
+    tg = [r["guard_rate"] for r in TRAJ]
+    te = [r["excess"] for r in TRAJ]
+
+    # ---- 7. when the predicate arrives -----------------------------------
+    fig, ax = plt.subplots(figsize=(7.6, 4.4))
+    ax.plot(ts, tc, "o-", color=SERIES[0], lw=1.8, ms=5)
+    ax.plot(ts, tp, "o-", color=SERIES[1], lw=1.8, ms=5)
+    ax.axhline(SP.PAIR_BAR, color=MUTED, lw=1.1, ls="--")
+    ax.axhspan(*SP.PLACEBO_BAND, color=MUTED, alpha=0.12, lw=0)
+    label_line(ax, ts[-1], tc[-1], "broken prompt", color=SERIES[0])
+    label_line(ax, ts[-1], tp[-1], "placebo", color=SERIES[1])
+    # Left edge, not right: the right is where the two curve labels go, and the
+    # 0.65 line passes within 0.02 of the placebo band's top.
+    # Mid-right and BELOW the line, matching traj_guard.png. At the left edge it
+    # is unplaceable: on the line the dashes strike the glyph baselines, and 10
+    # points above it the blue curve -- which goes from 0.456 to 0.748 between
+    # step 0 and step 125 -- runs straight through the word "P1". Both of those
+    # were caught by a PNG pass, in that order.
+    ax.annotate("P1 bar 0.65", (1750, SP.PAIR_BAR), textcoords="offset points",
+                xytext=(0, -7), ha="center", va="top", color=MUTED, fontsize=9)
+    ax.annotate("P2 band", (ts[0], SP.PLACEBO_BAND[0]),
+                textcoords="offset points", xytext=(4, 4), ha="left",
+                color=MUTED, fontsize=9)
+    ax.set_xlabel("fine-tuning steps from stage Y")
+    ax.set_ylabel("matched-pair AUROC")
+    ax.set_ylim(0.38, 0.95)
+    style_axes(ax)
+    save(fig, "traj_auroc.png")
+
+    # ---- 8. and when the churn arrives -----------------------------------
+    fig, ax = plt.subplots(figsize=(7.6, 4.4))
+    ax.plot(ts, tf, "o-", color=SERIES[0], lw=1.8, ms=5)
+    # The crossing step, marked on the figure the claim is about rather than
+    # stated only in the prose. `cross` is recomputed here from the same rows.
+    _x = next(r["step"] for r in TRAJ if r["pair_auroc_corrupt"] >= SP.PAIR_BAR)
+    _y = next(r["total_flips"] for r in TRAJ if r["step"] == _x)
+    ax.plot([_x], [_y], "o", color=SERIES[1], ms=11, mfc="none", mew=2)
+    ax.annotate("the predicate is already\nin place here", (_x, _y),
+                textcoords="offset points", xytext=(26, 14), ha="left",
+                color=SERIES[1], fontsize=9.5,
+                arrowprops=dict(arrowstyle="-", color=SERIES[1], lw=0.7,
+                                shrinkA=2, shrinkB=10))
+    ax.set_xlabel("fine-tuning steps from stage Y")
+    ax.set_ylabel("cases of 1,000 where a one-token edit\n"
+                  "changed whether $v$ is emitted")
+    ax.set_ylim(0, max(tf) + 25)
+    style_axes(ax)
+    save(fig, "traj_flips.png")
+
+    # ---- 9. the guard saturates, the targeting does not ------------------
+    fig, ax = plt.subplots(figsize=(7.6, 4.4))
+    ax.plot(ts, tg, "o-", color=SERIES[0], lw=1.8, ms=5)
+    ax.plot(ts, te, "o-", color=SERIES[1], lw=1.8, ms=5)
+    ax.axhline(SP.GUARD_BAR, color=MUTED, lw=1.1, ls="--")
+    label_line(ax, ts[-1], tg[-1], "raw guard", color=SERIES[0])
+    label_line(ax, ts[-1], te[-1], "targeted excess", color=SERIES[1])
+    # Mid-right and below the line, which is the only clear band on this figure:
+    # the raw-guard curve crosses 0.10 at about step 400, so at the left edge the
+    # label is struck through by the rise (the first PNG pass caught exactly
+    # that), and above the line from step 500 on the blue curve is sitting there.
+    ax.annotate("P4 bar 0.10", (1750, SP.GUARD_BAR),
+                textcoords="offset points", xytext=(0, -7), ha="center",
+                va="top", color=MUTED, fontsize=9)
+    ax.set_xlabel("fine-tuning steps from stage Y")
+    ax.set_ylabel("rate, conditional on the clean prompt emitting $v$")
+    ax.set_ylim(0, max(tg) + 0.02)
+    style_axes(ax)
+    save(fig, "traj_guard.png")
+
+
+# ---------------------------------------------------------------------------
 # what the deck's prose says, asserted against what was read
 # ---------------------------------------------------------------------------
 def check_claims():
@@ -439,6 +524,79 @@ def check_claims():
         print("  ok  the guard pages: excess 0.0415/0.1295/0.0606, targeted"
               " share 38/62/37%, flips 142/175/177,")
         print("      and the other tail favours the placebo on 3/3 at p < 0.01")
+    if TRAJ:
+        d = {r["step"]: r for r in TRAJ}
+        # THE STRONGEST FORM OF THE STEP-0 CHECK: not "0.4560 as the deck says"
+        # but "the same number the SEPARATE probe job measured". Step 0 is stage
+        # Y's weights meeting stage Y's case list in a different process, so
+        # anything other than equality means the two pipelines disagree.
+        assert abs(d[0]["pair_auroc_corrupt"]
+                   - probe["Y"]["pair_auroc_corrupt"]) < 5e-5
+        assert abs(d[0]["pair_auroc_placebo"]
+                   - probe["Y"]["pair_auroc_placebo"]) < 5e-5
+        assert d[0]["guard_denom"] == gspec["Y"]["corrupt"]["denom_clean_on"]
+        assert d[0]["total_flips"] == MC["Y"]["total_flips"] == 4
+        print("  ok  step 0 of 52461470 == stage Y's own row from 52452867 and")
+        print("      52455457, across processes: 0.4560 / 0.5140 / 4 flips")
+
+        x = next(r["step"] for r in TRAJ
+                 if r["pair_auroc_corrupt"] >= SP.PAIR_BAR)
+        assert x == 125, x
+        eq("crossing corrupt", d[125]["pair_auroc_corrupt"], 0.7480)
+        eq("crossing placebo", d[125]["pair_auroc_placebo"], 0.4670)
+        eq("crossing guard", d[125]["guard_rate"], 0.0140, tol=5e-4)
+        assert d[125]["total_flips"] == 29, d[125]["total_flips"]
+        assert d[125]["guard_denom"] == 572, d[125]["guard_denom"]
+        # the deck's central claim: the predicate at a fifth of the churn, with
+        # the guard BELOW P4's bar -- so early stopping trades P4 away
+        assert d[125]["total_flips"] < 0.25 * d[3000]["total_flips"]
+        assert d[125]["guard_rate"] < SP.GUARD_BAR < d[3000]["guard_rate"]
+        print("  ok  the crossing is step 125: P1 cleared at 29 flips of the"
+              " final 160, guard 0.0140 < 0.10")
+
+        eq("final corrupt", d[3000]["pair_auroc_corrupt"], 0.8720)
+        eq("final placebo", d[3000]["pair_auroc_placebo"], 0.4370)
+        eq("final guard", d[3000]["guard_rate"], 0.1399, tol=5e-4)
+        assert (d[3000]["total_flips"], d[3000]["guard_denom"]) == (160, 529)
+        # The rerun caveat the deck states: the AUROCs reproduce to 0.001 and the
+        # EMISSION COUNTS do not -- emission is an argmax, so a logit shift too
+        # small to move a ranking still flips a discrete decision.
+        # 0.0011 and not 0.0010: both gaps ARE 0.0010 at four decimals, and
+        # 0.8720 - 0.8710 comes out as 1.0000000000000009e-3 in binary float.
+        assert abs(d[3000]["pair_auroc_corrupt"]
+                   - probe["warm L1"]["pair_auroc_corrupt"]) <= 0.0011
+        assert abs(d[3000]["pair_auroc_placebo"]
+                   - probe["warm L1"]["pair_auroc_placebo"]) <= 0.0011
+        assert abs(d[3000]["guard_rate"]
+                   - gspec["warm L1"]["corrupt"]["rate_off_given_on"]) > 0.02
+        print("  ok  the rerun: AUROCs within 0.001 of 52452867, guard off by"
+              " 0.0312 and the denominator by 23")
+
+        assert all(SP.PLACEBO_BAND[0] < r["pair_auroc_placebo"]
+                   < SP.PLACEBO_BAND[1] for r in TRAJ), "P2 held at every step"
+        rho = stats.spearmanr([r["guard_rate"] for r in TRAJ],
+                              [r["total_flips"] for r in TRAJ]).statistic
+        assert round(rho, 3) == 0.879, rho
+        # the guard plateaus after step 500 while the targeted part keeps rising
+        assert all(abs(r["guard_rate"] - d[500]["guard_rate"]) < 0.025
+                   for r in TRAJ if r["step"] >= 500)
+        assert d[2500]["excess"] > 1.4 * d[500]["excess"]
+        assert round(max(r["excess"] for r in TRAJ), 4) == 0.0730
+        # The "share targeted" column, every row of it. Step 0 is excluded on the
+        # page because its raw rate is 0.0015 -- one case -- so the ratio is a
+        # ratio of one, and the deck says that rather than quietly dropping it.
+        share = [round(100 * r["excess"] / r["guard_rate"])
+                 for r in TRAJ if r["step"] > 0]
+        assert share == [25, 39, 39, 25, 36, 46, 49, 54, 43], share
+        # and the non-monotonicity the page admits to, asserted rather than
+        # glossed: 750 dips below 250, and 3,000 falls back from 2,500
+        assert share[3] < share[1] and share[-1] < share[-2]
+        print("  ok  P2 held at all 10 steps; Spearman(guard, flips) +0.879;")
+        print("      guard flat after step 500 while the excess rises"
+              " 0.0471 -> 0.0730")
+    else:
+        print("  NOTE 52461470 absent; the deck must not claim a trajectory")
+
     if len(seeds) > 1:
         for k in sorted(seeds):
             print("  seed %d: corrupt %.4f  placebo %.4f  nll %.4f" % (
