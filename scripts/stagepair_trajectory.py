@@ -11,9 +11,13 @@ the form of `L_pair` -- and is therefore not mine to settle. This one changes
 nothing: it re-runs an arm that already ran, with the same recipe, and looks at
 it more often.
 
-THE INSTRUMENT. One lambda=1 warm arm, seed 0, the identical recipe 52452867 ran
-(3,000 steps from stage Y, batch 32, lr 1e-3, lambda 1.0, margin 1.0, data seed
-777, 30,000 instances). State dicts are snapshotted at 0, 125, 250, 500, 750,
+THE INSTRUMENT. One lambda=1 warm arm, the identical recipe `stagepair_pairprobe`
+ran (3,000 steps from that seed's stage Y body, batch 32, lr 1e-3, lambda 1.0,
+margin 1.0, 30,000 instances, `DATA_SEED = TRAJ_SEED + 777` -- copied from the
+probe, so seed 0 is 52452867's arm and seeds 1-2 are 52456376's, each on the same
+data stream its published row was measured on). `TRAJ_SEED` selects the body:
+seed 0 is finding 84, seeds 1 and 2 are the replication registered below. State
+dicts are snapshotted at 0, 125, 250, 500, 750,
 1,000, 1,500, 2,000, 2,500 and 3,000 steps, kept on the CPU, and evaluated AFTER
 training finishes -- so the training trajectory is a plain run and not one
 perturbed by ten eval-mode interleavings. Every snapshot then meets the SAME
@@ -48,16 +52,51 @@ AUROC, the McNemar excess and ||det_scale|| are printed beside it.
 
 REPRODUCTION ANCHORS, printed and compared loosely, never asserted. GPU
 reductions are not bit-reproducible across runs, so step 3,000 is expected near
-but not at 52452867's row, and step 0 IS stage Y seed 0 and should land on
-finding 82's Y row almost exactly (it is the same weights meeting the same
-cases):
+but not at the published row, and step 0 IS the stage Y body for that seed and
+should land on finding 82's Y row almost exactly (it is the same weights meeting
+the same cases). All three seeds' anchors are in `ANCHOR_BY_SEED`, read out of
+the `pairprobe` and `guardspec` artifacts rather than retyped from the deck.
 
-  step 0     corrupt 0.4560  placebo 0.5140  guard 0.0015 of 656  flips   4
-  step 3000  corrupt 0.8710  placebo 0.4360  guard 0.1087 of 506  flips 142
+HOW CLOSE "NEAR" IS, MEASURED RATHER THAN GUESSED (finding 84, seed 0). The same
+code, recipe and cases reproduced the matched-pair AUROCs to 0.0010 but moved the
+raw guard 0.1087 -> 0.1399, its denominator 506 -> 529 and the flips 142 -> 160.
+Emission is an ARGMAX, so a logit shift far below ranking resolution still flips
+a discrete decision. Expect the step-3,000 AUROCs on the anchor and the
+step-3,000 guard up to ~0.03 off it; step 0 should agree exactly, because no
+training intervenes.
 
-ONE SEED, ONE DATA ORDER. Seed 0 only. Whatever shape the trajectory has, it is
-one body's, and 82-83 already showed that reading three bodies off one (finding
-83) is the mistake this project keeps making.
+SEEDS 1 AND 2: THE SECOND REGISTERED HYPOTHESIS, WRITTEN 2026-11-15 BEFORE EITHER
+RUN EXISTS. Finding 84 is one body. Its headline -- the predicate is in place at
+step 125 of 3,000 at 29 flips of the final 160, while the raw guard there is
+0.0140 and so FAILS P4's 0.10 bar -- is exactly the shape of claim that finding
+83 got wrong by reading three bodies off one. The two remaining bodies end with
+MORE churn than seed 0 (175 and 177 flips against 142) and seed 1's stage Y body
+starts closer to the bar than the others (matched-pair corrupt 0.5870 against
+0.4560 and 0.4640), which is why seed 1 is the interesting one:
+
+  * both seeds' corrupt AUROC first clears 0.65 at step 125 or step 250 -- i.e.
+    inside the first 8% of training, as seed 0 did, not in 84's originally
+    predicted 250-750 window, which that run already missed low;
+  * at that crossing the flips are at most 35% of that seed's own PUBLISHED final
+    count, i.e. <= 61 on both (0.35 x 175 and 0.35 x 177, floored; seed 0 came in
+    at 29 against a published 142 and a rerun 160, i.e. 18%);
+  * the raw guard at that same crossing snapshot is BELOW 0.10 on both seeds, so
+    the "passes P1/P2, fails P4" split is a property of the stage and not of
+    seed 0 -- this is the load-bearing prediction and the reason to run this;
+  * the placebo stays inside (0.40, 0.60) at all ten snapshots on both seeds;
+  * raw guard and flips rank together at Spearman >= +0.7 on both seeds, as they
+    did at +0.879 on seed 0 -- registered as a rank statistic and not as
+    monotonicity, because 84 predicted monotone and got a non-monotone +0.879.
+
+WHAT FALSIFIES IT. A seed whose raw guard is already at or above 0.10 at the
+snapshot where corrupt first clears 0.65. That would say the predicate and the
+guard arrive together on that body, and 84's separation is seed 0's alone rather
+than the stage's. A placebo above 0.60 at any trained snapshot would instead say
+an edit detector formed first on that body, which would put P2 back in play.
+
+STILL NOT A LICENCE TO STOP EARLY, even on 3/3. Training length is part of the
+registered stage and changing it is hshunt's call, the same as the P4
+denominator, the 1.630 convergence rule and the form of `L_pair`.
 
 NO VERDICT IS PRINTED.
 """
@@ -134,12 +173,48 @@ if SMOKE:
     EVAL_N_CASES, EVAL_N_INSTANCES = 40, 80
     OUT_DIR += "_smoke"
 
-# 52452867's lambda=1 row and stage Y's own, for the loose reproduction check.
-# Only seed 0 has anything to reproduce.
-ANCHOR = ({0: {"corrupt": 0.4560, "placebo": 0.5140, "guard": 0.0015,
-               "denom": 656, "flips": 4},
-           3_000: {"corrupt": 0.8710, "placebo": 0.4360, "guard": 0.1087,
-                   "denom": 506, "flips": 142}} if SEED == 0 else {})
+# The published rows this trajectory should pass through, for the loose
+# reproduction check: step 0 is that seed's stage Y body and step 3,000 is its
+# `warm L1` arm. Read out of `runs/stagepair_pairprobe_2026-11-15*/` and
+# `runs/stagepair_guardspec_2026-11-15*/rows_warm_L1.jsonl` on 2026-11-15 --
+# `runs/` is gitignored and $SCRATCH purges, so these constants are the durable
+# copy. `flips` uses `make_predicate_web.mcnemar`'s definition: clean != corrupt
+# OR clean != placebo. NEVER asserted; the guard column in particular carries the
+# ~0.03 of argmax noise finding 84 measured.
+ANCHOR_BY_SEED = {
+    0: {0: {"corrupt": 0.4560, "placebo": 0.5140, "guard": 0.0015,
+            "denom": 656, "flips": 4},
+        3_000: {"corrupt": 0.8710, "placebo": 0.4360, "guard": 0.1087,
+                "denom": 506, "flips": 142}},
+    1: {0: {"corrupt": 0.5870, "placebo": 0.4730, "guard": 0.0000,
+            "denom": 637, "flips": 1},
+        3_000: {"corrupt": 0.8620, "placebo": 0.4450, "guard": 0.2072,
+                "denom": 502, "flips": 175}},
+    2: {0: {"corrupt": 0.4640, "placebo": 0.5060, "guard": 0.0017,
+            "denom": 584, "flips": 7},
+        3_000: {"corrupt": 0.8710, "placebo": 0.4420, "guard": 0.1632,
+                "denom": 429, "flips": 177}},
+}
+ANCHOR = ANCHOR_BY_SEED[SEED]
+
+# THE REGISTERED PREDICTIONS, one entry per seed, written into this file before
+# the corresponding run and printed back against the table at the end. Seed 0's
+# is finding 84's, left EXACTLY as it was registered even though it missed low
+# (crossing 125, not 250-750) -- rewriting it after the fact is the one thing
+# this block exists to prevent. Seeds 1-2 are the replication registered in the
+# docstring; `flip_cap` is derived from that seed's published final count so the
+# bound is 35% of the right denominator, and `guard_falsifier` is the
+# load-bearing one: a guard already at or above P4's bar when the predicate
+# arrives would mean 84's separation is seed 0's alone.
+FLIP_SHARE_CAP = 0.35
+PREDICTION = {
+    0: {"cross": (250, 750), "flip_cap": 70, "flip_floor": 20},
+    1: {"cross": (125, 250), "flip_cap": int(FLIP_SHARE_CAP * 175),
+        "flip_floor": 0},
+    2: {"cross": (125, 250), "flip_cap": int(FLIP_SHARE_CAP * 177),
+        "flip_floor": 0},
+}[SEED]
+PREDICTION["guard_falsifier"] = SP.GUARD_BAR   # 0.10, imported, never retyped
 
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -365,17 +440,30 @@ for st, a in ANCHOR.items():
           f"{r['total_flips']} vs {a['flips']}")
 
 cross = [r for r in rows_out if r["pair_auroc_corrupt"] >= SP.PAIR_BAR]
+clo, chi = PREDICTION["cross"]
 print(f"\nthe hypothesis, read against the table (bars imported: P1 "
-      f">= {SP.PAIR_BAR}, P2 in {list(SP.PLACEBO_BAND)}):")
+      f">= {SP.PAIR_BAR}, P2 in {list(SP.PLACEBO_BAND)}, P4 "
+      f">= {SP.GUARD_BAR}):")
 if cross:
     f = cross[0]
     print(f"  corrupt first clears {SP.PAIR_BAR} at step {f['step']} "
-          f"(predicted 250-750), where flips are {f['total_flips']} "
-          f"(predicted 20-70; falsifier > 100 and the final was 142)")
+          f"(predicted {clo}-{chi}), where flips are {f['total_flips']} "
+          f"(predicted {PREDICTION['flip_floor']}-{PREDICTION['flip_cap']}; "
+          f"this run's final was {rows_out[-1]['total_flips']} and the "
+          f"published one {ANCHOR[3_000]['flips']})")
+    # the load-bearing one for seeds 1-2: is the guard already firing when the
+    # predicate arrives? on seed 0 it was 0.0140 against a 0.10 bar.
+    print(f"  raw guard AT that crossing: {f['guard_rate']:.4f} of "
+          f"{f['guard_denom']} -- P4's bar is {SP.GUARD_BAR}, so the guard "
+          f"{'IS' if f['guard_rate'] >= SP.GUARD_BAR else 'is NOT'} already "
+          f"firing where the predicate arrives "
+          f"({'falsifies' if f['guard_rate'] >= SP.GUARD_BAR else 'replicates'}"
+          f" finding 84's separation on this body)")
 else:
     print(f"  corrupt NEVER clears {SP.PAIR_BAR} in {STEPS:,} steps -- the "
-          f"second falsifier: this rerun did not reproduce 52452867's 0.8710 "
-          f"and nothing above is readable as a trajectory")
+          f"second falsifier: this rerun did not reproduce the published "
+          f"{ANCHOR[3_000]['corrupt']:.4f} and nothing above is readable as a "
+          f"trajectory")
 lo, hi = SP.PLACEBO_BAND
 out_of_band = [r["step"] for r in rows_out
                if not (lo < r["pair_auroc_placebo"] < hi)]
