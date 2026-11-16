@@ -32,7 +32,8 @@ def _identity(x):
 class SATReasoningTransformer(nn.Module):
     def __init__(self, vocab_size, d_model=64, num_layers=2, nhead=1, max_len=1024, dim_feedforward=None,
                  norm_first=False, arch_mode="full", n_blocks=1,
-                 determinacy_channel=False, node_offset=None, n_nodes=None):
+                 determinacy_channel=False, node_offset=None, n_nodes=None,
+                 determinacy_feedback=False):
         super().__init__()
         if arch_mode not in ARCH_MODES:
             raise ValueError(f"arch_mode must be one of {ARCH_MODES}, got {arch_mode!r}")
@@ -181,6 +182,62 @@ class SATReasoningTransformer(nn.Module):
             self.det_scale = nn.Parameter(torch.zeros(d_model))
         else:
             self.register_parameter("det_scale", None)
+
+        # STAGE LOOP. The channel above is read off the FINAL hidden state and
+        # written to the emission, so g can change what the network SAYS and
+        # never what it COMPUTES: finding 78 called the result a predicate that
+        # is not causally wired, and 68-74 put it as the shared block computing
+        # the ambiguity and then scheduling as if certain. This flag closes the
+        # loop -- the gate is recomputed after every application of the shared
+        # block and folded back into the residual stream, so iteration t+1 reads
+        # iteration t's determinacy estimate:
+        #
+        #     g_t         = <h_t * s, E_v>                      (as stage Y)
+        #     a_t         = log sigma(g_t) + log 2              (0 when g_t = 0)
+        #     h_t         <- h_t + c * (a_t @ E_nodes) / n_nodes
+        #
+        # for t = 0 .. n_iters-2. NOT after the last application: the readout and
+        # `determinacy_logits` then see a hidden state reached the same way stage
+        # Y's was, so the P1-P4 read-out measures the same object and the loop
+        # changes what the BLOCK sees rather than what the readout reads.
+        #
+        # ONE new parameter, the scalar c, and it is initialized at ZERO so the
+        # arm starts at EXACTLY the stage Y body it warms from. That matters more
+        # here than it did for `det_scale`: this arm warms from a TRAINED body
+        # whose g is not identically zero, so an open loop at step 0 would
+        # perturb a solved network by an unmeasured amount -- the `torch.ones`
+        # mistake of stage Y, one stage later. c = 0 is not a saddle:
+        # dL/dc = sum_t <dL/dh_t, (a_t @ E_nodes)/n_nodes> is O(1) at a trained
+        # body, so gradient descent opens the loop if the objective wants it, and
+        # |c| at the end is itself the measurement of whether it did.
+        #
+        # The `+ log 2` centering is what makes c = 0 and g = 0 BOTH inert; the
+        # 1/n_nodes makes the delta the size of one embedding row rather than 48,
+        # which is the magnitude lesson of findings 76 and 79. Re-using
+        # `token_embed`'s node rows is what keeps the parameter count at +1: no
+        # new matrix is introduced in either direction.
+        #
+        # Off by default. When off, no parameter is created and forward() runs
+        # the same expressions in the same order, so every checkpoint from stages
+        # S through PAIR loads and evaluates unchanged.
+        self.determinacy_feedback = bool(determinacy_feedback)
+        if self.determinacy_feedback:
+            if not determinacy_channel:
+                raise ValueError(
+                    "determinacy_feedback=True needs determinacy_channel=True: "
+                    "there is no g to feed back without the channel")
+            if not self.tied:
+                raise ValueError(
+                    "determinacy_feedback=True is defined for the tied cell "
+                    f"only (arch_mode='tied_no_mlp'), got {arch_mode!r}: an "
+                    "untied stack has no iteration to feed back through")
+            self.loop_scale = nn.Parameter(torch.zeros(1))
+        else:
+            self.register_parameter("loop_scale", None)
+        # Set by forward() when the loop is on: mean |delta| / mean |h| at the
+        # last fed-back iteration, detached. The magnitude of the feedback, not
+        # just its coefficient -- c alone says nothing without the scale of a.
+        self._fb_rel = None
         self._apply_arch_mode()
 
     def _apply_arch_mode(self):
@@ -230,6 +287,19 @@ class SATReasoningTransformer(nn.Module):
         lo, hi = self.det_node_offset, self.det_node_offset + self.det_n_nodes
         return (h * self.det_scale) @ self.token_embed.weight[lo:hi].t()
 
+    def determinacy_feedback_delta(self, h):
+        """The stage-LOOP term: (B, L, d_model) -> (B, L, d_model).
+
+        `log sigma(g) + log 2` is zero at g = 0, so this returns exactly zero
+        both at `det_scale = 0` (an untrained channel) and at `loop_scale = 0`
+        (the warm start), which is what makes the arm start on the body it
+        warms from rather than near it.
+        """
+        lo, hi = self.det_node_offset, self.det_node_offset + self.det_n_nodes
+        a = F.logsigmoid(self.determinacy_logits(h)) + 0.6931471805599453
+        return (self.loop_scale
+                * (a @ self.token_embed.weight[lo:hi]) / self.det_n_nodes)
+
     def forward(self, x, valid_mask=None, return_determinacy=False):
         """x: (B, L) long token ids. valid_mask: (B, L) bool, True = real
         (non-pad) position, or None if the batch has no padding.
@@ -258,6 +328,14 @@ class SATReasoningTransformer(nn.Module):
             for t in range(self.n_iters):
                 blk = self.encoder.layers[t % self.n_blocks]
                 h = blk(h, src_mask=causal_mask, src_key_padding_mask=src_key_padding_mask)
+                # stage LOOP, and never after the last application -- see the
+                # constructor. `is not None` rather than the bool flag so a
+                # checkpoint loaded without the parameter cannot take this path.
+                if self.loop_scale is not None and t < self.n_iters - 1:
+                    delta = self.determinacy_feedback_delta(h)
+                    self._fb_rel = (delta.detach().abs().mean()
+                                    / h.detach().abs().mean().clamp_min(1e-12))
+                    h = h + delta
             if self.encoder.norm is not None:
                 h = self.encoder.norm(h)
         else:
