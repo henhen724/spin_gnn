@@ -67,7 +67,7 @@ for d in sorted(glob.glob(os.path.join(ROOT,
 print("seeds with a summary on disk:", sorted(seeds))
 
 
-def mcnemar(arm):
+def mcnemar(arm, guard_dir=None):
     """Recomputed from the per-case rows, not read from a printed table.
 
     Returns the two discordant counts among clean-emitting cases, the exact
@@ -76,7 +76,8 @@ def mcnemar(arm):
     form -- the cases are paired, so the independent-sample SE would be wrong).
     """
     rows = [json.loads(l) for l in
-            open(os.path.join(GUARD, "rows_%s.jsonl" % arm.replace(" ", "_")))]
+            open(os.path.join(guard_dir or GUARD,
+                              "rows_%s.jsonl" % arm.replace(" ", "_")))]
     on = [r for r in rows if r["clean_emits_v"]]
     off = [r for r in rows if not r["clean_emits_v"]]
     n = len(on)
@@ -107,6 +108,24 @@ for a in ARMS:
           f"placeboOnly={MC[a]['placebo_only']:3d} both={MC[a]['both']:3d} "
           f"p={MC[a]['p']:.2e} excess={MC[a]['excess']:+.4f} "
           f"flips={MC[a]['total_flips']:3d}")
+
+# The same decomposition for the other two seeds, from 52460087. Seed 0's rows
+# live in the unsuffixed directory; _recheck is that job's bit-for-bit rerun of
+# seed 0 and is deliberately NOT read here -- it is a regression test, not data.
+GUARD_SEEDS = {0: GUARD}
+for d in sorted(glob.glob(os.path.join(
+        ROOT, "runs/stagepair_guardspec_2026-11-15_s*"))):
+    if os.path.isfile(os.path.join(d, "guardspec_summary.json")):
+        GUARD_SEEDS[int(d.rsplit("_s", 1)[1])] = d
+MCS = {k: mcnemar("warm L1", v) for k, v in GUARD_SEEDS.items()}
+GSEED = {k: json.load(open(os.path.join(v, "guardspec_summary.json")))["per_arm"]
+         for k, v in GUARD_SEEDS.items()}
+for k in sorted(MCS):
+    m, raw = MCS[k], GSEED[k]["warm L1"]["corrupt"]["rate_off_given_on"]
+    print(f"  seed {k} guard: raw {raw:.4f}  excess {m['excess']:+.4f} "
+          f"[{m['lo']:+.4f}, {m['hi']:+.4f}]  fraction {m['excess']/raw:.2f}  "
+          f"cOnly={m['corrupt_only']} pOnly={m['placebo_only']} "
+          f"both={m['both']} of {m['n_on']}")
 
 # Stage Y's own three bodies, read from their training histories. This is the
 # comparison the convergence threshold has to survive, and it is not a number
@@ -210,6 +229,33 @@ ax.set_ylabel("guard rate")
 style_axes(ax)
 save(fig, "guard_excess.png")
 
+# ---- 3b. the same correction on all three seeds ---------------------------
+# The page this figure answers: seed 0's excess fell below the bar, so does the
+# correction hold everywhere? It does not, and the figure has to show that
+# rather than an average that hides it.
+fig, ax = plt.subplots(figsize=(7.2, 4.2))
+ks = sorted(MCS)
+ex = [MCS[k]["excess"] for k in ks]
+raw = [GSEED[k]["warm L1"]["corrupt"]["rate_off_given_on"] for k in ks]
+ax.errorbar(ks, ex,
+            yerr=[[MCS[k]["excess"] - MCS[k]["lo"] for k in ks],
+                  [MCS[k]["hi"] - MCS[k]["excess"] for k in ks]],
+            fmt="o-", color=c_hi, capsize=5, lw=1.8, ms=7)
+ax.plot(ks, raw, "o--", color=c_lo, lw=1.4, ms=6)
+ax.axhline(SP.GUARD_BAR, color=SERIES[1], lw=1.2, ls="--")
+label_line(ax, ks[-1], raw[-1], "raw P4 rate", color=c_lo)
+label_line(ax, ks[-1], ex[-1], "corrected excess", color=c_hi)
+# BELOW the line here, not above it: seed 0's raw rate is 0.1087 and its marker
+# sits exactly where the word "bar" would go.
+ax.text(ks[0] - 0.08, SP.GUARD_BAR - 0.004, "P4 bar 0.10", color=SERIES[1],
+        fontsize=9, va="top", ha="left")
+ax.set_xticks(ks)
+ax.set_xlabel("stage Y body warmed from (seed)")
+ax.set_ylabel("guard rate")
+ax.set_ylim(0, max(raw) + 0.03)
+style_axes(ax)
+save(fig, "guard_excess_seeds.png")
+
 # ---- 4. the channel got loud on BOTH perturbations ------------------------
 fig, ax = plt.subplots(figsize=(7.6, 4.4))
 dc = [probe[a]["median_abs_dg_corrupt"] for a in ARMS]
@@ -257,17 +303,18 @@ arm_nll = probe["warm L1"]["final_train_nll"]
 # One point per seed that has landed. With all three the page stops being "the
 # arm missed" and becomes "every arm missed, and so did one of Y's own bodies",
 # which is the actual question about the threshold.
-arm_x = [2.9 + 0.45 * i for i in range(len(seeds))]
+arm_x = [3.2 + 0.45 * i for i in range(len(seeds))]
 arm_y = [seeds[k]["warm L1"]["final_train_nll"] for k in sorted(seeds)]
 ax.plot(arm_x, arm_y, "o", color=SERIES[0], ms=8)
 for x, y, k in zip(arm_x, arm_y, sorted(seeds)):
     ax.annotate("%.4f" % y, (x, y), textcoords="offset points",
                 xytext=(0, 10), ha="center", color=SERIES[0], fontsize=9)
-# ha="right", because at the right-hand end of the x range a left-aligned label
-# runs off the axis -- the clipping the margin deck's second pass caught.
-ax.annotate(r"the $\lambda=1$ arms", (arm_x[0], min(arm_y)),
-            textcoords="offset points", xytext=(-12, 0), va="center",
-            ha="right", color=SERIES[0], fontsize=9.5)
+# BELOW the group and centred on it, not to its left: left of the group is where
+# stage Y's seed 2 sits, and with three arms the label landed on that point.
+ax.annotate(r"the $\lambda=1$ arms",
+            (sum(arm_x) / len(arm_x), min(arm_y)),
+            textcoords="offset points", xytext=(0, -18), va="top",
+            ha="center", color=SERIES[0], fontsize=9.5)
 ax.axhline(THRESH, color=SERIES[1], lw=1.2, ls="--")
 ax.text(-0.42, THRESH + 0.003, "the rule admits anything below %.3f" % THRESH,
         color=SERIES[1], fontsize=9, va="bottom")
@@ -351,6 +398,47 @@ def check_claims():
     assert SP.N_TRAINABLE == 614138
     print("  ok  the registered bars 0.65 / (0.40,0.60) / 0.90 / 0.10 and the")
     print("      614,138-parameter cell, imported from stagepair_score")
+    if len(seeds) == 3:
+        # The deck's seed pages, asserted against stagepair_score's own
+        # held_against constants -- which this probe was never shown.
+        for i, k in enumerate(sorted(seeds)):
+            assert abs(seeds[k]["Y"]["within_stratum_auroc"]
+                       - SP.Z_WITHIN_STRATUM[i]) < 5e-5, k
+            assert abs(seeds[k]["Y"]["pooled_auroc"]
+                       - SP.Y_AUROC_PUBLISHED[i]) < 5e-4, k
+        print("  ok  stage Y within-stratum == Z_WITHIN_STRATUM on 3/3 seeds,")
+        print("      pooled within 0.0004 of Y_AUROC_PUBLISHED on 3/3")
+        cs = [seeds[k]["warm L1"]["pair_auroc_corrupt"] for k in sorted(seeds)]
+        ps = [seeds[k]["warm L1"]["pair_auroc_placebo"] for k in sorted(seeds)]
+        assert all(c >= SP.PAIR_BAR for c in cs), cs
+        assert all(SP.PLACEBO_BAND[0] < p < SP.PLACEBO_BAND[1] for p in ps), ps
+        assert all(seeds[k]["warm L1"]["pooled_auroc"] >= SP.POOLED_BAR
+                   for k in seeds)
+        assert round(max(cs) - min(cs), 4) == 0.0090, cs
+        ys = [seeds[k]["Y"]["pair_auroc_corrupt"] for k in sorted(seeds)]
+        assert round(max(ys) - min(ys), 4) == 0.1310, ys
+        assert all(seeds[k]["warm L1"]["guard_rate"] > SP.GUARD_BAR
+                   for k in seeds), "the deck says all three cross raw"
+        print("  ok  3/3 seeds clear P1 and P3 and sit inside P2; spreads"
+              " 0.0090 (arm) vs 0.1310 (baseline)")
+    if len(MCS) == 3:
+        ks3 = sorted(MCS)
+        assert [MCS[k]["total_flips"] for k in ks3] == [142, 175, 177]
+        assert [round(MCS[k]["excess"], 4) for k in ks3] == [0.0415, 0.1295,
+                                                             0.0606]
+        # the other tail, the direction check: the placebo turns v back ON more
+        # often than the break does, on every seed, each at p < 0.01
+        for k in ks3:
+            assert MCS[k]["on_placebo_only"] > MCS[k]["on_corrupt_only"], k
+            assert MCS[k]["p_on"] < 0.01, (k, MCS[k]["p_on"])
+        assert [MCS[k]["on_corrupt_only"] for k in ks3] == [15, 10, 22]
+        assert [MCS[k]["on_placebo_only"] for k in ks3] == [38, 35, 47]
+        fr = [MCS[k]["excess"] / GSEED[k]["warm L1"]["corrupt"]
+              ["rate_off_given_on"] for k in ks3]
+        assert [round(f, 2) for f in fr] == [0.38, 0.62, 0.37], fr
+        print("  ok  the guard pages: excess 0.0415/0.1295/0.0606, targeted"
+              " share 38/62/37%, flips 142/175/177,")
+        print("      and the other tail favours the placebo on 3/3 at p < 0.01")
     if len(seeds) > 1:
         for k in sorted(seeds):
             print("  seed %d: corrupt %.4f  placebo %.4f  nll %.4f" % (
