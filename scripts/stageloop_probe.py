@@ -245,6 +245,75 @@ if FIX_TARGETS:
         "l0_flips_above_Y": True,        # the noise-channel reading
     }
 
+# ---------------------------------------------------------------------------
+# `LOOP_FIX_AT=first`: THE CALIBRATION FINDING 88 SHOULD HAVE USED, AND WHY.
+# Written 2026-11-15 after finding 89 and before any run with it exists.
+#
+# 88's `calibrate_c` set c = target / r1 with r1 read from `_fb_rel` AFTER a
+# forward pass at c = 1 -- that is, the ratio at the LAST of the fifteen
+# applications, measured on a stream the previous fourteen injections had
+# already inflated. Finding 89 (`52484098`, CPU, no training) measured the ratio
+# at every application on the UNPERTURBED body and the two differ by about two
+# orders of magnitude: at c = 1 the FIRST injection is 4.66 / 3.94 / 4.90 times
+# mean|h| on the three bodies, while the ratio at t = 14 with the loop open is
+# 0.0402 / 0.0785 / 0.0384. Dividing a 0.10 target by the second number gave c =
+# 2.57 / 1.29 / 2.68, which puts the FIRST injection at 1,197% / 508% / 1,315% of
+# the residual stream. SO 88 NEVER TESTED A 10% LOOP. It tested a first
+# application five to thirteen times the size of the stream it was added to, and
+# its step-0 train nll of 9.18 / 6.45 / 6.73 nats is that, not a verdict on mild
+# feedback.
+#
+# `LOOP_FIX_AT=first` measures r1 at the FIRST application instead, where the
+# hidden state is exactly the body's own and no earlier injection has touched it,
+# so `c = target / r1_0` means what the name says. Default is `last`, which
+# leaves 88's path byte-identical and its artifacts reproducible. The 0.30 row is
+# dropped: at a corrected calibration it would be a 30%-per-application loop
+# compounded fifteen times, which 89 gives no reason to expect survives, and
+# testing one setting is what makes this one knob.
+#
+# THE PREDICTIONS, registered here and read back at the end:
+#   * THE BODY SURVIVES. `fix0.10 L1` ends within 0.05 of this job's own Y
+#     validation token accuracy on 3/3 and its train nll stays below 2.0. 88's
+#     rows were 0.031 / 0.126 / 0.066 against 0.483 / 0.482 / 0.456 at nll
+#     3.98 / 3.38 / 3.71, so this is sharp: if the destruction was the
+#     calibration, it goes away; if it was the feedback, it does not.
+#   * THE PREDICATE STILL ARRIVES. P1 >= 0.65 and P2 inside (0.40, 0.60) on 3/3,
+#     which 88 could not ask because every row of it was damage.
+#   * THE LOAD-BEARING ONE, ASKED FOR THE THIRD AND LAST TIME: `fix0.10 L1`'s raw
+#     guard is at least its own `pair L1` row on >= 2 of 3, at flips no higher.
+#   * AND THE READING I EXPECT TO WIN, stated so it can fail: the body survives
+#     and the guard does NOT move. That would mean 87's |c| ~ 1e-3 was
+#     indifference INSIDE the safe range and avoidance outside it -- the loop is
+#     usable and simply not useful -- and it closes the stage-LOOP line for a
+#     sound reason rather than a broken calibration. A survived body with a
+#     moved guard is the result this line has been looking for and would reopen
+#     everything.
+#   * MECHANICS, from 89 and free to check: the feedback ratio at t = 14 lands
+#     between 0.05 and 0.25, since 89 has the unperturbed ratio RISING with t
+#     (4.66 -> 7.73 at c = 1 on seed 0), and the solved c lands within 20% of
+#     target / r1_0 = 0.0215 / 0.0254 / 0.0204.
+#
+# WHAT FALSIFIES THE WHOLE RESCUE: a body still destroyed at a corrected 10%
+# (val accuracy below 0.30 or train nll above 2.5), which would say the loop is
+# fatal at any usable size and that 88's conclusion was right for the wrong
+# reason -- reported that way, not as a confirmation.
+#
+# Nothing registered changes here either: the bars, the eval cases, lambda, the
+# margin and the 3,000 steps are untouched, and no verdict is printed.
+FIX_AT = os.environ.get("LOOP_FIX_AT", "last")
+assert FIX_AT in ("last", "first"), FIX_AT
+if FIX_TARGETS and FIX_AT == "first":
+    OUT_DIR += "_first"
+    PREDICTION = {
+        **PREDICTION,
+        "fix_at": FIX_AT,
+        "val_acc_tol_vs_Y": 0.05,        # at a corrected mild setting
+        "nll_below": 2.0,
+        "fb_rel_last_band": (0.05, 0.25),
+        "c_rel_tol_vs_r1_first": 0.20,
+        "l0_flips_above_Y": False,       # 88 falsified the noise-channel reading
+    }
+
 # A SMOKE RUN IS NOT A MEASUREMENT. `LOOP_SMOKE=1` shrinks every size so the
 # path runs end to end in ~2 minutes and a crash costs that instead of a GPU
 # hour. Every number it prints is wrong on purpose; it writes to its own
@@ -355,25 +424,54 @@ print(f"validation set={len(val_ds):,}", flush=True)
 def calibrate_c(model, target):
     """Set c so the feedback is `target` of the residual stream, and FREEZE it.
 
-    The delta is exactly linear in c, so one forward at c = 1 on one batch of
-    this body measures the whole scaling: c = target / r1. Guessing the constant
-    from another body is what findings 76 and 79 are about -- at ||s|| = 7.05 a c
-    of 0.1 is a different perturbation from a c of 0.1 at ||s|| = 2.
+    The delta is linear in c for ONE application, so a forward at c = 1 on one
+    batch of this body measures the scaling of that application: c = target / r1.
+    Guessing the constant from another body is what findings 76 and 79 are about
+    -- at ||s|| = 7.05 a c of 0.1 is a different perturbation from a c of 0.1 at
+    ||s|| = 2.
+
+    WHICH application r1 is read at is the whole difference between `LOOP_FIX_AT`
+    = `last` (finding 88, kept byte-identical) and `first` (the correction finding
+    89 forced). The loop applies the injection fifteen times, so `last` reads the
+    ratio on a stream the fourteen earlier injections have already inflated and
+    comes out about 100x too small, which is how a nominal 10% became a first
+    application of 5-13x mean|h|. `first` reads it where the hidden state is
+    still the body's own.
     """
     batch = next(iter(iterate_token_batches(ds, idx, BATCH, shuffle=False,
                                             collate=make_token_batch_pair)))
     x, _y, mask = (t.to(dev) for t in batch[:3])
     with torch.no_grad():
         model.loop_scale.fill_(1.0)
-        model(x, valid_mask=mask)
-        r1 = float(model._fb_rel)
+        if FIX_AT == "first":
+            # `_fb_rel` holds the LAST application's ratio, on a stream the
+            # fourteen earlier injections have already inflated -- finding 89
+            # measured the two about 100x apart. The first application's hidden
+            # state is the body's own whatever c is (the injection happens after
+            # the block returns), so one hook on it gives the honest ratio. The
+            # unmasked mean matches `_fb_rel`'s definition exactly, so "10% of h"
+            # means here what it meant in finding 88.
+            caught = []
+            handle = model.encoder.layers[0].register_forward_hook(
+                lambda mod, args, out: caught.append(out.detach()))
+            try:
+                model(x, valid_mask=mask)
+            finally:
+                handle.remove()
+            h0 = caught[0]
+            r1 = float(model.determinacy_feedback_delta(h0).abs().mean()
+                       / h0.abs().mean().clamp_min(1e-12))
+        else:
+            model(x, valid_mask=mask)
+            r1 = float(model._fb_rel)
         c = target / r1
         model.loop_scale.fill_(c)
     model.loop_scale.requires_grad_(False)
     n = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n == SP.N_TRAINABLE, "a frozen c must leave the registered count: %s" % n
-    print(f"  calibrated: mean|delta|/mean|h| = {r1:.4f} at c=1, so c = "
-          f"{c:.6f} for a target of {target:.2f}  (c is FROZEN)", flush=True)
+    print(f"  calibrated at the {FIX_AT} application: mean|delta|/mean|h| = "
+          f"{r1:.4f} at c=1, so c = {c:.6f} for a target of {target:.2f}  "
+          f"(c is FROZEN)", flush=True)
     return c
 
 
