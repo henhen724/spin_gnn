@@ -35,6 +35,20 @@ predicate. I predict placebo-off at 0.02-0.05: below the corrupt rate, but above
 Y's 0.0015, because the channel's magnitude response to the placebo did grow
 (median |dg| 0.0111 -> 0.6686) even though its sign did not (AUROC 0.4360).
 
+SEEDS 1 AND 2 (added after 52456376), AND A SECOND HYPOTHESIS STATED BEFORE THE
+NUMBERS. 52456376 replicated the AUROCs on two more bodies -- corrupt 0.8620 and
+0.8710, placebo 0.4450 and 0.4420 -- but its raw guard conditionals are 0.2072
+of 502 and 0.1632 of 429, both well over seed 0's 0.1087 and all three over the
+0.10 bar. Seed 0's placebo-corrected excess was 0.0415, i.e. 38% of its raw
+rate, which is the number that put the guard below the bar. If churn is a
+property of this architecture rather than of seed 0, the excess should stay a
+similar FRACTION of the raw rate on every seed. I predict the excess fraction
+lands in 0.25-0.55 on both -- excess 0.052-0.114 for seed 1 and 0.041-0.090 for
+seed 2 -- with the CI lower bound above zero on both, so the effect is real and
+directional everywhere but the raw rate overstates it everywhere. The reading
+that would falsify this is an excess near the raw rate (fraction > 0.8), which
+would say seed 0's churn was the outlier and the guard is genuinely targeted.
+
 THE OVERLAP IS THE SHARPEST READING. Among clean-emitting cases, counting how
 many turn off under corrupt only, placebo only, or BOTH distinguishes a guard
 from a fragility: a guard turns off a set of cases that the placebo leaves
@@ -65,11 +79,27 @@ from spin_gnn.sudoku_cfresp import run_cfresp, summarize_cfresp
 from spin_gnn.sudoku_skip import find_unforceable_deductions
 from spin_gnn.train_sudoku_transformer import build_instances, build_vocab
 
-Y_DIR = ("/scratch/users/hshunt/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b/"
-         "t00_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s0/"
-         "d0320_h04_L16_ff01024_lr1e-03_pre_shuf_fall_noff_tied_det_dw1_chan")
-PROBE_DIR = "/scratch/users/hshunt/spin_gnn/runs/stagepair_pairprobe_2026-11-15"
-OUT_DIR = "/scratch/users/hshunt/spin_gnn/runs/stagepair_guardspec_2026-11-15"
+_Y = "/scratch/users/hshunt/spin_gnn/sudoku_n48_determinacy_Y_2026-11-14b"
+_CELL = "d0320_h04_L16_ff01024_lr1e-03_pre_shuf_fall_noff_tied_det_dw1_chan"
+Y_DIRS = {
+    0: f"{_Y}/t00_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s0/{_CELL}",
+    1: f"{_Y}/t01_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s1/{_CELL}_s01",
+    2: f"{_Y}/t02_d0320_ff01024_h04_tied_no_mlp_L16_dw1.0_chan_s2/{_CELL}_s02",
+}
+
+# Which seed's three models to score. Seed 0's paths and output directory are
+# unchanged, so GUARD_SEED=0 reruns 52455457 bit for bit.
+GUARD_SEED = int(os.environ.get("GUARD_SEED", "0"))
+assert GUARD_SEED in Y_DIRS, "no stage Y checkpoint for seed %d" % GUARD_SEED
+
+Y_DIR = Y_DIRS[GUARD_SEED]
+PROBE_DIR = ("/scratch/users/hshunt/spin_gnn/runs/stagepair_pairprobe_2026-11-15"
+             + ("" if GUARD_SEED == 0 else f"_s{GUARD_SEED}"))
+# GUARD_OUT_TAG exists so seed 0 can be re-run as a regression test on the
+# GUARD_SEED refactor without overwriting finding 83's own rows.
+OUT_DIR = ("/scratch/users/hshunt/spin_gnn/runs/stagepair_guardspec_2026-11-15"
+           + ("" if GUARD_SEED == 0 else f"_s{GUARD_SEED}")
+           + os.environ.get("GUARD_OUT_TAG", ""))
 
 ARMS = [("Y", Y_DIR),
         ("warm L0", os.path.join(PROBE_DIR, "warm_L0")),
@@ -78,14 +108,29 @@ ARMS = [("Y", Y_DIR),
 # The case list is rebuilt, not reloaded: same registered stream, same seeds,
 # same CPU code path, so it is the same 1,000 cases 52452867 measured. The guard
 # rates below reproducing 0.0015/0.0031/0.1087 is the check that it is.
+#
+# DATA_SEED DOES NOT FOLLOW GUARD_SEED. In the pairprobe the data seed varies
+# because it draws the fine-tuning set; here nothing is trained, and the 1,000
+# cases are the registered eval list, so they must be identical for every seed
+# or the per-seed guard rates are not comparable.
 SEED = 0
 DATA_SEED = SEED + 777
 MAX_LEN = 512
 EVAL_SEED_START = SP.PAIR_EVAL_SEED_START
 EVAL_N_CASES = SP.PAIR_EVAL_N_CASES
 EVAL_N_INSTANCES = 1_400
-REPRO_GUARD = {"Y": 0.0015, "warm L0": 0.0031, "warm L1": 0.1087}
-REPRO_DENOM = {"Y": 656, "warm L0": 648, "warm L1": 506}
+# Per seed, read off the pairprobe summaries. The denominator moves with the
+# model because it is conditional on the clean prompt emitting v, so each seed
+# gets its own -- assuming 506 for every seed is the denominator trap.
+_REPRO = {
+    0: ({"Y": 0.0015, "warm L0": 0.0031, "warm L1": 0.1087},
+        {"Y": 656, "warm L0": 648, "warm L1": 506}),
+    1: ({"Y": 0.0000, "warm L0": 0.0048, "warm L1": 0.2072},
+        {"Y": 637, "warm L0": 625, "warm L1": 502}),
+    2: ({"Y": 0.0017, "warm L0": 0.0086, "warm L1": 0.1632},
+        {"Y": 584, "warm L0": 584, "warm L1": 429}),
+}
+REPRO_GUARD, REPRO_DENOM = _REPRO[GUARD_SEED]
 
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -200,7 +245,8 @@ for label, d in ARMS:
     per_arm[label] = p
     print(f"  guard  (corrupt off | clean on) {cor['rate_off_given_on']:.4f} "
           f"of {cor['denom_clean_on']}   "
-          f"[52452867: {REPRO_GUARD[label]:.4f} of {REPRO_DENOM[label]}]")
+          f"[pairprobe s{GUARD_SEED}: {REPRO_GUARD[label]:.4f} "
+          f"of {REPRO_DENOM[label]}]")
     print(f"  PLACEBO (placebo off | clean on) {pla['rate_off_given_on']:.4f} "
           f"of {pla['denom_clean_on']}   <-- the missing control")
     print(f"  turn-ons: corrupt {cor['turns_on']}/{cor['denom_clean_off']}, "
