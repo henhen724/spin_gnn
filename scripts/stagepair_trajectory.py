@@ -98,6 +98,62 @@ STILL NOT A LICENCE TO STOP EARLY, even on 3/3. Training length is part of the
 registered stage and changing it is hshunt's call, the same as the P4
 denominator, the 1.630 convergence rule and the form of `L_pair`.
 
+THE FINE GRID (`TRAJ_GRID=fine`), AND THE THIRD REGISTERED HYPOTHESIS, WRITTEN
+2026-11-15 BEFORE ANY FINE RUN EXISTS. Finding 85 came back 2/3 on the quiet
+checkpoint, but with a hole it cannot close: all three bodies clear 0.65 at step
+125, which is the FIRST TRAINED SNAPSHOT, so 125 is an upper bound on the
+arrival and not a measurement of it. Seed 2 is at 98% of its final AUROC there
+(0.8520 of 0.8650), so its true crossing is earlier still, and its "guard already
+at 0.1056" reading is taken at a step that may be well past the crossing. The
+fine grid adds 10, 25, 50, 75 and 100 and keeps 0, 125, 250 and 3,000 so the
+coarse run's anchors survive; it changes nothing else -- same recipe, same body,
+same 1,000 cases, same seeds -- and writes to `..._fine[_s{N}]`, never over the
+coarse artifact.
+
+  * WHERE THE CROSSING LANDS, from a saturating fit to the two points each seed
+    already has. Writing the corrupt AUROC as a(t) = a0 + (a_inf - a0)(1 -
+    e^{-t/tau}) with a0 the step-0 value and a_inf the step-3,000 value, the
+    step-125 reading fixes tau at 104 / 82 / 36 steps, and 0.65 is reached at
+    46.6% / 22.4% / 46.4% of the total rise, i.e. at t ~ 65 / 21 / 23. So:
+    seed 0 crosses in [50, 100], seed 1 in [10, 25], seed 2 in [10, 50]. That
+    tau ordering is the prediction's whole content -- if the crossings come back
+    in the same order as 125's AUROCs it is because the fit says so, not because
+    I looked.
+  * THE LOAD-BEARING ONE, and the reason to spend the GPU hour: the raw guard at
+    that earlier crossing is BELOW 0.10 on ALL THREE seeds, seed 2 included, with
+    seed 2 landing in [0.02, 0.09]. On this reading 85's falsification is a
+    RESOLUTION ARTIFACT: seed 2 does have a checkpoint with the predicate and
+    without the guard, it simply sits before 125 where nothing was sampled.
+  * THE EXISTENCE READING, weaker and stated separately because it is a
+    different claim and I am registering it now rather than retrofitting it
+    later: at least one snapshot per seed has corrupt >= 0.65 AND raw guard <
+    0.10. The first-crossing reading is what 84 and 85 used; this one asks only
+    whether a quiet checkpoint exists anywhere on the grid.
+  * Flips at the crossing are at most 20 / 30 / 90, i.e. strictly fewer than the
+    29 / 52 / 127 the coarse run already measured at step 125 (which monotonicity
+    makes nearly free -- the sharp part is the margin, especially seed 2's 90
+    against 127).
+  * The placebo stays inside (0.40, 0.60) at all nine snapshots on all three
+    seeds, 27 of 27, as it was 30 of 30 on the coarse grid.
+  * A FREE CROSS-RUN REPLICATION: step 125 is in both grids and the fine run
+    retrains from the same body on the same stream, so its step-125 corrupt
+    AUROC should land within 0.01 of 0.7480 / 0.8070 / 0.8520 and its raw guard
+    within the 0.03 of argmax noise finding 84 measured, of 0.0140 / 0.0345 /
+    0.1056. If the AUROC misses by more than that, the trajectory is not
+    reproducible run-to-run and every dated crossing in 84 and 85 is softer than
+    reported.
+
+WHAT FALSIFIES THE FINE-GRID HYPOTHESIS. Seed 2 reading a raw guard >= 0.10 at
+EVERY snapshot where corrupt >= 0.65 -- that would say the quiet checkpoint
+genuinely does not exist on that body, 85's 2-of-3 stands as measured, and the
+predicate and the guard arrive together on at least one body of stage PAIR. A
+second, different failure is every seed already clearing 0.65 at step 10 with the
+guard already at the bar: that would mean this grid is ALSO too coarse and the
+honest report is another upper bound, not an arrival.
+
+NOTHING THE FINE GRID RETURNS LICENSES STOPPING EARLY EITHER, for the same
+reason as above. It dates an event; it does not change a registered quantity.
+
 NO VERDICT IS PRINTED.
 """
 
@@ -151,6 +207,18 @@ DATA_SEED = SEED + 777
 # count at the value finding 82 measured (4 of 1,000) rather than at an assumed
 # zero. The grid is dense early because the hypothesis says the crossing is early.
 SNAP_STEPS = (0, 125, 250, 500, 750, 1_000, 1_500, 2_000, 2_500, 3_000)
+
+# `TRAJ_GRID=fine` resolves the sub-125 window findings 84 and 85 could only
+# bound. It keeps 0, 125, 250 and 3,000 so both reproduction anchors AND the
+# coarse run's own step-125 row stay comparable, and it writes to its own
+# directory so neither coarse artifact is touched. Snapshotting does not consume
+# the RNG, so the TRAINING trajectory is the same trajectory either way.
+GRID = os.environ.get("TRAJ_GRID", "coarse")
+assert GRID in ("coarse", "fine"), GRID
+FINE_STEPS = (0, 10, 25, 50, 75, 100, 125, 250, 3_000)
+if GRID == "fine":
+    SNAP_STEPS = FINE_STEPS
+    OUT_DIR += "_fine"
 
 # Registered eval streams, imported and never retyped.
 EVAL_SEED_START = SP.PAIR_EVAL_SEED_START
@@ -214,7 +282,27 @@ PREDICTION = {
     2: {"cross": (125, 250), "flip_cap": int(FLIP_SHARE_CAP * 177),
         "flip_floor": 0},
 }[SEED]
+
+# THE FINE GRID'S PREDICTIONS, registered in the docstring above and committed
+# before the first fine run. `cross` comes from the saturating fit (tau 104 / 82
+# / 36 from each seed's own step-0, step-125 and step-3,000 AUROCs), `flip_cap`
+# from each seed's measured step-125 flip count, and `guard_cap` is the
+# load-bearing one -- the claim that seed 2's 0.1056 at step 125 is a resolution
+# artifact and not the arrival. `cross_125` is the free cross-run replication:
+# step 125 is in both grids, so the fine run must land on the coarse run's row.
+PREDICTION_FINE = {
+    0: {"cross": (50, 100), "flip_cap": 20, "flip_floor": 0,
+        "cross_125": {"corrupt": 0.7480, "guard": 0.0140}},
+    1: {"cross": (10, 25), "flip_cap": 30, "flip_floor": 0,
+        "cross_125": {"corrupt": 0.8070, "guard": 0.0345}},
+    2: {"cross": (10, 50), "flip_cap": 90, "flip_floor": 0,
+        "cross_125": {"corrupt": 0.8520, "guard": 0.1056}},
+}
+if GRID == "fine":
+    PREDICTION = PREDICTION_FINE[SEED]
 PREDICTION["guard_falsifier"] = SP.GUARD_BAR   # 0.10, imported, never retyped
+AUROC_REPRO_TOL = 0.01    # 84 measured 0.0010 and 85 0.0060 across two runs
+GUARD_REPRO_TOL = 0.03    # 84's measured argmax noise, 85 saw 0.0046-0.0312
 
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -404,6 +492,8 @@ for st in SNAP_STEPS:
 with open(os.path.join(OUT_DIR, "trajectory_summary.json"), "w") as fh:
     json.dump({"per_step": rows_out,
                "snap_steps": list(SNAP_STEPS),
+               "grid": GRID,
+               "prediction": {k: v for k, v in PREDICTION.items()},
                "train": {"steps": STEPS, "data_seed": DATA_SEED, "lr": LR,
                          "margin": MARGIN, "seed": SEED, "lambda": 1.0,
                          "n_instances": N_INSTANCES, "batch": BATCH},
@@ -464,6 +554,34 @@ else:
           f"second falsifier: this rerun did not reproduce the published "
           f"{ANCHOR[3_000]['corrupt']:.4f} and nothing above is readable as a "
           f"trajectory")
+# THE EXISTENCE READING, registered separately from the first-crossing one:
+# does ANY snapshot hold the predicate without the guard? 84 and 85 both read the
+# first crossing only, which on seed 2 was 0.0056 past the bar.
+quiet = [r["step"] for r in rows_out
+         if r["pair_auroc_corrupt"] >= SP.PAIR_BAR
+         and r["guard_rate"] < SP.GUARD_BAR]
+loud = [r["step"] for r in rows_out if r["pair_auroc_corrupt"] >= SP.PAIR_BAR]
+print(f"  snapshots with corrupt >= {SP.PAIR_BAR} AND guard < {SP.GUARD_BAR} "
+      f"(the quiet checkpoint): {quiet if quiet else 'NONE'} of the "
+      f"{len(loud)} past the predicate bar")
+
+# The free cross-run replication: step 125 is in both grids, so a fine run
+# retraining the same body on the same stream must land on the coarse row.
+if "cross_125" in PREDICTION:
+    c125 = PREDICTION["cross_125"]
+    r125 = next((x for x in rows_out if x["step"] == 125), None)
+    if r125 is None:
+        print("  step 125 is not in this run's snapshots, cross-run check "
+              "skipped")
+    else:
+        da = abs(r125["pair_auroc_corrupt"] - c125["corrupt"])
+        dg = abs(r125["guard_rate"] - c125["guard"])
+        print(f"  step 125 against the COARSE run: corrupt "
+              f"{r125['pair_auroc_corrupt']:.4f} vs {c125['corrupt']:.4f} "
+              f"(d={da:.4f}, predicted <= {AUROC_REPRO_TOL}), guard "
+              f"{r125['guard_rate']:.4f} vs {c125['guard']:.4f} "
+              f"(d={dg:.4f}, predicted <= {GUARD_REPRO_TOL})")
+
 lo, hi = SP.PLACEBO_BAND
 out_of_band = [r["step"] for r in rows_out
                if not (lo < r["pair_auroc_placebo"] < hi)]
