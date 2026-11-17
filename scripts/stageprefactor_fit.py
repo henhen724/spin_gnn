@@ -231,6 +231,39 @@ def p4_best_model(nb_pts, t_pts, best_run, rho):
     save(f_, os.path.join(FIGS, "P4_best_model_vs_nblank.png"))
 
 
+def p6_two_lines(cells, fits, rho):
+    """The claim in one picture: the same 79 points, two straight lines, and
+    only the one fitted near p = 1 passes through S = 1 at p = 1."""
+    f_, ax, path = fig("P6_two_fits_at_rho%02d.png" % round(rho * 100))
+    sel = [c for c in cells.values()
+           if abs(c["rho"] - rho) < 1e-9 and c["in79"]
+           and 0 < c["solve_rate"] < 1 and 0 < c["p_logic"] < 1]
+    sel.sort(key=lambda c: -c["p_logic"])
+    p = np.array([c["p_logic"] for c in sel])
+    s = np.array([c["solve_rate"] for c in sel])
+    v = fits[round(rho, 4)]
+    ax.scatter(p[TOP_N:], s[TOP_N:], s=16, color=MUTED, alpha=0.8,
+               rasterized=True)
+    ax.scatter(p[:TOP_N], s[:TOP_N], s=34, color=SERIES[1], zorder=3,
+               rasterized=True)
+    xs = np.linspace(p.min(), 1.0, 200)
+    ax.plot(xs, v["C"] * xs ** v["k"], color=SERIES[0], lw=1.8)
+    ax.plot(xs, v["C_top"] * xs ** v["k_top"], color=SERIES[1], lw=1.8)
+    ax.scatter([1.0], [v["C"]], s=46, color=SERIES[0], marker="D", zorder=4)
+    ax.scatter([1.0], [v["C_top"]], s=46, color=SERIES[1], marker="D", zorder=4)
+    ax.set_yscale("log")
+    # Both lines land within 0.2 of each other at p = 1, which on a log axis
+    # is two labels on top of one another; push them apart by a factor.
+    label_line(ax, 1.0, v["C_top"] * 2.2,
+               "top %d:  C = %.3f" % (TOP_N, v["C_top"]), color=SERIES[1])
+    label_line(ax, 1.0, v["C"] * 0.33, "all 79:  C = %.3f" % v["C"],
+               color=SERIES[0])
+    ax.set_xlim(p.min() - 0.005, 1.10)
+    style_axes(ax, xlabel="logical token accuracy p   (rho %.2f, n = %d)"
+               % (rho, round(v["n"])), ylabel="solve rate S")
+    save(f_, path)
+
+
 def p5_stratified(fits):
     """The two curves land exactly on top of each other, and that overlap IS
     the result: with n_blank constant, x = n_blank * log p is log p times a
@@ -377,6 +410,8 @@ def main():
     p3_three_fits(fits)
     p4_best_model(nb_pts, t_pts, best_run, HARD_RHO)
     p5_stratified(fits)
+    p6_two_lines(cells, fits, HARD_RHO)
+    p6_two_lines(cells, fits, 0.60)
 
     with open(os.path.join(OUT, "prefactor_fits.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
