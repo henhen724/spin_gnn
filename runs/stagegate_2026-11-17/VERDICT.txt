@@ -1,0 +1,173 @@
+STAGE GATE -- rho_50 under a DD-faithful solve criterion
+========================================================================
+
+Predictions registered in REGISTERED.md, committed 500a0c1 BEFORE this
+scorer existed.  Refit of stage LOGIC CSVs; no training, no GPU,
+nothing submitted.
+
+inputs: 20039 hazard rows, 1120 summary rows -> 1106 joined (run, rho) cells
+
+DEFECT IN MY OWN REGISTRATION, CAUGHT BY ITS OWN D2
+========================================================================
+The registered estimator was h_j = (n_err - n_err_in_F)/n_at_risk,
+described as the DD-unfaithful rate.  IT IS NOT THAT.  `n_err` counts
+FIRST ERRORS under the permissive rollout rule and `n_err_in_F` is the
+benign subset of those, so the formula counts permissive failures that
+also named an unforced cell -- a SUBSET OF FAILURES, not the set of
+unfaithful emissions.  A rollout that names an unforced cell and
+colours it correctly is not a permissive error at all and never enters
+`n_err`; that is the whole content of finding 98.
+
+`n_in_F` is an EMISSION-level count, so the correct estimator is
+h_j^ddf = 1 - n_in_F(j)/n_at_risk(j).  Evidence it is emission-level:
+median n_in_F/n_at_risk = 0.7432 over 19,889 rows, and n_in_F > n_err
+on 19,365 of them, which no error-subset column could do.
+
+CONSEQUENCE, APPLIED BELOW WITHOUT EXCEPTION: G1-G5 as registered do
+not test what they claim, and are scored VOID BY SCORER DEFECT rather
+than as honest misses.  Everything computed from h^ddf is POST-HOC and
+is claimed as nobody's prediction.
+
+  what the registered formula gives, for the record:
+  median log S_regd / log S = 1.0000 over 1009 cells --
+  i.e. it simply reproduces the permissive solve rate, as it must,
+  because its numerator differs from n_err by 2%.
+
+D1 -- PRODUCT CLOSURE AGAINST THE MEASURED SOLVE RATE (registered)
+------------------------------------------------------------------------
+  cells with n >= 12: 790
+  median |prod(1 - n_err/n_at_risk) - S| = 0.00000  (bar < 0.01)
+  max                                    = 0.03721  (bar < 0.05)
+  POS's P2(a) residual for reference: 2.25e-02
+  -> D1 PASSES  -- the product form
+     itself is sound; what was wrong was which numerator I fed it.
+
+D2 -- MONOTONICITY
+------------------------------------------------------------------------
+  As registered: S_logic <= S_strict_hat on every cell.  THAT
+  INEQUALITY WAS BACKWARDS -- h_logic <= h_perm by construction, so the
+  registered product can only be the LARGER of the two.  D2 fired on
+  that, which is how the defect above was found.
+
+  AND THE OBVIOUS REPAIR, S_ddf <= S, IS ALSO NOT FORCED.  The two
+  criteria are NOT NESTED: S_ddf asks only 'did it ever name an
+  unforced cell', while S asks 'did it reach SOLVED with the planted
+  colouring'.  A rollout can choose every cell faithfully and still
+  fail S -- wrong colour on a forced cell, a grammar slip, early
+  termination -- and conversely.  So neither direction is guaranteed,
+  and what IS guaranteed is that the TRUE DD-faithful solve rate, the
+  intersection of the two, is at most min(S, S_ddf).
+  cells with S_ddf > S: 1 of 1106
+    r68 rho 0.95: S 0.8575 vs S_ddf 0.8587  (excess +0.0012)
+  -> D2 as registered: WRONG INEQUALITY, and its repair is wrong too;
+     the quantity that is actually bounded is min(S, S_ddf), reported
+     per density below.  The run-level check that matters is that
+     rho_50 never moves the easy way, scored next.
+
+rho_50 CENSORING (reported, never dropped silently)
+------------------------------------------------------------------------
+  published ok             DD-faithful ok              79 runs
+  -> 79 of 79 runs have both defined
+  rho50_ddf < rho50 on 0 of 79 -- the run-level
+  form of D2, and the one that matters: no run gets EASIER under the
+  stricter criterion.
+
+POST-HOC G1 -- DOES THE DD-FAITHFUL CRITERION SQUARE THE SOLVE RATE?
+------------------------------------------------------------------------
+  (the registered prediction was [1.5, 2.8] from 97's 1/R; it is scored
+   VOID because the estimator it named was the wrong quantity)
+  rho      n    runs   median ratio   spread
+  0.95   3.0     63          3.456   [0.991, 7.901]
+  0.90   5.0     66          3.574   [1.000, 5.229]
+  0.85   8.0     74          3.271   [1.781, 6.391]
+  0.80  10.0     75          3.130   [1.000, 4.231]
+  0.75  12.0     79          3.074   [1.000, 4.208]  outside
+  0.70  15.0     79          2.968   [1.751, 3.350]  outside
+  0.65  17.0     79          2.911   [1.750, 3.790]  outside
+  0.60  20.0     79          2.798   [1.896, 3.409]  in band
+  0.55  22.0     79          2.726   [1.975, 3.216]  in band
+  0.50  24.0     79          2.668   [1.969, 3.144]  in band
+  -> in [1.5, 2.8] at 3 of 6 densities with n >= 12
+
+POST-HOC G4 -- IS THE PENALTY WEAKEST WHERE THE TASK IS HARDEST?
+------------------------------------------------------------------------
+  Spearman(median ratio, rho) over 10 densities = +0.988
+  97's 1/R falls 2.26 (rho 0.75) -> 1.65 (rho 0.50), so POSITIVE was
+  the expectation: the squaring penalty shrinks as the task gets harder
+
+POST-HOC G2 -- DOES J2 STILL CLEAR THE GATE?
+------------------------------------------------------------------------
+  J2 = no_mlp L=16 d192, 3 seeds, 2,504,890 trainable
+  run_id            published   DD-faithful
+  r65                  0.5955       0.6739   [ok]
+  r66                  0.5688       0.6431   [ok]
+  r67                  0.7528       0.8676   [ok]
+  median DD-faithful rho_50 =     0.6739   (gate 0.740)
+  -> J2 clears the gate under the DD-faithful criterion
+
+  The estimator ignores grammar / early-term / truncation failures, so
+  it is an UPPER bound on the DD-faithful solve rate and this rho_50 is
+  an OPTIMISTIC (low) bound.  A failure is therefore real; a pass is an
+  upper-bound pass only.  That asymmetry was registered in advance.
+
+POST-HOC G3 -- DOES THE RANKING SURVIVE?
+------------------------------------------------------------------------
+  Spearman over 79 runs with both defined = +0.7442
+  median shift +0.1079, range [+0.0274, +0.1615]
+
+POST-HOC G5 -- THE ORDERING AT THE TOP OF THE RUNG TABLE
+------------------------------------------------------------------------
+  J2  no_mlp L=16 d192   published     0.5955   DD-faithful     0.6739   (3 seeds)
+  hub full L=6 d256      published     0.6227   DD-faithful     0.7326   (6 seeds)
+  separation: published 0.0272 -> DD-faithful 0.0587; J2 still lower: True
+
+WHAT THE DD-FAITHFUL CRITERION DOES TO THE POPULATION
+========================================================================
+  clearing 0.740 as published:   23 of 79
+  clearing 0.740 DD-faithful:    19 of 79
+  runs that lose the gate: 4 of 23
+  survivors, smallest first:
+    L=16 h=4 tied_no_mlp d320 k2    1,025,978      0.6160 ->     0.6970
+    L=16 h=4 no_mlp d160          1,759,738      0.6108 ->     0.7012
+    L=16 h=4 tied_no_mlp d320 k4    1,850,298      0.5943 ->     0.6824
+    L=16 h=4 no_mlp d192          2,504,890      0.5955 ->     0.6739
+    L=16 h=4 no_mlp d192          2,504,890      0.5688 ->     0.6431
+
+  per-density solve rate, median over all in79 runs.  min(S, S_ddf) is
+  the only strict UPPER BOUND on the true DD-faithful rate, since the
+  two criteria are not nested:
+  rho      n    median S   median S_ddf   median min(S, S_ddf)
+  0.95   3.0     0.9625         0.8706                 0.8706
+  0.90   5.0     0.9000         0.6701                 0.6701
+  0.85   8.0     0.7425         0.3697                 0.3697
+  0.80  10.0     0.6050         0.1947                 0.1947
+  0.75  12.0     0.4825         0.0993                 0.0993
+  0.70  15.0     0.3250         0.0324                 0.0324
+  0.65  17.0     0.2125         0.0098                 0.0098
+  0.60  20.0     0.1000         0.0012                 0.0012
+  0.55  22.0     0.0650         0.0005                 0.0005
+  0.50  24.0     0.0350         0.0001                 0.0001
+  0.45  27.0     0.0125         0.0000                 0.0000
+  0.40  29.0     0.0075         0.0000                 0.0000
+  0.35  31.6     0.0025         0.0000                 0.0000
+  0.33  32.0     0.0025         0.0000                 0.0000
+
+SCORECARD
+========================================================================
+  G1 squaring law            VOID BY SCORER DEFECT
+  G2 J2 clears the gate      VOID BY SCORER DEFECT
+  G3 ranking survives        VOID BY SCORER DEFECT
+  G4 penalty vs difficulty   VOID BY SCORER DEFECT
+  G5 top-of-table ordering   VOID BY SCORER DEFECT
+  D1 product closure         PASSES
+  D2 monotonicity            REGISTERED FORM BACKWARDS, and its obvious
+                             repair is not forced either (the criteria
+                             are not nested); the run-level form
+                             HOLDS at 0 of 79 runs moving the easy way
+
+  D2 is the reason this stage has a result at all: a diagnostic whose
+  only job was to be boring caught the estimator being the wrong
+  quantity.  98's lesson was 'read both scorers'; this one is 'read
+  which column the scorer actually wrote'.
+
+wrote gate_cells.csv (1106 rows), gate_runs.csv (79)
