@@ -1,0 +1,84 @@
+Stage PREFACTOR -- why C falls to 0.797 at rho 0.50.
+Predictions and falsifiers are in REGISTERED.md, committed before this
+script was written.  No training, no GPU, no new instances.
+
+  rho     n  runs |      C      k +- se |   C_q      q +- se |   C_top  k_top +- se |  p_max   n_blank
+  0.50  24.0    79 |  0.797   24.5  0.8 |  1.068   +34.6   8.8 |  0.997   30.3   0.8 | 0.9949   24
+  0.55  22.0    79 |  0.821   21.0  0.6 |  1.072   +39.7   6.9 |  0.991   26.3   1.0 | 0.9969   22
+  0.60  20.0    79 |  0.900   19.2  0.5 |  1.122   +41.9   6.5 |  0.997   22.2   1.0 | 0.9977   20
+  0.65  17.0    79 |  0.953   14.9  0.3 |  1.017   +19.0   5.1 |  1.001   18.9   0.5 | 0.9992   17
+  0.70  15.0    79 |  0.985   12.7  0.2 |  1.007    +9.4   4.7 |  0.994   14.3   0.5 | 0.9999   15
+  0.75  12.0    79 |  0.991    9.8  0.2 |  0.986    -4.1   6.2 |  1.000   13.0   0.8 | 0.9998   12
+  0.80  10.0    79 |  1.005    8.1  0.2 |  0.988   -18.2   7.2 |  0.985    5.6   1.7 | 0.9996   10
+  0.85   8.0    79 |  1.012    6.4  0.2 |  0.992   -45.1   7.4 |  0.999    5.7   1.5 | 0.9993   8
+  0.90   5.0    79 |  1.011    4.0  0.2 |  0.992  -103.7  11.9 |  0.998    3.6   0.1 | 0.9998   5
+  0.95   3.0    79 |  1.018    3.6  0.3 |  0.996  -144.8  15.3 |  1.000    2.3   0.3 | 0.9997   3
+
+Q1 curvature.  Densities with C < 0.95: 3 (0.60, 0.55, 0.50).
+   q significant (|q| > 2 se) at 3 of 3; C_q closer to 1 at 2 of 3.
+   predicted: q significant AND C_q closer to 1 at a majority -> HIT
+
+Q2 extrapolation distance.  (1 - C) = -0.012 + 47.475 (1 - p_max), R2 0.911, p 1.8e-05, 10 densities.
+   predicted: positive slope with R2 > 0.5, falsified below 0.2 -> HIT
+
+Q3 top-8 refit.  C_top > C at 4 of 4 densities with n >= 17; median C_top over rho <= 0.60 = 0.997.
+   predicted: all of them, and median >= 0.95 -> HIT
+
+Q4 the residual subset.  Most accurate run at rho 0.50: r39, p_logic 0.9949, solve rate 0.8625.
+   Registered against n_blank -- but n_blank is CONSTANT in the bin (24), so
+   that half of Q4 is one point and admits no correlation: VOID, not missed.
+   Against T_true, the difficulty variable that does vary, strata >= 25 instances:
+     T_true        4      5      6      7      8      9     10
+     instances    28     67     85     61     53     38     25
+     solved    0.964  0.955  0.929  0.902  0.736  0.789  0.800
+   Spearman over strata -0.857; per instance -0.253 (p 2.9e-07, n 400). Descriptive:
+   the registered -0.5 threshold was set for n_blank, not for T_true.
+   its 55 failures by first_kind: color_wrong 48 (87%), node_invalid 4 (7%), none 2 (4%), truncated 1 (2%)
+
+Q5 the n spread.  Distinct n_blank values per bin: 0.50->1, 0.55->1, 0.60->1, 0.65->1, 0.70->1, 0.75->1, 0.80->1, 0.85->1, 0.90->1, 0.95->1.
+   The premise is FALSE: the generator plants round(rho*48) hints, so
+   every instance in a fit bin has the same n_blank and the spread is
+   zero.  With n_blank constant, x = n_blank*log p is log p times a
+   constant, so the stratified fit is the pooled fit with the slope
+   rescaled and an IDENTICAL intercept -- max |C_s - C| = 9.2e-05 over
+   the ten densities.  VOID, not missed; C_s < C at 2 of 4 is
+   floating point, not evidence.  What this does establish: Jensen
+   curvature over an n spread CANNOT be the cause, because there is
+   no spread to be convex over.  Ruled out by construction.
+
+DESCRIPTIVE, POST-HOC -- not registered, do not score it.  Freeing C
+costs the exponent: the pooled fit buys a small k with a small C.
+  n   k/n    k_top/n   (2n+T+1)/n = the scored tokens per instance
+  24.0   1.02     1.26     2.34
+  22.0   0.96     1.20     2.33
+  20.0   0.96     1.11     2.31
+  17.0   0.88     1.11     2.30
+  15.0   0.85     0.96     2.30
+  12.0   0.82     1.09     2.32
+  10.0   0.81     0.56     2.34
+   8.0   0.80     0.71     2.37
+   5.0   0.80     0.71     2.48
+   3.0   1.19     0.76     2.72
+  k_top/n exceeds 1 at the large-n densities, so a node token is not the
+  only fatal position -- consistent with Q4, where 87% of the best
+  model's residual failures are color_wrong, a colour and not a node.
+  Read k_top only at n >= 12.  Below that the top 8 runs all sit at
+  p > 0.999 with S ~ 1, the fit has no lever arm, and k_top (0.56-0.76 n)
+  is noise -- which is also why Q3's claim was registered for n >= 17.
+
+WHAT THIS DOES NOT ESTABLISH.  The top-8 refit trades sample size for a
+shorter extrapolation: 8 points, not 79, and its se is OLS, so it does
+not carry the binomial noise in S over 400 instances.  C_top ~ 1 is
+therefore consistent with C = 1, not a measurement of it.  And nothing
+here is a new eval -- same 79 runs, same 448k rollouts, same CSVs as
+stage LOGIC, refitted.  No model changed and no instance was regenerated.
+
+SCORECARD: Q1 HIT, Q2 HIT, Q3 HIT, Q4 VOID as registered (T_true reported), Q5 VOID (no n spread).
+
+BOTTOM LINE: C < 1 is an artefact of extrapolating a straight line in
+log p from p ~ 0.995 out to p = 1.  Fit only the 8 runs nearest p = 1
+and the prefactor returns to 0.997 at rho 0.50, where the pooled fit
+said 0.797.  The S = p^(0.93 n) law does NOT need a second failure
+mode: at p = 1 the models solve everything, as a fatal-logical-error
+account requires.  The pooled C is biased low because log S is convex
+in log p and the bulk of the 79 runs sit far from p = 1.
