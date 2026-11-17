@@ -115,7 +115,9 @@ def t1_gain(summ):
         label_line(ax, rhos[-1], y[-1], g, color=COL[g])
     ax.invert_xaxis()
     style_axes(ax, xlabel="hint density rho   (harder to the right)",
-               ylabel="p_logic - p_strict   (band = seed min-max)")
+               # Not "seed min-max": the 9 tied runs are 3 seeds x 3 values
+               # of k, so the band is over runs, not over seeds.
+               ylabel="p_logic - p_strict   (band = run min-max)")
     save(f_, path)
 
 
