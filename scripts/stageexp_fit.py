@@ -231,6 +231,15 @@ def load_free():
 # figures
 # --------------------------------------------------------------------------
 
+def rho_ticks(ax):
+    """Label all ten densities, the way x2_mass's categorical axis already
+    does.  Matplotlib's auto locator put an irregular 0.90 / 0.80 / 0.75 / ...
+    axis under the line plots, which reads as non-uniform spacing when the
+    densities are in fact evenly spaced by 0.05."""
+    ax.set_xticks(list(FIT_RHOS))
+    ax.set_xticklabels(["%.2f" % r for r in FIT_RHOS], fontsize=9)
+
+
 def x1_ratio(cells):
     f_, ax, path = fig("X1_ratio_by_density.png", w=7.4, h=4.6)
     xs, ys = [], []
@@ -250,6 +259,7 @@ def x1_ratio(cells):
             color=SERIES[1], fontsize=9, va="bottom")
     ax.invert_xaxis()
     ax.set_ylim(0, 1.6)
+    rho_ticks(ax)
     style_axes(ax, xlabel="hint density rho   (harder to the right)",
                ylabel="(-log S) / (n e_node)")
     save(f_, path)
@@ -325,6 +335,7 @@ def ph_factors(rows):
     ax.axhline(1.0, color=MUTED, lw=1.1, ls="--")
     ax.invert_xaxis()
     ax.set_ylim(0, 2.3)
+    rho_ticks(ax)
     style_axes(ax, xlabel="hint density rho   (harder to the right)",
                ylabel="dimensionless")
     save(f_, path)
@@ -361,6 +372,7 @@ def x6_forced(byrho):
             fontsize=9, va="bottom")
     ax.invert_xaxis()
     ax.set_ylim(0, 1.04)
+    rho_ticks(ax)
     style_axes(ax, xlabel="hint density rho   (harder to the right)",
                ylabel="share of color_wrong first errors\nat an UNFORCED node")
     save(f_, path)
