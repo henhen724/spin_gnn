@@ -481,6 +481,7 @@ def main():
             "solve_rate": f(r, "solve_rate"), "frac_unforced": f(r, "frac_unforced"),
             "n_err_node": i(r, "n_err_node"), "n_first_err": i(r, "n_first_err"),
             "n_err_unforced": i(r, "n_err_unforced"),
+            "n_err_unforced_now": i(r, "n_err_unforced_now"),
             "node_premature": i(r, "node_premature"), "node_in_F": i(r, "node_in_F"),
             "node_recolor": i(r, "node_recolor"), "node_nonnode": i(r, "node_nonnode"),
         }
@@ -568,11 +569,11 @@ def main():
     verdict = ("HIT" if L1_BAND[0] <= a_logic <= L1_BAND[1] else
                "MISS, FALSIFIED" if not (L1_FALSIFY[0] <= a_logic <= L1_FALSIFY[1])
                else "MISS, not falsified")
+    note = ("" if L1_PREFACTOR[0] <= medC <= L1_PREFACTOR[1]
+            else "  (prefactor OUTSIDE its band)")
     w("    predicted a in [%.2f, %.2f], falsified outside [%.2f, %.2f], prefactor "
       "in [%.1f, %.1f]  -> %s%s"
-      % (L1_BAND + L1_FALSIFY + L1_PREFACTOR + (verdict,),
-         "" if L1_PREFACTOR[0] <= medC <= L1_PREFACTOR[1] else
-         "  (prefactor OUTSIDE its band)"))
+      % (L1_BAND + L1_FALSIFY + L1_PREFACTOR + (verdict, note)))
     w("")
 
     bad = [(c["run_id"], c["rho"], c["p_logic"] - c["p_strict"])
@@ -616,9 +617,14 @@ def main():
       % ("HIT" if medf > 0.5 else "MISS, FALSIFIED"))
     tot_e = sum(c["n_err_node"] for c in cells.values())
     tot_u = sum(c["n_err_unforced"] for c in cells.values())
-    w("    pooled over every density and run: %d of %d scored first errors (%.1f%%)"
+    tot_n = sum(c["n_err_unforced_now"] for c in cells.values())
+    w("    pooled over every density and run: %d of %d scored first errors (%.3f%%)"
       % (tot_u, tot_e, 100.0 * tot_u / tot_e if tot_e else float("nan")))
-    w("    name a node DD had not yet forced.")
+    w("    name a node DD had not yet forced; the %d exception%s named a forced node"
+      % (tot_e - tot_u, "" if tot_e - tot_u == 1 else "s"))
+    w("    and mis-coloured it. Against the model's OWN current state (same-round")
+    w("    siblings counted, the second registered column): %d of %d (%.3f%%)."
+      % (tot_n, tot_e, 100.0 * tot_n / tot_e if tot_e else float("nan")))
     w("")
 
     w("L5  the premature-rate confound, reported raw AND against availability.")
@@ -665,6 +671,13 @@ def main():
                          if tn < -0.5 else
                          "raw only: AVAILABILITY, not a weaker guard" if tr < -0.5
                          else "neither trends"))
+        thin = [r for r, _ in raws if avail.get(round(r, 4), (1.0, {}))[0] < 0.025]
+        if thin:
+            w("    CAVEAT, A MAGNITUDE CHECKED AT A DEGENERATE POINT IS NOT CHECKED:")
+            w("    at rho %s availability is below 0.025, i.e. ABOUT ONE node of 48"
+              % ", ".join("%.2f" % r for r in sorted(thin, reverse=True)))
+            w("    is even available to name prematurely, so the normalised column")
+            w("    there divides by nearly nothing. Read it from rho 0.80 down.")
     w("")
 
     w("SAME-EVAL CHECK (figure F3). The replayed rollouts must be stage POS's own.")
