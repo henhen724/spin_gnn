@@ -25,7 +25,7 @@
 
 ## Running
 
-- **`52634344_[0-9]%5` `stageposRest`** — sganguli, 1 GPU, `--time=04:00:00` per task, A+B on the other 73 runs, round-robin sharded. **Still PENDING (Priority) after ~1 h; all 3 sganguli nodes are mixed.** Submitted 00:20 at commit `aa21405`. Its dependency, **`52634338` `stageposSeven`, COMPLETED clean in 8:55**. 10-poll budget spent — not polling further; this is the id to check.
+- **`52634344_[0-9]%5` `stageposRest`** — sganguli, 1 GPU, `--time=04:00:00` per task, A+B on the other 73 runs, round-robin sharded. **STARTED: task 0 RUNNING on sh04-02n01, tasks 1–9 PENDING (Resources).** Submitted 00:20 at commit `aa21405`. Its dependency, **`52634338` `stageposSeven`, COMPLETED clean in 8:55**. 10-poll budget spent — not polling further; this is the id to check.
 - **Stage POS CSVs**, `$SCRATCH/spin_gnn/runs/stagepos_2026-11-17/`: `A_position_seven.csv`, `B_hazard_seven.csv`, `B_instances_seven.csv`, `B_summary_seven.csv` (array shards add `*_rest_<i>of10.csv`). Figures in `figures/`, verdicts in `VERDICT.txt`. Rerun with `POS_OUT=... python3 scripts/stagepos_figs.py` once the shards land — it merges whatever is on disk and reports how many of the 79 are present.
 - **SAT CSV and figures**, `$SCRATCH/spin_gnn/runs/sat_powerlaw_2026-11-17/`: `sat_points.csv` (154 rows, one per run), `REPORT.txt`, `figures/S{1,1b,2,2b,3}*.png`. Rebuild with `python3 scripts/sat_powerlaw.py`.
 - **Decks:** `/spin-gnn/` now **18** decks, password `sapling-yarrow-69`, newest `/spin-gnn/sat-power-law/`. **`/transition-and-minimal-models/` (87 slides, password `quartz-maple-28`) is DONE, DELIBERATELY TOP-LEVEL, and hshunt is editing a local copy — do not edit or republish it.**
