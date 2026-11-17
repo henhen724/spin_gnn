@@ -1,0 +1,212 @@
+Stage REGIME -- why is teacher forcing the HARDER regime?
+Finding 97 left R = (-log S)/(n e_node) = 0.37-0.61 unexplained.  This
+puts the free-generation hazard h_j and the teacher-forced logical node
+error e_j on the same deduction index j.  Both LOGICAL.  Predictions in
+REGISTERED.md, committed at 8da2183 before this script was written.
+No training, no GPU, no new instances -- a refit of stage LOGIC's CSVs.
+
+D1  the two tables are the same population, position by position.
+    sum_j n_total(j) == n_total(scheme=all) on 1106 of 1106 cells, max |diff| 0
+    n_total(j) != n_instances at 0 of 15168 position rows where n is the
+    same for every instance (the ten scored densities), and at 553 of 5135
+    where it is not (rho 0.33/0.35, j >= 29, so j >= n for some instance
+    and the `for j < n' clause does not apply).
+    joined keys 19889;  only in F_hazard 0;  only in L_position 414
+    unmatched by rho: 0.33:207  0.35:141  0.40:50  0.45:16
+    unmatched keys INSIDE the ten scored densities: 0
+    79 cells have short hazard coverage; at-risk set exhausted at the
+    last j in 58 of them, the rest end with a lone survivor completing.
+    PASSES -- the identity is exact, and every unmatched key is
+    at rho <= 0.45, outside every density O1-O5 are scored at.
+
+O1  the j = 0 anchor -- same prefix, same instances, no censoring.
+     rho      n | runs | median r_0 | run min-max       | in [0.8,1.25]
+     0.95   3.0 |   63 |      0.526 |  0.250 -  1.000 | no   (n < 12, not scored)
+     0.90   5.0 |   64 |      0.500 |  0.000 -  1.000 | no   (n < 12, not scored)
+     0.85   8.0 |   63 |      0.508 |  0.000 -  1.000 | no   (n < 12, not scored)
+     0.80  10.0 |   62 |      0.477 |  0.345 -  1.000 | no   (n < 12, not scored)
+     0.75  12.0 |   63 |      0.493 |  0.325 -  1.000 | no
+     0.70  15.0 |   62 |      0.498 |  0.000 -  0.579 | no
+     0.65  17.0 |   62 |      0.500 |  0.154 -  0.577 | no
+     0.60  20.0 |   62 |      0.482 |  0.000 -  0.603 | no
+     0.55  22.0 |   62 |      0.502 |  0.333 -  0.614 | no
+     0.50  24.0 |   62 |      0.534 |  0.000 -  0.626 | no
+    in [0.8, 1.25] at 0 of 6 densities with n >= 12
+    pooled median r_0 over those six densities = 0.499
+    predicted: median in [0.8, 1.25] at a majority -> MISS
+
+    DROPPED CELLS (e_0 = 0, so r_0 undefined) -- and which way they push:
+     rho | kept | dropped | of those, h_0 > 0 | median h_0 there
+     0.95 |   63 |      16 |                 0 | --
+     0.90 |   64 |      15 |                 0 | --
+     0.85 |   63 |      16 |                 0 | --
+     0.80 |   62 |      17 |                 0 | --
+     0.75 |   63 |      16 |                 0 | --
+     0.70 |   62 |      17 |                 0 | --
+     0.65 |   62 |      17 |                 0 | --
+     0.60 |   62 |      17 |                 0 | --
+     0.55 |   62 |      17 |                 0 | --
+     0.50 |   62 |      17 |                 0 | --
+    pooled: 165 dropped, 0 of them with h_0 > 0
+    No dropped cell has h_0 > 0, so the drop rule removes only 0/0
+    cells and cannot move the median r_0 in either direction.
+
+    READ: r_0 < 1 AT THE FIRST DECISION.  The two regimes do NOT
+    agree where they are provably on the same state and the same
+    instances, so R < 1 is present before any selection or any
+    ordering freedom can act.  Candidates (i) and (ii) cannot be
+    the whole story, and a DEFINITIONAL difference between the two
+    instruments is implicated.  O5 is the one that names a
+    definitional difference, and it is scored below.
+
+O2  shape cannot explain R, because e_j is flat in j.
+     rho      n | CV(e_j) | Jensen term / sum -log(1-h_j)
+     0.95   3.0 |     nan | +nan   (n < 12)
+     0.90   5.0 |   0.489 | +0.0053   (n < 12)
+     0.85   8.0 |   0.460 | +0.0081   (n < 12)
+     0.80  10.0 |   0.424 | +0.0067   (n < 12)
+     0.75  12.0 |   0.409 | +0.0064
+     0.70  15.0 |   0.396 | +0.0082
+     0.65  17.0 |   0.366 | +0.0090
+     0.60  20.0 |   0.384 | +0.0100
+     0.55  22.0 |   0.232 | +0.0074
+     0.50  24.0 |   0.148 | +0.0072
+    CV(e_j) < 0.25 at 2 of 6;  |Jensen| < 0.10 at 6 of 6
+    predicted: both at a majority -> MISS
+    If e_j is flat then R is a ratio of MEANS and the falling shape of
+    h_j (POS P1) is irrelevant to R by construction.  That retires
+    candidate (ii) analytically rather than empirically.
+
+O3  the gap grows with j (registered as a CONFIRMATION, not a
+    discovery: POS P1 + LOGIC P3 nearly force it).
+     rho      n | cells | median Spearman(r_j, j) | share negative
+     0.95   3.0 |     0 |                     nan | n/a
+     0.90   5.0 |    61 |                  -0.900 | 0.984
+     0.85   8.0 |    65 |                  -0.857 | 0.985
+     0.80  10.0 |    74 |                  -0.442 | 0.878
+     0.75  12.0 |    75 |                  -0.210 | 0.773
+     0.70  15.0 |    77 |                  -0.175 | 0.740
+     0.65  17.0 |    79 |                  -0.161 | 0.671
+     0.60  20.0 |    79 |                   0.083 | 0.418
+     0.55  22.0 |    79 |                   0.182 | 0.266
+     0.50  24.0 |    79 |                   0.100 | 0.304
+    median Spearman < -0.3 at 0 of 6 densities with n >= 12
+    predicted: < -0.3 at a majority -> MISS
+
+O4  survivorship is large enough for O3 to be about selection.
+     rho      n | last j | median n_at_risk/n_instances at that j
+     0.95   3.0 |    2.0 | 0.9625
+     0.90   5.0 |    4.0 | 0.9000
+     0.85   8.0 |    7.0 | 0.7425
+     0.80  10.0 |    9.0 | 0.6050
+     0.75  12.0 |   11.0 | 0.4850
+     0.70  15.0 |   14.0 | 0.3250
+     0.65  17.0 |   16.0 | 0.2125
+     0.60  20.0 |   19.0 | 0.1000
+     0.55  22.0 |   21.0 | 0.0650
+     0.50  24.0 |   23.0 | 0.0350
+    at rho = 0.50 the median surviving fraction at the last j is 0.0350
+    predicted: < 0.40 -> HIT
+
+O5  the censoring is small, and which way it pushes R.
+    benign first errors (named a FORCED cell, just not the
+    reference's next one): 1988 of 271858 first errors = 0.0073
+    predicted: < 0.05 -> HIT
+
+     rho | median r_j as measured | with benign censoring undone | up?
+     0.95 |                    nan |                          nan | no
+     0.90 |                 0.2951 |                       0.2951 | no
+     0.85 |                 0.3289 |                       0.3287 | no
+     0.80 |                 0.3869 |                       0.3858 | no
+     0.75 |                 0.4052 |                       0.4036 | no
+     0.70 |                 0.4287 |                       0.4234 | no
+     0.65 |                 0.4571 |                       0.4547 | no
+     0.60 |                 0.5013 |                       0.4994 | no
+     0.55 |                 0.5115 |                       0.5095 | no
+     0.50 |                 0.5202 |                       0.5174 | no
+    raises median r_j at 0 of 6 densities with n >= 12
+    predicted: RAISES at a majority -> MISS
+
+    A DEFECT IN MY OWN REGISTRATION, and it is the second half of O5.
+    REGISTERED.md argues in prose that benign censoring SHRINKS the
+    denominator and therefore RAISES h_j -- which is right -- and then
+    predicts that UNDOING the censoring raises r_j, which is the
+    opposite direction: undoing it ENLARGES the denominator and must
+    LOWER h_j.  The two sentences contradict each other.  The
+    prediction is scored exactly as written, so this half is a MISS if
+    the correction lowers r_j, and the prose was the correct half.
+    The correction is an UPPER bound on the denominator (a benignly
+    censored rollout is credited as still at risk at every later j), so
+    the corrected r_j is a LOWER bound.
+
+POST-HOC, NOT REGISTERED -- the per-decision budget behind R.
+     rho      n | sum e_j | sum -log(1-h_j) | ratio | R from 97
+     0.75  12.0 |   1.723 |           0.739 | 0.429 | 0.442
+     0.70  15.0 |   2.515 |           1.124 | 0.447 | 0.462
+     0.65  17.0 |   3.232 |           1.549 | 0.479 | 0.489
+     0.60  20.0 |   4.217 |           2.303 | 0.546 | 0.550
+     0.55  22.0 |   4.865 |           2.733 | 0.562 | 0.573
+     0.50  24.0 |   5.670 |           3.352 | 0.591 | 0.607
+    The `ratio` column is this stage's own reconstruction of R from the
+    per-position tables; `R from 97` is the whole-rollout quantity.
+    They are built from different columns of the same runs, so they
+    agree only up to the j range the hazard table covers -- the
+    difference is a measure of what the per-position view leaves out,
+    NOT a second estimate to average with the first.
+
+POST-HOC, NOT REGISTERED -- WHAT R ACTUALLY IS.
+    O1 says r_0 = 0.499 where the two instruments are provably on the
+    same prefix, the same instances and the same greedy argmax over the
+    same 58 symbols (rollout_batch takes an unconstrained argmax, so at
+    j = 0 the emitted token is the SAME TOKEN in both regimes).  Two
+    instruments cannot disagree about one token unless they are scoring
+    different EVENTS, and they are:
+
+      e_j  counts  `the cell named was not forced by DD'
+      h_j  counts  `the pair emitted was not an ok pair'
+
+    and stagelogic_score.py's walk_continuation defines an ok pair as
+    node_valid AND color_correct, where node_valid is only `not already
+    coloured' -- NOT `forced'.  So naming a cell DD has not yet forced is
+    not an error in free generation at all, provided the colour is right.
+    Confirmed on the first-error records: of 20657 first errors at j = 0
+    over the six scored densities, 20656 are kind=color_wrong and 1 is
+    node_invalid; err_uncolored is 1 on all but that one.  The cell
+    CHOICE is never itself the error.
+
+    The three rates at the uncensored j = 0 anchor, pooled over 79 runs:
+     rho | emissions | named unforced | of those, colour | error on a
+         |           |                |      right      | forced cell
+    0.95 |     31600 |   1158  0.0366 |          0.4810 |     0.0011
+    0.90 |     31600 |   1913  0.0605 |          0.4867 |     0.0016
+    0.85 |     31600 |   3098  0.0980 |          0.4939 |     0.0026
+    0.80 |     31600 |   3919  0.1240 |          0.5190 |     0.0029
+    0.75 |     31600 |   4437  0.1404 |          0.5159 |     0.0032
+    0.70 |     31600 |   6402  0.2026 |          0.5045 |     0.0032
+    0.65 |     31600 |   6676  0.2113 |          0.5006 |     0.0031
+    0.60 |     31600 |   7375  0.2334 |          0.5158 |     0.0027
+    0.55 |     31600 |   7399  0.2341 |          0.4972 |     0.0026
+    0.50 |     31600 |   7993  0.2529 |          0.4647 |     0.0026
+
+    READ, and it answers 97's open question:  the model has LEARNED
+    direct deduction -- on a cell DD really has forced it errs 0.1-0.3%
+    of the time.  What it has not learned is WHEN TO WAIT: it names a
+    not-yet-forced cell 3.7% of the time at rho 0.95 rising to 25.3% at
+    rho 0.50, and then colours it correctly about HALF the time, against
+    1/q = 0.25 for a blind guess.  Teacher forcing counts every one of
+    those premature picks as a logical error; free generation only
+    counts the mis-coloured half.  R ~ 0.5 IS THAT HALF.  Teacher
+    forcing is therefore not the harder regime -- it is the stricter
+    SCORE, and R is the rate at which a premature guess happens to be
+    right.  This also explains O1 and O2 together: the one-half is a
+    property of a single decision, which is why it is already there at
+    j = 0 and why no shape in j was ever needed to produce it.
+
+    What this does NOT establish: the colour accuracy on unforced cells
+    is ~0.5 at every density, but WHY it is 0.5 rather than 0.25 or 0.9
+    is not measured here.  A cell DD has not forced may still be heavily
+    constrained (q - 1 colours excluded of q), so 0.5 is not evidence of
+    guessing at random, and the n_F_sum column needed to size that is
+    not used by this stage.
+
+SCORECARD written alongside regime_positions.csv (19889 rows).
