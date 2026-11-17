@@ -117,9 +117,11 @@ POST-HOC G3 -- DOES THE RANKING SURVIVE?
 
 POST-HOC G5 -- THE ORDERING AT THE TOP OF THE RUNG TABLE
 ------------------------------------------------------------------------
+  keyed on the cell LABEL; keying on (arch_mode, num_layers, d_model)
+  pools the hub with `full L=6 ff256`, 96's defect -- see is_cell()
   J2  no_mlp L=16 d192   published     0.5955   DD-faithful     0.6739   (3 seeds)
-  hub full L=6 d256      published     0.6227   DD-faithful     0.7326   (6 seeds)
-  separation: published 0.0272 -> DD-faithful 0.0587; J2 still lower: True
+  hub full L=6 d256      published     0.6068   DD-faithful     0.6942   (3 seeds)
+  separation: published 0.0113 -> DD-faithful 0.0203; J2 still lower: True
 
 WHAT THE DD-FAITHFUL CRITERION DOES TO THE POPULATION
 ========================================================================
@@ -151,6 +153,59 @@ WHAT THE DD-FAITHFUL CRITERION DOES TO THE POPULATION
   0.40  29.0     0.0075         0.0000                 0.0000
   0.35  31.6     0.0025         0.0000                 0.0000
   0.33  32.0     0.0025         0.0000                 0.0000
+
+THE SAME QUESTION PER ARCHITECTURE, WHICH IS HOW THE TABLE IS READ
+========================================================================
+  31 architectures, seed medians
+  clearing 0.740 as published:    6 of 31
+  clearing 0.740 DD-faithful:     6 of 31
+  SAME SET: True
+  -> the 4 run-level losses above are single seeds of architectures
+     whose seed MEDIAN never cleared the gate in the first place:
+     L=12 h=4 no_mlp d192       seed 0.6441, median of 3 0.7546 (> 0.740)
+     L=16 h=4 no_mlp d176       seed 0.7368, median of 3 0.7431 (> 0.740)
+     L=6  h=4 full ff256        seed 0.6375, median of 3 0.7419 (> 0.740)
+     L=6  h=4 full d192         seed 0.7368, median of 3 0.7526 (> 0.740)
+
+  cell                               params   published   DD-faithful
+    L=16 h=4 tied_no_mlp d192        270,010     0.8560     0.8834
+    L=6  h=4 no_mlp d128 ep100       480,058     0.8193     0.8813
+    L=16 h=4 tied_no_mlp d320        613,818     0.7581     0.8711
+    L=12 h=4 no_mlp d128             879,418     0.7628     0.8782
+    L=16 h=4 tied_no_mlp d320 k2   1,025,978     0.7523     0.8688
+    L=16 h=4 tied_no_mlp d448      1,088,698     0.7732     0.8693
+    L=16 h=4 no_mlp d128           1,145,658     0.7612     0.8730
+    L=4  h=4 no_mlp                1,218,106     0.7726     0.8732
+    L=12 h=4 no_mlp d160           1,345,018     0.7774     0.8738
+    L=6  h=4 no_mlp                1,746,490     0.7627     0.8734
+    L=6  h=4 no_mlp ep100          1,746,490     0.7638     0.8724
+    L=16 h=4 no_mlp d160           1,759,738     0.7581     0.8713
+    L=16 h=4 tied_no_mlp d320 k4   1,850,298     0.7565     0.8729
+    L=12 h=4 no_mlp d192           1,908,922     0.7546     0.8662
+    L=16 h=4 no_mlp d176           2,115,930     0.7431     0.8706
+    L=4  h=4 rf_mlp                2,267,706     0.7726     0.8781
+    L=8  h=4 no_mlp                2,274,874     0.7493     0.8730
+  * L=16 h=4 no_mlp d192           2,504,890     0.5955     0.6739
+    L=3  h=4 full                  2,530,618     0.7582     0.8788
+    L=6  h=4 full ff256            2,535,994     0.7419     0.8691
+  * L=12 h=4 no_mlp d224           2,571,130     0.5946     0.6859
+    L=4  h=4 full                  3,320,378     0.7636     0.8761
+    L=4  h=4 linear                3,320,378     0.7682     0.8783
+    L=6  h=4 rf_mlp                3,320,890     0.7581     0.8741
+  * L=12 h=4 no_mlp                3,331,642     0.6174     0.6947
+    L=6  h=4 full d192             3,381,562     0.7526     0.8713
+    L=6  h=4 no_mlp d384           3,799,354     0.7619     0.8721
+  * L=6  h=4 full                  4,899,898     0.6068     0.6942
+    L=6  h=4 linear                4,899,898     0.7645     0.8739
+  * L=8  h=4 full                  6,479,418     0.4766     0.5448
+  * L=12 h=4 full                  9,638,458     0.3901     0.4692
+
+  COMPRESSION: the 25 architectures that do not clear it
+  span 0.7419-0.8560 as published (width 0.1141)
+  and 0.8662-0.8834 DD-faithful (width 0.0173).
+  That collapse is why the rank correlation is only +0.74: below the
+  gate the criterion stops distinguishing architectures at all.
+  rho_50 = 0.873 is n = 6.1 blanks.
 
 SCORECARD
 ========================================================================

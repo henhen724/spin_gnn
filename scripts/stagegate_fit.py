@@ -38,6 +38,16 @@ Both estimators are computed below.  The registered one is reported as defective
 and its predictions are scored as VOID BY SCORER DEFECT, never as honest misses;
 the corrected one is labelled POST-HOC throughout and claimed as nobody's
 prediction.
+
+A SECOND DEFECT, found while writing the deck and fixed here.  G3 and G5 looked
+the hub up by (arch_mode, num_layers, d_model) = ("full", 6, 256), which is not
+a key: it pools the hub (4,899,898) with `full L=6 ff256` (2,535,994), so the
+first run of this scorer reported a six-seed "hub" median of 0.6227 -> 0.7326
+spanning two architectures.  That is finding 96's defect exactly, and
+REGISTERED.md already said to key on the `cell` label.  Fixed by is_cell();
+the hub is 3 seeds, 0.6068 -> 0.6942.  G5's verdict is unchanged, and the
+published separation from J2 lands at 0.0113 against the 0.012 the registration
+quoted from the rung table.
 """
 
 import collections
@@ -71,8 +81,18 @@ HARD = [r for r in FIT_RHOS if r <= 0.75]   # the six with n >= 12
 GATE = 0.740
 HALF = 0.50
 
-J2_CELL = ("no_mlp", 16, 192)
-HUB_CELL = ("full", 6, 256)
+# Keyed on the `cell` LABEL, not on (arch_mode, num_layers, d_model).  The
+# triple is not a key: ("full", 6, 256) pools the hub (4,899,898) with
+# `full L=6 ff256` (2,535,994), and ("tied_no_mlp", 16, 320) pools k = 1, 2, 4.
+# That is the defect finding 96 fixed, and REGISTERED.md says to key on `cell`;
+# a first draft of this scorer keyed on the triple anyway and reported a
+# six-seed "hub" spanning two architectures.
+J2_LABEL = "L=16 h=4 no_mlp d192"
+HUB_LABEL = "L=6 h=4 full"
+
+
+def is_cell(rec, label):
+    return " ".join(rec["cell"].split()) == label
 
 
 def fig(name):
@@ -227,7 +247,7 @@ def g1_ratio(by_rho):
 
 def g2_curves(cells):
     f, ax, path = fig("G2_curves.png")
-    j2 = [c for c in cells if c["arch"] == J2_CELL]
+    j2 = [c for c in cells if is_cell(c, J2_LABEL)]
     seeds = sorted({c["run_id"] for c in j2})
     cur_o = {r: med([c["S"] for c in j2 if c["rho"] == r]) for r in GRID
              if any(c["rho"] == r for c in j2)}
@@ -276,7 +296,7 @@ def g3_scatter(runs):
     ax.plot(lim, lim, color=MUTED, lw=1.0, ls=":")
     ax.axhline(GATE, color=gate_c, lw=1.2)
     ax.axvline(GATE, color=gate_c, lw=1.2, ls="--")
-    hi = [r for r in ok if r["arch"] in (J2_CELL, HUB_CELL)]
+    hi = [r for r in ok if is_cell(r, J2_LABEL) or is_cell(r, HUB_LABEL)]
     ax.scatter([r["rho50"] for r in hi], [r["rho50_ddf"] for r in hi],
                s=70, color=acc, zorder=5, lw=0)
     style_axes(ax, xlabel=r"$\rho_{50}$ as published",
@@ -291,6 +311,38 @@ def g3_scatter(runs):
             "better", fontsize=8, color=MUTED, ha="left", va="top")
     ax.text(0.315, 0.885, f"accented: J2 and the hub, {len(hi)} seeds",
             fontsize=8, color=acc, ha="left", va="top")
+    save(f, path)
+
+
+def g6_cells(arch):
+    """Per-architecture dumbbell: published rho_50 -> DD-faithful rho_50.
+
+    Seed medians, which is the aggregation G2 and G5 were registered at.  y is
+    parameters on a log axis, so the pile-up of the non-clearing group at
+    rho_50 ~ 0.87 shows up as a vertical wall rather than as a table."""
+    f, ax, path = fig("G6_cells.png")
+    keep, drop = SERIES[0], MUTED
+    for r in arch:
+        if r["pub"] != r["pub"] or r["ddf"] != r["ddf"]:
+            continue
+        c = keep if r["ddf"] <= GATE else drop
+        ax.plot([r["pub"], r["ddf"]], [r["params"]] * 2, color=c, lw=1.4,
+                alpha=0.85, solid_capstyle="round")
+        ax.scatter([r["ddf"]], [r["params"]], s=26, color=c, lw=0, zorder=4)
+        ax.scatter([r["pub"]], [r["params"]], s=26, color="white",
+                   edgecolors=c, linewidths=1.2, zorder=4)
+    ax.axvline(GATE, color=SERIES[1], lw=1.2, ls="--")
+    style_axes(ax, xlabel=r"$\rho_{50}$   (hollow: as published,"
+                         r" filled: DD-faithful)",
+               ylabel="trainable parameters", logy=True)
+    ax.set_xlim(0.36, 0.95)
+    nk = sum(1 for r in arch if r["ddf"] == r["ddf"] and r["ddf"] <= GATE)
+    ax.text(GATE - 0.012, 1.3e7, "gate 0.740", fontsize=8, color=SERIES[1],
+            ha="right", va="top")
+    ax.text(0.37, 1.3e7, f"{nk} architectures clear it DD-faithfully",
+            fontsize=8, color=keep, ha="left", va="top")
+    ax.text(0.37, 9.0e6, "the rest pile up near 0.87 whatever their size",
+            fontsize=8, color=drop, ha="left", va="top")
     save(f, path)
 
 
@@ -492,7 +544,7 @@ def main():
     a("")
     a("POST-HOC G2 -- DOES J2 STILL CLEAR THE GATE?")
     a("-" * 72)
-    j2 = [r for r in runs if r["arch"] == J2_CELL]
+    j2 = [r for r in runs if is_cell(r, J2_LABEL)]
     a(f"  J2 = no_mlp L=16 d192, {len(j2)} seeds, 2,504,890 trainable")
     a("  run_id            published   DD-faithful")
     for r in sorted(j2, key=lambda r: r["run_id"]):
@@ -522,15 +574,17 @@ def main():
     a("")
     a("POST-HOC G5 -- THE ORDERING AT THE TOP OF THE RUNG TABLE")
     a("-" * 72)
+    a("  keyed on the cell LABEL; keying on (arch_mode, num_layers, d_model)")
+    a("  pools the hub with `full L=6 ff256`, 96's defect -- see is_cell()")
     pair = {}
-    for name, arch in (("J2  no_mlp L=16 d192", J2_CELL),
-                       ("hub full L=6 d256", HUB_CELL)):
-        g = [r for r in runs if r["arch"] == arch]
-        pair[arch] = (med([r["rho50"] for r in g]),
-                      med([r["rho50_ddf"] for r in g]))
-        a(f"  {name:<22s} published {fmt(pair[arch][0])}   "
-          f"DD-faithful {fmt(pair[arch][1])}   ({len(g)} seeds)")
-    (jp, jd), (hp, hd) = pair[J2_CELL], pair[HUB_CELL]
+    for name, lab in (("J2  no_mlp L=16 d192", J2_LABEL),
+                      ("hub full L=6 d256", HUB_LABEL)):
+        g = [r for r in runs if is_cell(r, lab)]
+        pair[lab] = (med([r["rho50"] for r in g]),
+                     med([r["rho50_ddf"] for r in g]))
+        a(f"  {name:<22s} published {fmt(pair[lab][0])}   "
+          f"DD-faithful {fmt(pair[lab][1])}   ({len(g)} seeds)")
+    (jp, jd), (hp, hd) = pair[J2_LABEL], pair[HUB_LABEL]
     a(f"  separation: published {abs(jp - hp):.4f} -> "
       f"DD-faithful {abs(jd - hd):.4f}; J2 still lower: {jd <= hd}")
 
@@ -562,6 +616,56 @@ def main():
           f"{med([c['S'] for c in g]):8.4f}   "
           f"{med([c['S_ddf'] for c in g]):12.4f}   "
           f"{med([min(c['S'], c['S_ddf']) for c in g]):20.4f}")
+
+    # ----------------------------------- the same thing, per architecture
+    # Seed medians: the aggregation G2 and G5 were registered at, and the one
+    # the rung table is actually read at.  A run is a seed, not a model class.
+    by_cell = collections.defaultdict(list)
+    for r in runs:
+        by_cell[r["cell"]].append(r)
+    arch = []
+    for cell, rs in by_cell.items():
+        po = [r["rho50"] for r in rs if r["rho50"] == r["rho50"]]
+        pd_ = [r["rho50_ddf"] for r in rs if r["rho50_ddf"] == r["rho50_ddf"]]
+        arch.append({"cell": cell, "params": rs[0]["params"], "seeds": len(rs),
+                     "pub": med(po) if po else float("nan"),
+                     "ddf": med(pd_) if pd_ else float("nan")})
+    arch.sort(key=lambda r: r["params"])
+    a_pub = [r for r in arch if r["pub"] <= GATE]
+    a_ddf = [r for r in arch if r["ddf"] <= GATE]
+    a("")
+    a("THE SAME QUESTION PER ARCHITECTURE, WHICH IS HOW THE TABLE IS READ")
+    a("=" * 72)
+    a(f"  {len(arch)} architectures, seed medians")
+    a(f"  clearing {GATE:.3f} as published:  {len(a_pub):3d} of {len(arch)}")
+    a(f"  clearing {GATE:.3f} DD-faithful:   {len(a_ddf):3d} of {len(arch)}")
+    same = {r["cell"] for r in a_pub} == {r["cell"] for r in a_ddf}
+    a(f"  SAME SET: {same}")
+    a("  -> the 4 run-level losses above are single seeds of architectures")
+    a("     whose seed MEDIAN never cleared the gate in the first place:")
+    for r in sorted(lost, key=lambda r: r["params"]):
+        m = next(x for x in arch if x["cell"] == r["cell"])
+        a(f"     {r['cell']:<26s} seed {r['rho50']:.4f}, "
+          f"median of {m['seeds']} {m['pub']:.4f} (> {GATE:.3f})")
+    a("")
+    a("  cell                               params   published   DD-faithful")
+    for r in arch:
+        a(f"  {'* ' if r['ddf'] <= GATE else '  '}{r['cell']:<30s}"
+          f"{r['params']:>10,.0f} {fmt(r['pub'])} {fmt(r['ddf'])}")
+    rest = [r for r in arch if r["ddf"] > GATE and r["pub"] == r["pub"]]
+    if rest:
+        a("")
+        a(f"  COMPRESSION: the {len(rest)} architectures that do not clear it")
+        a(f"  span {min(r['pub'] for r in rest):.4f}-"
+          f"{max(r['pub'] for r in rest):.4f} as published "
+          f"(width {max(r['pub'] for r in rest) - min(r['pub'] for r in rest):.4f})")
+        a(f"  and {min(r['ddf'] for r in rest):.4f}-"
+          f"{max(r['ddf'] for r in rest):.4f} DD-faithful "
+          f"(width {max(r['ddf'] for r in rest) - min(r['ddf'] for r in rest):.4f}).")
+        a("  That collapse is why the rank correlation is only +0.74: below the")
+        a("  gate the criterion stops distinguishing architectures at all.")
+        a(f"  rho_50 = {med([r['ddf'] for r in rest]):.3f} is "
+          f"n = {48 * (1 - med([r['ddf'] for r in rest])):.1f} blanks.")
 
     # ---------------------------------------------------------- scorecard
     a("")
@@ -618,6 +722,7 @@ def main():
     g1_ratio(by_rho)
     g2_curves(cells)
     g3_scatter(runs)
+    g6_cells(arch)
     d1_closure(cells)
 
     with open(os.path.join(OUT, "VERDICT.txt"), "w") as fh:
