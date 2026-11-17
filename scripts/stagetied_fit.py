@@ -3,15 +3,17 @@
 S1 (`tied_no_mlp T=16 d320`, 613,818 params) is one shared block applied 16
 times: an iterated map, and the most analytically tractable architecture that
 gets anywhere near direct deduction.  It is held out of the gate by 0.017 of
-rho_50, which finding 62 converts to about 0.011 of validation token accuracy
-against J2 (`no_mlp L=16 d192`, 2,504,890 params).  STATUS records that gap as
-open with every registered training knob closed.
+rho_50, which finding 62's 16.09 slope converts to about 0.0011 of token
+accuracy; the measured val-accuracy gap to J2 (`no_mlp L=16 d192`, 2,504,890
+params) is 0.011, ten times larger.  REGISTERED.md quotes 0.011 for both and
+is wrong on the first: the gate needs 0.0011.  STATUS records the gap as open
+with every registered training knob closed.
 
 Finding 94 gives a reason to re-examine the measurement rather than try an
 eighth knob: validation token accuracy is STRICT, scoring the argmax against a
 reference trace that writes each round in sorted node order even though DD
 fixes no order within a round.  Stage LOGIC put that mis-scoring at a median
-+0.0106 -- the same size as the gap.
++0.0106 -- the size of the whole S1-J2 gap, and ten times what the gate needs.
 
 Hypothesis: weight tying costs the capacity to memorise an arbitrary output
 ORDERING CONVENTION while leaving the deduction intact.
@@ -188,11 +190,11 @@ def ph_modes(cells, hi_runs):
     style_axes(ax, xlabel="hint density rho   (harder to the right)",
                ylabel="solve rate S")
     # Not SERIES[0]: blue already means "untied" in this figure.
-    ax.text(0.04, 0.17, "SOLVED-IT  (solid): 2 tied, 2 untied",
+    ax.text(0.04, 0.17, "SOLVED-IT (solid): 2 tied, both k>1;  2 untied",
             transform=ax.transAxes, color="#333333", fontsize=9)
-    ax.text(0.04, 0.09, "STUCK  (dashed): 7 tied, 1 untied",
+    ax.text(0.04, 0.09, "STUCK (dashed): 7 tied, incl. all 3 k=1;  1 untied",
             transform=ax.transAxes, color=MUTED, fontsize=9)
-    ax.text(0.04, 0.01, "orange = tied S1,  blue = untied J2",
+    ax.text(0.04, 0.01, "orange = tied,  blue = untied;  no run in between",
             transform=ax.transAxes, color=MUTED, fontsize=9)
     save(f_, path)
 
@@ -223,6 +225,7 @@ def main():
             group=g, run_id=r["run_id"], seed=r.get("seed", "?"), rho=rho,
             n=N_NODES * (1.0 - fnum(r, "realized_rho")),
             val_acc=fnum(r, "val_acc"),
+            params=int(fnum(r, "n_trainable_params")), cell=r["cell"],
             p_logic=fnum(r, "p_logic"), p_strict=fnum(r, "p_strict"),
             p_logic_node=fnum(r, "p_logic_node"),
             p_strict_node=fnum(r, "p_strict_node"),
@@ -346,11 +349,22 @@ def main():
         hi = c["run_id"] in hi_runs
         runmodes.append(dict(run_id=c["run_id"], group=c["group"],
                              seed=c["seed"], val_acc=c["val_acc"],
+                             params=c["params"], cell=c["cell"],
                              mode="SOLVED-IT" if hi else "STUCK",
                              p_strict_50=c["p_strict"],
                              solve_50=c["solve_rate"]))
         n_run[c["group"]] += 1
         n_hi[c["group"]] += 1 if hi else 0
+    variants = {}
+    for r in runmodes:
+        if r["group"] != "S1":
+            continue
+        v = variants.setdefault(r["params"], dict(n=0, hi=0, runs=[],
+                                                  cell=r["cell"]))
+        v["n"] += 1
+        v["hi"] += 1 if r["mode"] == "SOLVED-IT" else 0
+        v["runs"].append("%s/s%s%s" % (r["run_id"], r["seed"],
+                                       "*" if r["mode"] == "SOLVED-IT" else ""))
     fisher_p = float(stats.fisher_exact(
         [[n_hi["S1"], n_run["S1"] - n_hi["S1"]],
          [n_hi["J2"], n_run["J2"] - n_hi["J2"]]])[1])
@@ -465,14 +479,36 @@ def main():
       % (min(hi_p95), max(lo_p95)))
     a("nothing in between, so ANY cut in that interval gives this same split.")
     a("Call the first mode SOLVED-IT and the second STUCK.")
-    a("   run grp seed  val_acc   mode  | p_strict and solve rate at rho=0.50")
+    a("   run grp seed    params  mode      | p_strict, solve rate at rho=0.50")
     for r in runmodes:
-        a("   %-3s %-3s  %s   %.5f  %-8s |   %6.4f        %.3f"
-          % (r["run_id"], r["group"], r["seed"], r["val_acc"], r["mode"],
+        a("   %-3s %-3s  %s  %8d  %-9s |   %6.4f      %.3f"
+          % (r["run_id"], r["group"], r["seed"], r["params"], r["mode"],
              r["p_strict_50"], r["solve_50"]))
     a("   SOLVED-IT rate: S1 %d of %d, J2 %d of %d.  Fisher exact two-sided "
       "p = %.3f" % (n_hi["S1"], n_run["S1"], n_hi["J2"], n_run["J2"], fisher_p))
     a("   -- NOT significant at 12 runs.  The mode RATE is suggestive only.")
+    a("")
+    a("   A DEFECT IN MY OWN REGISTERED GROUP DEFINITION, found the same way.")
+    a("   REGISTERED.md defines S1 by (arch_mode, num_layers, d_model) -- and")
+    a("   that pools THREE variants, distinguished by the number k of DISTINCT")
+    a("   shared blocks cycled over the 16 applications.  k is in the CSV's")
+    a("   `cell` label, which I did not key on.  Only k=1 is S1 as STATUS")
+    a("   names it, at 613,818 params:")
+    for p in sorted(variants):
+        v = variants[p]
+        a("     %-32s %8d params: %d runs, %d SOLVED-IT  (%s)"
+          % (v["cell"], p, v["n"], v["hi"], " ".join(v["runs"])))
+    a("   The steps are +%d and +%d params, and one no_mlp block at d=320 is"
+      % (sorted(variants)[1] - sorted(variants)[0],
+         sorted(variants)[2] - sorted(variants)[0]))
+    a("   4*320^2 + 4*320 + 2*2*320 = 412,160 exactly, so the labels and the")
+    a("   parameter counts agree on k = 1, 2, 4.")
+    a("   Every k=1 run -- the actual minimal model -- is STUCK, 0 of 3.  Both")
+    a("   tied runs that reached the untied mode have k > 1, 2 of 6, and at")
+    a("   different seeds (k=2 won on seed 2, k=4 on seed 1).  T1-T5 above are")
+    a("   scored on the pooled group because that is what was registered, and")
+    a("   they are not re-scored here; but the pooled group was the wrong")
+    a("   object and the next registration must key on the `cell` label.")
     a("   What is not in doubt: J2's one STUCK run (r67, 2.5M params, untied) is")
     a("   indistinguishable from the seven STUCK tied runs -- p_strict 0.872 vs")
     a("   0.853-0.866, premature rate 0.205 vs 0.225-0.235, solve 0.04 vs")

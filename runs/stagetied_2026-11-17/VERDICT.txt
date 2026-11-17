@@ -58,21 +58,40 @@ changes how every number above should be read.  Runs do not sit on a
 continuum: at rho = 0.95 every run scores either >= 1.000 or <= 0.983 with
 nothing in between, so ANY cut in that interval gives this same split.
 Call the first mode SOLVED-IT and the second STUCK.
-   run grp seed  val_acc   mode  | p_strict and solve rate at rho=0.50
-   r65 J2   0   0.49399  SOLVED-IT |   0.9454        0.265
-   r66 J2   1   0.49491  SOLVED-IT |   0.9538        0.282
-   r67 J2   2   0.48641  STUCK    |   0.8723        0.037
-   r69 S1   0   0.48222  STUCK    |   0.8573        0.033
-   r70 S1   1   0.48296  STUCK    |   0.8529        0.028
-   r71 S1   2   0.48325  STUCK    |   0.8584        0.035
-   r72 S1   0   0.48315  STUCK    |   0.8636        0.037
-   r73 S1   1   0.48307  STUCK    |   0.8620        0.025
-   r74 S1   2   0.49287  SOLVED-IT |   0.9314        0.188
-   r75 S1   0   0.48342  STUCK    |   0.8659        0.022
-   r76 S1   1   0.49485  SOLVED-IT |   0.9432        0.247
-   r77 S1   2   0.48371  STUCK    |   0.8661        0.035
+   run grp seed    params  mode      | p_strict, solve rate at rho=0.50
+   r65 J2   0   2504890  SOLVED-IT |   0.9454      0.265
+   r66 J2   1   2504890  SOLVED-IT |   0.9538      0.282
+   r67 J2   2   2504890  STUCK     |   0.8723      0.037
+   r69 S1   0    613818  STUCK     |   0.8573      0.033
+   r70 S1   1    613818  STUCK     |   0.8529      0.028
+   r71 S1   2    613818  STUCK     |   0.8584      0.035
+   r72 S1   0   1025978  STUCK     |   0.8636      0.037
+   r73 S1   1   1025978  STUCK     |   0.8620      0.025
+   r74 S1   2   1025978  SOLVED-IT |   0.9314      0.188
+   r75 S1   0   1850298  STUCK     |   0.8659      0.022
+   r76 S1   1   1850298  SOLVED-IT |   0.9432      0.247
+   r77 S1   2   1850298  STUCK     |   0.8661      0.035
    SOLVED-IT rate: S1 2 of 9, J2 2 of 3.  Fisher exact two-sided p = 0.236
    -- NOT significant at 12 runs.  The mode RATE is suggestive only.
+
+   A DEFECT IN MY OWN REGISTERED GROUP DEFINITION, found the same way.
+   REGISTERED.md defines S1 by (arch_mode, num_layers, d_model) -- and
+   that pools THREE variants, distinguished by the number k of DISTINCT
+   shared blocks cycled over the 16 applications.  k is in the CSV's
+   `cell` label, which I did not key on.  Only k=1 is S1 as STATUS
+   names it, at 613,818 params:
+     L=16 h=4 tied_no_mlp d320          613818 params: 3 runs, 0 SOLVED-IT  (r69/s0 r70/s1 r71/s2)
+     L=16 h=4 tied_no_mlp d320 k2      1025978 params: 3 runs, 1 SOLVED-IT  (r72/s0 r73/s1 r74/s2*)
+     L=16 h=4 tied_no_mlp d320 k4      1850298 params: 3 runs, 1 SOLVED-IT  (r75/s0 r76/s1* r77/s2)
+   The steps are +412160 and +1236480 params, and one no_mlp block at d=320 is
+   4*320^2 + 4*320 + 2*2*320 = 412,160 exactly, so the labels and the
+   parameter counts agree on k = 1, 2, 4.
+   Every k=1 run -- the actual minimal model -- is STUCK, 0 of 3.  Both
+   tied runs that reached the untied mode have k > 1, 2 of 6, and at
+   different seeds (k=2 won on seed 2, k=4 on seed 1).  T1-T5 above are
+   scored on the pooled group because that is what was registered, and
+   they are not re-scored here; but the pooled group was the wrong
+   object and the next registration must key on the `cell` label.
    What is not in doubt: J2's one STUCK run (r67, 2.5M params, untied) is
    indistinguishable from the seven STUCK tied runs -- p_strict 0.872 vs
    0.853-0.866, premature rate 0.205 vs 0.225-0.235, solve 0.04 vs
