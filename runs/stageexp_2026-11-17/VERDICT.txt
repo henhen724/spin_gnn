@@ -1,0 +1,158 @@
+Stage EXPONENT -- where do the k fatal positions live?
+k_top/n is 1.11-1.26 at n >= 17 (finding 95), above n and below the
+P = 2n + T + 1 positions the reasoning section holds.  (A) colour
+positions fatal -> 2n.  (B) round/terminal fatal -> n + T + 1.  (C) k is
+not a position count: p_logic averages over all P positions, so error
+mass at positions that never kill a rollout inflates it.
+Predictions in REGISTERED.md, committed 30937f9 before this script.
+No training, no GPU, no new instances -- a refit of CSVs on disk.
+
+790 (run, rho) cells over the ten fit densities; skipped {'rho_not_in_fit_grid': 320, 'not_in79': 10}
+
+  rho    n     P  runs used | e_node  e_color e_round e_term | n*e_node  -logS  ratio    k_emp
+  0.95   3.0   8.1   79   63 | 0.0292  0.0000  0.0393  0.0000 |   0.087  0.041  0.470     2.49
+  0.90   5.0  12.4   79   66 | 0.0595  0.0000  0.0544  0.0000 |   0.297  0.110  0.367     3.58
+  0.85   8.0  19.0   79   74 | 0.0991  0.0000  0.0585  0.0000 |   0.792  0.299  0.381     5.96
+  0.80  10.0  23.4   79   75 | 0.1245  0.0000  0.0812  0.0000 |   1.245  0.507  0.421     8.03
+  0.75  12.0  27.8   79   79 | 0.1423  0.0000  0.0886  0.0000 |   1.708  0.729  0.443    10.20
+  0.70  15.0  34.5   79   79 | 0.1668  0.0000  0.1085  0.0000 |   2.502  1.124  0.462    12.90
+  0.65  17.0  39.1   79   79 | 0.1901  0.0000  0.1151  0.0000 |   3.232  1.549  0.489    15.43
+  0.60  20.0  46.2   79   79 | 0.2109  0.0000  0.1400  0.0000 |   4.218  2.303  0.550    20.34
+  0.55  22.0  51.2   79   79 | 0.2211  0.0000  0.1377  0.0000 |   4.865  2.733  0.573    23.16
+  0.50  24.0  56.2   79   79 | 0.2362  0.0000  0.1538  0.0000 |   5.670  3.352  0.607    26.50
+  runs dropped because S = 0: 0.95:0, 0.90:0, 0.85:0, 0.80:0, 0.75:0, 0.70:0, 0.65:0, 0.60:0, 0.55:0, 0.50:0
+  runs dropped because S = 1: 0.95:16, 0.90:13, 0.85:5, 0.80:4, 0.75:0, 0.70:0, 0.65:0, 0.60:0, 0.55:0, 0.50:0
+  e_color and e_term print as 0.0000 because the MEDIAN run makes no
+  colour or terminal error at any density -- NOT because they are
+  identically zero.  Over all 790 cells: e_color is nonzero in 86
+  (max 0.0582), e_term in 10 (max 0.0125).  Every cell has exactly one
+  terminal position and exactly n colour positions, so the classes are
+  present and measured; the model simply gets them right.
+
+X1 the fatal mass is the node class, and k = n.
+   median (-log S)/(n e_node) over the 6 densities with n >= 12:
+   0.75:0.443  0.70:0.462  0.65:0.489  0.60:0.550  0.55:0.573  0.50:0.607
+   run min-max at rho 0.50: 0.537 to 0.811
+   in [0.8, 1.3] at 0 of 6; in [0.5, 2.0] at 3 of 6
+   predicted: median in [0.8, 1.3] at a majority -> MISS
+
+X2 the colour class carries error mass but not fatal mass.
+   median (n e_color)/(n e_node) at n >= 12: 0.75:0.000  0.70:0.000  0.65:0.000  0.60:0.000  0.55:0.000  0.50:0.000
+   above 0.20 at 0 of 6
+   share of color_wrong first errors at a node IN F_now, n >= 12:
+     1218 of 129995 = 0.0094
+   predicted: mass ratio > 0.20 at a majority AND forced share < 0.05 -> MISS
+
+X3 a zero-parameter node-only law.  OLS of -log S on n e_node through
+   the origin, per density.  R2 is CENTERED (the uncentered one is
+   flattering for a no-intercept fit); both are in exp_summary.csv.
+     rho 0.75  slope 0.434 +/- 0.006   R2_c 0.943  R2_u 0.987  (n=79)
+     rho 0.70  slope 0.459 +/- 0.004   R2_c 0.964  R2_u 0.993  (n=79)
+     rho 0.65  slope 0.483 +/- 0.004   R2_c 0.970  R2_u 0.994  (n=79)
+     rho 0.60  slope 0.550 +/- 0.005   R2_c 0.958  R2_u 0.993  (n=79)
+     rho 0.55  slope 0.562 +/- 0.005   R2_c 0.949  R2_u 0.993  (n=79)
+     rho 0.50  slope 0.603 +/- 0.006   R2_c 0.942  R2_u 0.993  (n=79)
+   slope in [0.8, 1.3] at 0 of 6; R2_c > 0.80 at 6 of 6
+   predicted: both at a majority -> MISS
+
+X4 round markers and the terminal are not where the exponent lives.
+   median (T e_round + e_term)/(n e_node) at n >= 12: 0.75:0.1589  0.70:0.1595  0.65:0.1560  0.60:0.1804  0.55:0.1815  0.50:0.2022
+   below 0.10 at 0 of 6
+   predicted: below 0.10 at a majority -> MISS
+
+X5 every free-generation first error is fatal, whatever its class.
+   solve rate among rollouts whose first error was of this class,
+   pooled over the ten fit densities, in79 runs:
+     color_wrong    149990 rollouts   solve rate 0.00000
+     node_invalid      235 rollouts   solve rate 0.09362
+     early_term        189 rollouts   solve rate 0.00000
+     truncated          20 rollouts   solve rate 0.00000
+     grammar             4 rollouts   solve rate 0.00000
+   predicted: color_wrong < 0.02 and node_invalid < 0.10 -> HIT
+
+X6 the color_wrong label is a GUARD failure, not a colour failure.
+   join B_instances (free generation) to F_errors_all (forced set) on
+   (run_id, rho, inst): 149990 matched, 0 unmatched.
+   share of color_wrong first errors at an UNFORCED node:
+     pooled 148173 of 149990 = 0.9879
+     by density: 0.95:0.943  0.90:0.959  0.85:0.969  0.80:0.976  0.75:0.981  0.70:0.985  0.65:0.990  0.60:0.993  0.55:0.993  0.50:0.995
+   predicted: above 0.90 -> HIT
+
+D1 the class decomposition is an identity, not a model.
+   max |P_data - (2n + T + 1)|            = 7.105e-15
+   max |P_data - sum_c n_c|               = 7.105e-15
+   max |(1 - p_logic) - sum_c n_c e_c / P| = 8.327e-17
+   max |e_node  - (1 - p_logic_node)|     = 0.000e+00  (two sources)
+   max |e_color - (1 - p_logic_color)|    = 0.000e+00  (two sources)
+   -> PASSES
+
+WHY X2 IS SCORED A MISS AND NOT A SPLIT.  Its second half HELD -- the
+forced share is 0.0094, inside the registered 0.05.  But the first half
+names an explicit falsification criterion, 'falsified if the mass ratio
+is below 0.05', and the measured ratio is 0.000.  A registered
+falsifier that fires is a MISS even when the reason it fired supports
+the conclusion; reading it as a split would be reinterpreting after the
+fact.  What failed is my premise that there would be colour error mass
+to dilute with -- there is essentially none.
+
+POST-HOC, NOT REGISTERED -- the two factors of k/n.  Since
+R = (-log S)/(n e_node) and D = e_node/(-log p_logic), their product is
+k_emp/n BY CONSTRUCTION; this table is an IDENTITY, not a fit, and its
+whole content is the SIZE of the two factors and the fact that they
+pull in opposite directions and nearly cancel.
+  rho     n | D = e_node/(-log p)  R = fatal share | D*R   k_emp/n
+  0.95   3.0 |        1.762          |    0.470      | 0.827   0.830
+  0.90   5.0 |        1.937          |    0.367      | 0.710   0.717
+  0.85   8.0 |        1.996          |    0.381      | 0.761   0.745
+  0.80  10.0 |        1.938          |    0.421      | 0.815   0.803
+  0.75  12.0 |        1.927          |    0.443      | 0.854   0.850
+  0.70  15.0 |        1.896          |    0.462      | 0.877   0.860
+  0.65  17.0 |        1.891          |    0.489      | 0.925   0.908
+  0.60  20.0 |        1.848          |    0.550      | 1.016   1.017
+  0.55  22.0 |        1.852          |    0.573      | 1.061   1.053
+  0.50  24.0 |        1.821          |    0.607      | 1.106   1.104
+  D and R are per-cell medians, so D*R and k_emp/n agree to a couple
+  of parts in a hundred rather than exactly -- a median of products
+  is not a product of medians.  Per cell the identity is exact.
+  D > 1 says a node position is that many times more error-prone than
+  the AVERAGE position, because colour and terminal positions are
+  essentially never wrong and round markers are only moderately so.
+  Alone it would put k at 1.8n.  R < 1 pulls it back.  Neither factor
+  is a second fatal position class, which is what (A) and (B) proposed.
+
+WHAT R < 1 MEANS, AND WHAT THIS STAGE DOES NOT ESTABLISH.  R is the
+ratio of the free-generation fatal hazard per rollout to the
+teacher-forced logical node-error count per rollout.  R ~ 0.5 says
+free generation makes about half as many fatal node errors as teacher
+forcing makes node errors -- teacher forcing is the HARDER regime
+here.  Why is NOT established by this stage.  Candidates, none tested:
+  (i) under teacher forcing the model is carried along the reference
+      prefix and scored at all n node positions whether or not its own
+      policy would have reached them;
+  (ii) in free generation it emits cells in an order of its own
+      choosing, and stage POS already found the per-step hazard FALLS
+      with j (P1, falsified at 31.1% positive), so its later choices
+      are its safer ones;
+  (iii) R rises monotonically with difficulty, 0.443 at rho 0.75 to
+      0.607 at rho 0.50, so whatever it is weakens as n grows.
+Separating these needs a measurement this stage does not contain.
+
+BOTTOM LINE.  The excess of k over n is NOT a second fatal position.
+A colour position is essentially never independently wrong -- the
+median run's colour error rate is exactly 0 at all ten densities and
+only 86 of 790 cells are nonzero -- so account (A) is dead: there is ONE
+fatal choice per blank cell, WHICH cell to fill, and the colour is free
+once the cell is right.  The 99.7% of free-generation failures
+labelled color_wrong are 98.8% of them at an UNFORCED node (X6), i.e.
+a guard failure the scorer names after the colour it had to guess.
+Account (B) fails too, but less cleanly: round markers carry 16-20% of
+the node class's error mass and are never fatal, and that dilution is
+most of the D = 1.8 factor above.  Account (C) is what survives.
+
+SCORECARD: X1 MISS, X2 MISS, X3 MISS, X4 MISS, X5 HIT, X6 HIT.
+X1 and X3 missed in the SAME direction and AGREE with each other
+(median 0.607 vs slope 0.603 at rho 0.50), which is what the registration
+asked for: one robust statistic and one fit had to agree, and they do.
+X5's node_invalid bar was cleared at 0.0936 against a 0.10 ceiling on
+only 235 rollouts (22 solved) -- a 95% Wilson interval of [0.063, 0.138],
+which straddles the bar.  Read it as suggestive, not as a clearance.
