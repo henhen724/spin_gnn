@@ -353,6 +353,16 @@ def main():
         a("  EMPIRICAL fact on 1105 of 1106 cells, not a logical one, and")
         a("  should stop being described as if the criterion were strictly")
         a("  stronger.  It is stronger in one direction only.")
+        a("")
+        a("  AND THIS WAS ALREADY KNOWN.  Finding 99 records it, in STATUS.md,")
+        a("  naming THIS CELL: 'the criteria are NOT NESTED ... 1 of 1106")
+        a("  cells has S_ddf > S (r68 at rho 0.95, +0.0012)'.  So D3 is not a")
+        a("  discovery and not an ill-founded guess either — it is a")
+        a("  prediction I registered against a fact my own status file")
+        a("  already stated.  The failure was not reading it before writing")
+        a("  the registration.  Scored MISS, and the lesson is narrower and")
+        a("  worse than 'the inequality does not hold': CHECK THE CLAIM")
+        a("  AGAINST STATUS BEFORE REGISTERING IT.")
 
     # ---------------------------------------------------------------- D1
     a("")

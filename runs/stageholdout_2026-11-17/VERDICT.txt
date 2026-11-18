@@ -31,6 +31,16 @@ D3 — MONOTONICITY AT THE NEW DENSITIES, AND WHY IT MISSES
   should stop being described as if the criterion were strictly
   stronger.  It is stronger in one direction only.
 
+  AND THIS WAS ALREADY KNOWN.  Finding 99 records it, in STATUS.md,
+  naming THIS CELL: 'the criteria are NOT NESTED ... 1 of 1106
+  cells has S_ddf > S (r68 at rho 0.95, +0.0012)'.  So D3 is not a
+  discovery and not an ill-founded guess either — it is a
+  prediction I registered against a fact my own status file
+  already stated.  The failure was not reading it before writing
+  the registration.  Scored MISS, and the lesson is narrower and
+  worse than 'the inequality does not hold': CHECK THE CLAIM
+  AGAINST STATUS BEFORE REGISTERING IT.
+
 ------------------------------------------------------------------------------
 D1 — NO LOADER DRIFT: GATE'S TEN MEDIANS, RECOMPUTED HERE
      rho   GATE published   recomputed      diff      n
