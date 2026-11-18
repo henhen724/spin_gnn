@@ -1,0 +1,151 @@
+STAGE HOLDOUT — the post-hoc exponent trend, on densities never fitted
+==============================================================================
+cells 1106   runs 79   densities 14   source bound_cells.csv
+
+The ratio log S_DD / log S is defined only where 0 < S < 1 and
+0 < S_ddf < 1, exactly as stage GATE defined it.  Those two exclusions
+act at opposite ends of the grid, which is the reason for H3.
+
+------------------------------------------------------------------------------
+D3 — MONOTONICITY AT THE NEW DENSITIES, AND WHY IT MISSES
+  S_ddf > S on 1 of 1106 cells (0 of them below the fit grid)
+  registered: 0 — 'any violation is a scorer bug'  ->  MISS
+    L=16 h=4 tied_no_mlp d192  run r68  rho 0.95:  S 0.857500  S_ddf 0.858740  excess +0.001240
+  THE PREDICTION WAS ILL-FOUNDED, AND THE VIOLATION IS NOT A BUG.
+  S_ddf <= S is not guaranteed by anything.  S_perm = S exactly at
+  that cell, so this is not product-versus-measurement slack: the
+  two criteria are simply NOT NESTED.  The permissive hazard counts
+  rollouts that got a colour wrong; the DD-faithful hazard counts
+  rollouts that named a cell direct deduction had not yet forced.
+  A rollout can name an unforced cell and still guess the right
+  colour — penalised by h_ddf, not by h — and can get a colour
+  wrong on a cell that WAS forced — penalised by h, not by h_ddf.
+  Neither set contains the other, so neither solve rate dominates.
+  The inequality that does hold by construction is the one stage
+  BOUND registered, S_joint <= min(S_ddf, S_perm), because the
+  joint criterion is the UNION of the two failure sets:
+    S_ddf > S_perm on 1 of 1106 cells — the same
+    cell, and the excess is one wrong colour on a forced cell.
+  CONSEQUENCE: stage GATE's rho_50_ddf >= rho_50_published is an
+  EMPIRICAL fact on 1105 of 1106 cells, not a logical one, and
+  should stop being described as if the criterion were strictly
+  stronger.  It is stronger in one direction only.
+
+------------------------------------------------------------------------------
+D1 — NO LOADER DRIFT: GATE'S TEN MEDIANS, RECOMPUTED HERE
+     rho   GATE published   recomputed      diff      n
+    0.95            3.456        3.456    0.0001     63
+    0.90            3.574        3.574    0.0003     66
+    0.85            3.271        3.271    0.0002     74
+    0.80            3.130        3.130    0.0001     75
+    0.75            3.074        3.074    0.0004     79
+    0.70            2.968        2.968    0.0002     79
+    0.65            2.911        2.911    0.0000     79
+    0.60            2.798        2.798    0.0000     79
+    0.55            2.726        2.726    0.0001     79
+    0.50            2.668        2.668    0.0004     79
+  worst absolute difference 0.00039
+  registered: reproduce to three decimal places  ->  PASS
+
+------------------------------------------------------------------------------
+D2 — THE CENSORING LEDGER, PUBLISHED NOT HIDDEN
+     rho   usable    S==1  Sddf==1    S==0  Sddf==0   median ratio
+    0.95       63      16        0       0        0         3.4559
+    0.90       66      13        0       0        0         3.5737
+    0.85       74       5        0       0        0         3.2712
+    0.80       75       4        0       0        0         3.1299
+    0.75       79       0        0       0        0         3.0744
+    0.70       79       0        0       0        0         2.9678
+    0.65       79       0        0       0        0         2.9110
+    0.60       79       0        0       0        0         2.7980
+    0.55       79       0        0       0        0         2.7261
+    0.50       79       0        0       0        0         2.6676
+    0.45       75       0        0       1        3         2.5019  <- held out
+    0.40       62       0        0       8        9         2.5367  <- held out
+    0.35       38       0        0      22       19         2.4500  <- held out
+    0.33       30       0        0      26       23         2.4437  <- held out
+  at rho 0.35 and 0.33 more than half the runs solve nothing under the
+  DD-faithful criterion, so their medians are taken over the survivors
+  and are reported as CENSORED, not used to decide H1 or H2.
+
+------------------------------------------------------------------------------
+H1 — DOES THE TREND CONTINUE BELOW THE FIT GRID
+  least squares on the six points rho 0.75..0.50 of the PUBLISHED
+  medians: slope +1.639 per unit rho, intercept 1.833
+     rho   predicted   measured   registered band      verdict
+    0.45       2.571      2.502   [2.40, 2.70]            in
+    0.40       2.489      2.537   [2.25, 2.65]            in
+  falsifier: either median reaches 2.668 (the rho=0.50 value) -> not tripped
+  registered: both in band  ->  HIT
+  steps where the median RISES as rho falls: 2 of 13
+    0.95 -> 0.90: +0.1178
+    0.45 -> 0.40: +0.0348
+  the ten fitted densities descend monotonically apart from the
+  0.95 -> 0.90 step, which was published that way.  Below the grid the
+  sequence FLATTENS: the fall from 0.50 to 0.33 is only 0.224, against 0.788
+  across the ten fitted densities, so the linear extrapolation
+  over-predicts the decline at the far end even though both held-out
+  medians land inside the registered bands.
+  for the record, censored: rho 0.35 median 2.450 over 38 survivors (predicted 2.407)
+  for the record, censored: rho 0.33 median 2.444 over 30 survivors (predicted 2.374)
+
+------------------------------------------------------------------------------
+H2 — THE RANK CORRELATION OVER ALL FOURTEEN DENSITIES
+  Spearman(median ratio, rho) over 14 densities = +0.9912
+  over the 12 uncensored densities (rho >= 0.40) = +0.9860
+  GATE published +0.988 over the ten fitted densities
+  registered: >= +0.90, falsified below +0.60  ->  HIT
+
+------------------------------------------------------------------------------
+H3a — A FIXED POPULATION: IS THE TREND A CENSORING ARTEFACT
+  C10 = runs measurable at all ten fitted densities: 62 of 79
+  C14 = runs measurable at all fourteen:              10 of 79
+     rho   all cells   fixed pop   difference
+    0.95       3.456       3.456       -0.000
+    0.90       3.574       3.611       -0.037
+    0.85       3.271       3.298       -0.027
+    0.80       3.130       3.177       -0.047
+    0.75       3.074       3.144       -0.070
+    0.70       2.968       3.055       -0.088
+    0.65       2.911       2.970       -0.059
+    0.60       2.798       2.856       -0.058
+    0.55       2.726       2.763       -0.036
+    0.50       2.668       2.729       -0.061
+  Spearman over the fixed population = +0.9879   largest gap to all-cells 0.088
+  registered: Spearman >= +0.90 AND every gap <= 0.50  ->  HIT
+  C14 has 10 runs: the fourteen-density version is UNDERPOWERED as registered and decides nothing.
+
+------------------------------------------------------------------------------
+H3b — PAIRED WITHIN RUN, IMMUNE TO ANY CHANGE OF POPULATION
+  runs measurable at both rho 0.95 and rho 0.50: 63
+  ratio falls on 55 of them = 87.3%
+  median paired change -0.6929   quartiles -1.249 / -0.391
+  registered: >= 70% negative AND median < -0.30  ->  HIT
+
+------------------------------------------------------------------------------
+H4 — WHICH HAZARD MOVES, SINCE ratio = log(1-h_DD)/log(1-h) EXACTLY
+     rho   median h   median h_DD   h / h(0.95)   h_DD / h_DD(0.95)
+    0.95    0.01352       0.04594         1.000               1.000
+    0.90    0.02167       0.07788         1.603               1.695
+    0.85    0.03674       0.11773         2.718               2.563
+    0.80    0.04940       0.15157         3.655               3.299
+    0.75    0.05892       0.17505         4.360               3.811
+    0.70    0.07219       0.20446         5.341               4.451
+    0.65    0.08708       0.23830         6.443               5.188
+    0.60    0.10875       0.28446         8.046               6.192
+    0.55    0.11684       0.29214         8.645               6.360
+    0.50    0.13037       0.31952         9.646               6.956
+  colour hazard grows 9.646x, faithfulness hazard grows 6.956x
+  registered: h_DD rises AND h rises by the larger factor  ->  HIT
+  reading: the ratio falls because premature naming becomes relatively
+  less dominant, not because the model grows more DD-faithful.
+
+==============================================================================
+SCORECARD
+  H1 trend continues below the grid      HIT
+  H2 Spearman over all 14 densities      HIT
+  H3a fixed population                   HIT
+  H3b paired within run                  HIT
+  H4 which hazard moves                  HIT
+  D1 no loader drift                     HIT
+  D3 monotonicity                        MISS
