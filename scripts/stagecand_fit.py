@@ -618,18 +618,25 @@ def figures(rows, fit, pw, pb, pphat, kw, kb, kn, modal_k, c4,
 
     # C3 -- M with the ceiling
     fig, ax = plt.subplots(figsize=(6.4, 4.0))
-    ax.plot([r["rho"] for r in rows], [r["M"] for r in rows], "-o", ms=4,
+    ax.plot([r["rho"] for r in rows], [r["M"] for r in rows], "-", lw=1.6,
             color=SERIES[0], rasterized=True)
+    ax.plot(fr, [r["M"] for r in fit], "o", ms=4.5, color=SERIES[0],
+            rasterized=True)
+    ho0 = [r for r in rows if r["held_out"]]
+    ax.plot([r["rho"] for r in ho0], [r["M"] for r in ho0], "o", ms=5,
+            mfc="white", mec=SERIES[0], rasterized=True)
     ax.axhline(0.50, ls="--", lw=1, color=MUTED)
     ax.axhline(0.25, ls=":", lw=1, color=MUTED)
     style_axes(ax, xlabel=r"hint density $\rho$",
                ylabel="correct colour on an unforced cell")
     ax.invert_xaxis()
     ax.set_ylim(0.15, 0.62)
-    ax.text(0.52, 0.515, "ceiling if the colour comes from the candidate set",
+    ax.text(0.93, 0.555, "ceiling if the colour is drawn from the candidate set",
             color=MUTED, fontsize=8.5, ha="left")
-    ax.text(0.52, 0.265, r"blind guess, $1/q$", color=MUTED, fontsize=8.5,
+    ax.text(0.93, 0.265, r"blind guess, $1/q$", color=MUTED, fontsize=8.5,
             ha="left")
+    ax.text(0.40, 0.355, "open: densities no fit\never used", color=MUTED,
+            fontsize=8.5, ha="center")
     _save(fig, "C3_ceiling.png")
 
     # C4 -- the gap against rho
@@ -643,11 +650,15 @@ def figures(rows, fit, pw, pb, pphat, kw, kb, kn, modal_k, c4,
     style_axes(ax, xlabel=r"hint density $\rho$",
                ylabel=r"$w(2) - b(2)$")
     ax.invert_xaxis()
-    ax.text(0.95, 0.0 + 0.004, "blind choice", color=MUTED, fontsize=8.5,
-            ha="left", va="bottom")
-    ax.text(0.40, max(r["gap2"] for r in rows) * 0.35,
+    ax.set_ylim(-0.045, max(r["gap2"] for r in rows) * 1.10)
+    ax.text(0.90, -0.030, "blind choice", color=MUTED, fontsize=8.5,
+            ha="center", va="center")
+    ax.text(0.63, max(r["gap2"] for r in rows) * 0.72,
             r"Spearman with $\rho$ = %+.3f" % c4, color=SERIES[0],
             fontsize=9, ha="center")
+    ax.text(0.385, max(r["gap2"] for r in rows) * 0.40,
+            "open: densities\nno fit ever used", color=MUTED, fontsize=8.5,
+            ha="center")
     _save(fig, "C4_trend.png")
 
     # C5 -- stratified by coloured-neighbour count
@@ -658,14 +669,21 @@ def figures(rows, fit, pw, pb, pphat, kw, kb, kn, modal_k, c4,
     cols = [SERIES[0] if kv == modal_k else MUTED for kv in ks]
     ax.bar(ks, gaps, 0.6, color=cols, rasterized=True)
     ax.axhline(0.0, lw=1, color="black")
+    ax.axhline(0.05, ls="--", lw=1, color=SERIES[1])
     style_axes(ax, xlabel="assigned neighbours $k$ of the named cell",
                ylabel=r"$w(2\,|\,k) - b(2\,|\,k)$")
     ax.set_xticks(ks)
-    hi = max(gaps + [0.0])
     lo = min(gaps + [0.0])
-    ax.set_ylim(lo - abs(hi - lo) * 0.18, hi + abs(hi - lo) * 0.34)
-    ax.text(modal_k, hi + abs(hi - lo) * 0.12,
-            "modal stratum", color=SERIES[0], fontsize=9, ha="center")
+    ax.set_ylim(lo - 0.012, 0.072)
+    ax.text(ks[0] - 0.3, 0.055, "registered prediction", color=SERIES[1],
+            fontsize=9, ha="left")
+    ax.text(modal_k, 0.006, "modal stratum", color=SERIES[0], fontsize=9,
+            ha="center")
+    # a bar of height zero is invisible; say which zeros are which
+    for kv, g in zip(ks, gaps):
+        if abs(g) < 1e-9:
+            ax.text(kv, 0.006, "both\nshares\nequal", color=MUTED, fontsize=7.5,
+                    ha="center", va="bottom")
     _save(fig, "C5_stratified.png")
 
     # PH -- the cell choice IS selected on k, which is what explains C1
@@ -684,10 +702,13 @@ def figures(rows, fit, pw, pb, pphat, kw, kb, kn, modal_k, c4,
     top = max(max(kwk[k] / tw for k in ks2),
               max(kbk[k] / max(kbn, 1) for k in ks2))
     ax.set_ylim(0, top * 1.32)
-    j = ks2.index(max(ks2, key=lambda k: kwk[k]))
-    ax.text(j - 0.19, kbk[ks2[j]] / max(kbn, 1) + top * 0.035, "available",
+    # label each series where IT is the taller bar, so neither caption lands
+    # on the other colour
+    ja = ks2.index(max(ks2, key=lambda k: kbk[k] / max(kbn, 1) - kwk[k] / tw))
+    jn = ks2.index(max(ks2, key=lambda k: kwk[k] / tw - kbk[k] / max(kbn, 1)))
+    ax.text(ja - 0.19, kbk[ks2[ja]] / max(kbn, 1) + top * 0.035, "available",
             color=MUTED, ha="center", fontsize=9)
-    ax.text(j + 0.19, kwk[ks2[j]] / tw + top * 0.035, "named",
+    ax.text(jn + 0.19, kwk[ks2[jn]] / tw + top * 0.035, "named",
             color=SERIES[1], ha="center", fontsize=9)
     _save(fig, "PH_kselect.png")
     print("figures ->", FIGS)
