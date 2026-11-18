@@ -1,0 +1,133 @@
+STAGE BOUND — the DD-faithful bound closed into a two-sided bracket
+==============================================================================
+hazard rows 20039   summary rows 1120   joined cells 1106   runs 79
+
+The joint criterion: a rollout counts only if every cell it named was
+already forced AND it never erred AND it terminated properly.  Per index
+  numerator = (n_at_risk - n_in_F) + n_err_in_F + m(j)
+with the first two exact on disk and only the DISTRIBUTION of m missing;
+its total is n_first_err - n_err_node, so phi brackets what is unseen.
+
+------------------------------------------------------------------------------
+D4 — THE GATE-ERA CLOSURE STILL HOLDS, SO THE LOADERS HAVE NOT DRIFTED
+  |S_perm - S| over 790 cells with n >= 12:  median 0.00000   max 0.03721
+  registered: median < 0.01, max < 0.05 ->  PASS
+
+------------------------------------------------------------------------------
+D3 — MONOTONICITY, AND THE VIOLATIONS LOCATE THE MISSING MASS
+  S_joint > S_ddf on 0 of 1106 cells   (registered: 0 — any violation is a scorer bug)
+  S_joint > S_perm on 0 cells; of those 0 have phi > 0 and 0 do not
+  total wrong-colour-on-a-forced-cell first errors: 1988
+  S_joint STRICTLY below S_ddf on 63 of 1106 cells  (equality iff n_err_in_F = 0 at every j)
+  largest absolute gap 0.109236 at rho 0.90, S_ddf 0.619676 -> S_joint 0.510440
+  cells with any such error: 77 of 1106; median count where present 19.0 of 400 rollouts
+
+------------------------------------------------------------------------------
+B2 — THE NON-NODE MASS, WHICH DECIDES WHETHER THE BRACKET IS USEFUL
+     rho   median phi   90th pct        max   cells
+    0.95      0.00000    0.00000    0.00000      79
+    0.90      0.00000    0.00000    0.00000      79
+    0.85      0.00000    0.00000    0.00000      79
+    0.80      0.00000    0.00000    0.00000      79
+    0.75      0.00000    0.00000    0.00250      79
+    0.70      0.00000    0.00000    0.00000      79
+    0.65      0.00000    0.00000    0.00250      79
+    0.60      0.00000    0.00000    0.00000      79
+    0.55      0.00000    0.00000    0.00000      79
+    0.50      0.00000    0.00000    0.00250      79
+  pooled over n >= 12: median 0.00000   90th pct 0.00000   max 0.00500
+  registered: median < 0.02 AND 90th pct < 0.10, falsified above 0.05  ->  HIT
+  in counts: 11 non-node deaths over 442400 rollouts
+
+------------------------------------------------------------------------------
+B1 — WHAT THE WRONG-COLOUR-ON-A-FORCED-CELL TERM ADDS
+     rho     median   95th pct        max   runs
+    0.95     1.0000     1.0151     1.7203     65
+    0.90     1.0000     1.0136     1.4052     72
+    0.85     1.0000     1.0046     1.3127     74
+    0.80     1.0000     1.0024     1.2133     76
+    0.75     1.0000     1.0006     1.1829     79
+    0.70     1.0000     1.0026     1.1547     79
+    0.65     1.0000     1.0029     1.0923     79
+    0.60     1.0000     1.0013     1.1113     79
+    0.55     1.0000     1.0028     1.0794     79
+    0.50     1.0000     1.0041     1.0599     79
+  in [1.00, 1.50] at 6 of 6 densities with n >= 12, above 2.5 at 0  ->  HIT
+  pooled over 966 cells: median 1.000000   99th pct 1.129957   max 1.720315
+  the band was registered as [1.00, 1.50]; the measurement sits ON the
+  floor of it, so read this as the colour term adding nothing, not as a
+  quantity that happened to land inside a wide band.
+
+------------------------------------------------------------------------------
+B3 — THE STANDING MINIMUM, J2 = L=16 h=4 no_mlp d192
+  run                         published   DD-faith      joint  lower end
+  r65                            0.5955     0.6739     0.6739     0.6739
+  r66                            0.5688     0.6431     0.6431     0.6436
+  r67                            0.7528     0.8676     0.8676     0.8676
+  seed median                    0.5955     0.6739     0.6739     0.6739
+  registered: lower end <= 0.74  ->  HIT   (headroom +0.0661)
+  hub L=6 h=4 full (3 seeds):     0.6068     0.6942     0.6942     0.6942
+  J2 - hub separation: published -0.0113   DD-faithful -0.0203   joint lower -0.0203
+
+------------------------------------------------------------------------------
+B4 — THE VERDICT TABLE PER ARCHITECTURE, WHICH IS HOW IT IS READ
+  architecture                   seeds     params       pub       ddf     joint     lower
+  L=16 h=4 tied_no_mlp d192          1     270010    0.8560    0.8834    0.8985    0.8985
+  L=6 h=4 no_mlp d128 ep100          1     480058    0.8193    0.8813    0.8877    0.8877
+  L=16 h=4 tied_no_mlp d320          3     613818    0.7581    0.8711    0.8711    0.8711
+  L=12 h=4 no_mlp d128               1     879418    0.7628    0.8782    0.8782    0.8782
+  L=16 h=4 tied_no_mlp d320 k2       3    1025978    0.7523    0.8688    0.8688    0.8688
+  L=16 h=4 tied_no_mlp d448          1    1088698    0.7732    0.8693    0.8693    0.8693
+  L=16 h=4 no_mlp d128               5    1145658    0.7612    0.8730    0.8730    0.8730
+  L=4 h=4 no_mlp                     1    1218106    0.7726    0.8732    0.8732    0.8732
+  L=12 h=4 no_mlp d160               3    1345018    0.7774    0.8738    0.8748    0.8748
+  L=6 h=4 no_mlp                     2    1746490    0.7627    0.8734    0.8734    0.8734
+  L=6 h=4 no_mlp ep100               3    1746490    0.7638    0.8724    0.8724    0.8724
+  L=16 h=4 no_mlp d160               3    1759738    0.7581    0.8713    0.8713    0.8713
+  L=16 h=4 tied_no_mlp d320 k4       3    1850298    0.7565    0.8729    0.8729    0.8729
+  L=12 h=4 no_mlp d192               3    1908922    0.7546    0.8662    0.8662    0.8662
+  L=16 h=4 no_mlp d176               3    2115930    0.7431    0.8706    0.8706    0.8706
+  L=4 h=4 rf_mlp                     1    2267706    0.7726    0.8781    0.8781    0.8781
+  L=8 h=4 no_mlp                     3    2274874    0.7493    0.8730    0.8730    0.8730
+  L=16 h=4 no_mlp d192               3    2504890    0.5955    0.6739    0.6739    0.6739
+  L=3 h=4 full                       3    2530618    0.7582    0.8788    0.8788    0.8788
+  L=6 h=4 full ff256                 3    2535994    0.7419    0.8691    0.8691    0.8691
+  L=12 h=4 no_mlp d224               3    2571130    0.5946    0.6859    0.6859    0.6859
+  L=4 h=4 full                       2    3320378    0.7636    0.8761    0.8761    0.8761
+  L=4 h=4 linear                     3    3320378    0.7682    0.8783    0.8783    0.8783
+  L=6 h=4 rf_mlp                     2    3320890    0.7581    0.8741    0.8741    0.8741
+  L=12 h=4 no_mlp                    3    3331642    0.6174    0.6947    0.6947    0.6947
+  L=6 h=4 full d192                  3    3381562    0.7526    0.8713    0.8713    0.8713
+  L=6 h=4 no_mlp d384                3    3799354    0.7619    0.8721    0.8721    0.8721
+  L=6 h=4 full                       3    4899898    0.6068    0.6942    0.6942    0.6942
+  L=6 h=4 linear                     2    4899898    0.7645    0.8739    0.8739    0.8739
+  L=8 h=4 full                       3    6479418    0.4766    0.5448    0.5448    0.5448
+  L=12 h=4 full                      3    9638458    0.3901    0.4692    0.4692    0.4692
+
+  clear the 0.74 gate:  published 6 of 31   DD-faithful 6   joint lower end 6
+  published set: ['L=12 h=4 full', 'L=12 h=4 no_mlp', 'L=12 h=4 no_mlp d224', 'L=16 h=4 no_mlp d192', 'L=6 h=4 full', 'L=8 h=4 full']
+  joint lower-end set: ['L=12 h=4 full', 'L=12 h=4 no_mlp', 'L=12 h=4 no_mlp d224', 'L=16 h=4 no_mlp d192', 'L=6 h=4 full', 'L=8 h=4 full']
+  subset of the published set: True   identical: True
+  registered: subset of the 6 AND at least 4  ->  HIT
+
+------------------------------------------------------------------------------
+B5 — THE RANKING
+  Spearman(rho50_ddf, rho50_joint) = +0.9935 over 79 runs
+  registered: >= 0.95, falsified below 0.8  ->  HIT
+  Spearman(published, joint lower) = +0.7586 over 79 runs
+  censoring of the lower end: {'ok': 79}
+
+------------------------------------------------------------------------------
+THE BRACKET, WHICH IS WHAT STATUS SAID NEEDED A JOB
+  rho_50 bracket width over 31 architectures: median 0.0000   max 0.0000
+  solve-rate bracket width over 790 cells with n >= 12: median 0.00000   max 0.00500
+
+==============================================================================
+SCORECARD
+  B1 colour term adds little           HIT
+  B2 non-node mass is small            HIT
+  B3 J2 clears at the lower end        HIT
+  B4 verdict table unchanged           HIT
+  B5 ranking survives                  HIT
+  D3 monotonicity                      PASS
+  D4 closure against the measured rate PASS
