@@ -222,6 +222,31 @@ def _pooled(rows, path, seen_pts):
     plt.close(fig)
 
 
+def _rank(rows, path):
+    """The one-sided result: runs ordered by competence, ALLHINT on y.  Rank
+    rather than rho50 on x because 32 of the 36 rho50 values lie inside 0.035
+    of each other, so the raw axis hides the ordering the claim is about."""
+    a = at(rows, "ALLHINT")
+    r50 = {r["run_id"]: r["rho50"] for r in rows}
+    order = sorted(a, key=lambda k: r50[k])
+    ys = [a[k] for k in order]
+    xs = np.arange(1, len(order) + 1)
+    cols = [SERIES[0] if y >= B1B_THR else MUTED for y in ys]
+    fig, ax = plt.subplots(figsize=(8.0, 4.2))
+    ax.bar(xs, ys, 0.74, color=cols)
+    ax.axhline(B1B_THR, color=SERIES[1], ls="--", lw=1.6)
+    ax.text(36.4, B1B_THR + 0.02, "0.70", color=SERIES[1], fontsize=9, ha="right")
+    ax.set_xlim(0.2, 36.8)
+    ax.set_ylim(0, 1.14)
+    ax.set_xticks([1, 4, 8, 12, 16, 20, 24, 28, 32, 36])
+    ax.set_xlabel(r"run, ordered by $\rho_{50}$ (1 = most competent of the 36)")
+    ax.set_ylabel("accuracy, hint colours blocked")
+    style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
 def seen_allhint():
     """The 43 ABLATE runs at ALLHINT / rho=0.75, keyed by run_id, with the
     per-run rho50 joined from bound_runs.csv."""
@@ -364,6 +389,7 @@ def main():
     _dissoc(rows, os.path.join(FIG, "dissociation.png"), seen)
     _density(rows, os.path.join(FIG, "density.png"))
     _pooled(rows, os.path.join(FIG, "pooled.png"), list(seen.values()))
+    _rank(rows, os.path.join(FIG, "rank.png"))
 
     txt = "\n".join(L)
     print(txt)

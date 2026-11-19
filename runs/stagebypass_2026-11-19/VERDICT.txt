@@ -1,0 +1,30 @@
+STAGE BYPASS (107) -- VERDICT
+bars and falsifiers: runs/stagebypass_2026-11-19/REGISTERED.md
+36 runs, 540 rows, densities [0.6, 0.75, 0.9], query j=0, n_q=200
+
+E-CHECKS
+  E1  acc(INTACT)=1.0000 on 36 of 36 runs           PASS
+  E2  every ablation removes >0 mass: 0 violations  PASS
+  E3  locality + mask integrity: e2_bad=0 e3_bad=0   PASS
+  E4  540 rows (want 540), n_q in [200], e4_bad=0        PASS
+
+REGISTERED PREDICTIONS
+  B1  median ALLHINT: gate(n=4)=0.998 (bar >=0.80), rest(n=32)=0.260 (bar <=0.40)  HIT
+  B1b ALLHINT>=0.70 on 3 of 4 gate (bar >=3) and 4 of 32 rest (bar <=8)  HIT
+      r76 rho50=0.594 ALLHINT=1.000 | sibling r77 rho50=0.764 ALLHINT=0.165 | seen r75 rho50=0.756 ALLHINT=0.115
+      r74 rho50=0.616 ALLHINT=0.295 | sibling r73 rho50=0.754 ALLHINT=0.190 | seen r72 rho50=0.752 ALLHINT=0.170
+  B2  1 of 2 held-out tied runs >=0.80, 2 of 2 siblings <=0.40  SPLIT
+  B3  Spearman(ALLHINT, rho50) in no_mlp (n=19) = -0.393 (bar <=-0.40)  MISS
+  B4  |ALLHINT|-|ALLROWS6| = 0.393-0.185 = 0.208 (bar >=0.30)  MISS
+  B5  median ALLPAIRS - median ALLHINT = 1.000 - 0.290 = 0.710 (bar >=0.40)  HIT
+  B6  median ALLSEC = 0.073 (bar <=0.15), gate-rest separation = 0.070 (bar <=0.20)  HIT
+
+DESCRIPTIVE, DECLARED UNSCOREABLE IN ADVANCE (REGISTERED.md section 4)
+  pooled Spearman over all 36 = -0.495 -- NOT SCORED, rho50 range 0.594-0.777, IQR 0.018 against the seen 0.170
+  full         n= 7  median ALLHINT=0.630  rho50 0.737-0.776   (not scored)
+  linear       n= 3  median ALLHINT=0.230  rho50 0.761-0.768   (not scored)
+  rf_mlp       n= 1  median ALLHINT=1.000  rho50 0.751-0.751   (not scored)
+  tied_no_mlp  n= 6  median ALLHINT=0.193  rho50 0.594-0.767   (not scored)
+  no_mlp       n=19  median ALLHINT=0.285  rho50 0.644-0.777
+
+SCORECARD  B1=HIT  B1b=HIT  B2=SPLIT  B3=MISS  B4=MISS  B5=HIT  B6=HIT
