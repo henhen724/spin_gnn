@@ -76,6 +76,54 @@ run is reproducible and the draw is averaged over instances rather than fixed.
 **Metric.** `acc` = the fraction of held-out queries at which `argmax` of the
 logits at `q` is `color_token(true_c)`.  Per run, then median over runs.
 
+### Three EXPLORATORY conditions, added before the job was submitted
+
+Added 2026-11-19 after a 12-instance pilot on `L=12 h=4 full` seed 0 and before
+any stage data existed.  **They carry no bar and no falsifier, they are not
+predictions, and nothing in A1-A7 changes because of them.**  They are recorded
+here so that the deck can separate what was predicted from what was looked up.
+
+The pilot showed `TOP-6`, which removes 0.901 of that run's own-row attention
+mass, moving the logits at `q` by a mean of 4.613 and a maximum of 12.427 -- so
+the intervention plainly reaches the readout -- while the correct colour still
+won by a mean margin of 12.589 and the argmax never moved, 12 of 12.  That makes
+A1 likely to miss, and it raises a question A1 does not ask: *is the row read at
+the query position at all?*
+
+| name | pairs ablated | positions ablated |
+|---|---|---|
+| `ALLPAIRS` | **every** `(l, h)` | `R(v)` |
+| `ALLHINT` | **every** `(l, h)` | the hint COLOUR tokens of `v`'s assigned neighbours (hop 2) |
+| `ALLBOTH` | **every** `(l, h)` | both of the above |
+| `ALLROWS6` | **every** `(l, h)` | the **six** rows that mention `v`: `R(v)` and `R(u)` for each of its 5 neighbours |
+| `ALLADJ` | **every** `(l, h)` | `ALLROWS6` + the neighbours' hint COLOUR tokens |
+| `ALLSEC` | **every** `(l, h)` | the entire hints section and entire graph section, markers included |
+
+If `ALLBOTH` leaves accuracy near 1, then neither hop of the two-hop lookup
+happens at `q`, the colour is already assembled in the residual stream before
+the query is reached, and 105's head map describes where that assembled
+information is *re-read*, not where it is computed.  That would be a sharper
+result than A1 either way, and it is the reason these are worth their share of
+the job's cost.
+
+`ALLSEC` is a **positive control and the reason the rest is interpretable at
+all**.  Without it, "ablation does nothing" cannot be told apart from "the
+harness cannot break this model".  `q` itself is never blocked, so no attention
+row is ever fully masked and no softmax ever sees an all-`-inf` row.
+
+`ALLROWS6` and `ALLADJ` exist to make a null *constructive*.  `encode_instance`
+writes `v`'s adjacency **six** times -- once in `v`'s own row and once as a
+neighbour entry in each of its 5 neighbours' rows -- so `ALLPAIRS` removes one
+sixth of the places the model could read it.  Localising the effect means
+removing all six.
+
+**Pilot, `L=12 h=4 full` seed 0, 20 held-out instances at rho 0.75, run before
+submission and reported here so the full-stage numbers cannot be mistaken for a
+surprise:** every registered condition 1.000, `ALLPAIRS` 1.000, `ALLHINT` 1.000,
+`ALLBOTH` 1.000, `ALLROWS6` 0.450, `ALLADJ` 0.400, `ALLSEC` 0.000, with E2/E3/E4
+all clean.  **A1 is therefore expected to MISS on this run**, and it is left
+registered exactly as written rather than quietly retuned.
+
 ## Predictions, with bars and falsifiers
 
 Main density is rho = 0.75 unless stated.  "Median" is the unweighted median over
@@ -134,10 +182,22 @@ than being reported as a result.
   harness's forward differs from HEADS's.
 - **E2** Under every ablated condition, the attention from `q` to the ablated row
   at each ablated pair is exactly 0, and that row still sums to 1 within 1e-4.
-- **E3** Under every ablated condition, the attention at every non-ablated
-  `(l, h)` at row `q` of application 0 is unchanged from `INTACT` within 1e-6,
-  and rows other than `q` are unchanged at every application.  This is the
-  locality claim, checked rather than asserted.
+- **E3** The locality claim, checked rather than asserted.  **Corrected
+  2026-11-19, before the probe was written and before any ablation data
+  existed**: the first draft of this check said "rows other than `q` are
+  unchanged at every application", which is false and would have failed every
+  run.  Positions *after* `q` attend to `q`, so once `q`'s hidden state moves
+  they move too.  What is actually local, and what is checked:
+  (a) at application 0, row `q` of every **non-ablated** head is unchanged
+  within 1e-6; (b) every row `p < q` is unchanged at **every** application
+  within 1e-6; (c) rows `p > q` are expected to change and are not checked --
+  the readout is taken at `q`, so they never enter the metric.
+  The comparison is against a **sham** forward that materialises the same
+  per-head mask shape while blocking nothing, so that mask shape is held fixed
+  and (b) tests locality rather than a kernel-dispatch difference.  Run on the
+  first instance of each `(run, rho)` and on a sample of 8 rows `p < q`, since
+  a full `depth x heads x L x L` comparison on every instance would cost more
+  than the stage.
 - **E4** The token at `graph_row_pos[v]` is `node_token(v)` and the token at
   `q + 1` is `color_token(true_c)`, on every query (HEADS E3, repeated because
   the instance slice is new).

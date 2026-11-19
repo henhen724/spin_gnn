@@ -210,6 +210,66 @@ def forward_capture_attention(model, x):
     return logits, attn_maps
 
 
+def forward_with_ablation(model, x, q=None, blocked=None, need_attn=True):
+    """forward_capture_attention, plus per-application per-head ablation of the
+    attention at ONE query row.  Stage ABLATE (finding 106).
+
+    blocked: {(application_index, head_index): sequence of key positions}.
+      That head, in that application only, may not attend from row `q` to those
+      keys.  The block is applied as -inf on the attention LOGITS, so softmax
+      renormalises over the keys that remain and the head still emits a proper
+      distribution over everything it is still allowed to see.
+    q: the query row the blocking applies to; required when blocked is non-empty.
+    need_attn: keep the maps.  The attention weights are computed either way
+      (need_weights stays True, so the numerics match the unablated path
+      exactly); False only avoids holding depth x (heads, L, L) in memory.
+
+    Keyed by APPLICATION, not by position in encoder.layers, for the reason
+    applied_blocks documents: on a tied model one module is applied many times,
+    and an intervention aimed at application k must not fire in every other one.
+    That is also why this is well defined on a tied model at all -- the weights
+    are shared but the mask is not.
+
+    Only row `q` is altered.  The model is causal and the readout of interest is
+    taken at `q`, so every other position's hidden state is unchanged; ABLATE's
+    E3 checks that rather than trusting it.  Passing an empty key list for a
+    pair materialises the per-head mask without blocking anything, which is the
+    sham condition E3 compares against so that mask SHAPE is held fixed.
+    """
+    assert x.shape[0] == 1, "one instance at a time (batch dim squeezed)"
+    l = x.shape[1]
+    causal = torch.triu(torch.ones(l, l, dtype=torch.bool, device=x.device), diagonal=1)
+    masks = {}
+    if blocked:
+        assert q is not None, "blocking needs a query row"
+        n_heads = model.encoder.layers[0].self_attn.num_heads
+        for (li, hi), keys in blocked.items():
+            if li not in masks:
+                masks[li] = causal.unsqueeze(0).repeat(n_heads, 1, 1)
+            keys = list(keys)
+            if keys:
+                masks[li][hi, q, keys] = True
+    h = model.token_embed(x) + model.pos_embed[:l]
+    attn_maps = [] if need_attn else None
+    with torch.no_grad():
+        for i, layer in enumerate(applied_blocks(model)):
+            mask = masks.get(i, causal)
+            if model.norm_first:
+                sa_out, attn_w = _sa_block(layer, layer.norm1(h), mask)
+                h = h + sa_out
+                h = h + _ff_block(layer, layer.norm2(h))
+            else:
+                sa_out, attn_w = _sa_block(layer, h, mask)
+                h = layer.norm1(h + sa_out)
+                h = layer.norm2(h + _ff_block(layer, h))
+            if need_attn:
+                attn_maps.append(attn_w[0])
+        if model.encoder.norm is not None:
+            h = model.encoder.norm(h)
+        logits = model.readout(h)
+    return logits, attn_maps
+
+
 def attention_weight_by_distance(attn_maps, query_positions, max_distance):
     """attn_maps: list of (num_heads, L, L) tensors (one per layer).
     query_positions: iterable of query indices to include (e.g. the
