@@ -94,7 +94,10 @@ L5 -- Pi(1) BY k, THE NUMBER OF ASSIGNED NEIGHBOURS (direction a check)
 
 ------------------------------------------------------------------------------
 L6 -- THE HEADLINE: HOW OFTEN MUST THE JOIN COMPLETE
-  Pi(1) on the matched cells of the 77 NON-CARRIER runs: 0.8746
+  the ladder restricted to the 77 NON-CARRIER runs, which is the
+  population 103's 0-of-24,008 count was measured on:
+     Pi(0)=1.0000   Pi(1)=0.8746   Pi(2)=0.6257   Pi(3)=0.4089   Pi(4)=0.3333
+  Pi(1) there: 0.8746
   so an emission that drops one neighbour is improper with prob 0.1254
   103 observed 0 improper draws in 24008 wrong unforced emissions there.
   Rule of three: the 95% upper bound on the rate of such emissions is

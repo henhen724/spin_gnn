@@ -139,7 +139,8 @@ def main():
     e2_k = 0
     pooled_k_num = collections.Counter()  # k -> summed Pi(1)
     pooled_k_den = collections.Counter()
-    pooled77_num, pooled77_den = 0.0, 0   # Pi(1) on the 77 non-carriers
+    p77_num = collections.Counter()      # D -> summed Pi, 77 non-carriers
+    p77_den = collections.Counter()
     skipped_colored = 0
 
     for rho in GRID:
@@ -183,9 +184,10 @@ def main():
             if kk >= 1 and rho in FIT_RHOS:
                 pooled_k_num[kk] += lad[1]
                 pooled_k_den[kk] += 1
-                if rid not in carriers:
-                    pooled77_num += lad[1]
-                    pooled77_den += 1
+            if rho in FIT_RHOS and rid not in carriers:
+                for D in range(min(DMAX, kk) + 1):
+                    p77_num[D] += lad[D]
+                    p77_den[D] += 1
 
         row = dict(rho=rho, held_out=int(rho not in FIT_RHOS),
                    n_cells=den[0], n_named=qn_den,
@@ -350,13 +352,18 @@ def main():
     # ------------------------------------------------------------------- L6
     n_emis = 24008            # 103: wrong unforced emissions, 77 runs, fit rhos
     n_obs = 0                 # 103: improper draws among them
-    pi1_77 = pooled77_num / pooled77_den if pooled77_den else float("nan")
+    pi77 = {D: p77_num[D] / p77_den[D] if p77_den[D] else float("nan")
+            for D in range(DMAX + 1)}
+    pi1_77 = pi77[1]
     miss_cost = 1.0 - pi1_77
     bound = 1.0 - 3.0 / (n_emis * miss_cost) if miss_cost > 0 else float("nan")
     l6_hit = bound > 0.999
     A("-" * 78)
     A("L6 -- THE HEADLINE: HOW OFTEN MUST THE JOIN COMPLETE")
-    A("  Pi(1) on the matched cells of the 77 NON-CARRIER runs: %.4f" % pi1_77)
+    A("  the ladder restricted to the 77 NON-CARRIER runs, which is the")
+    A("  population 103's 0-of-24,008 count was measured on:")
+    A("     " + "   ".join("Pi(%d)=%.4f" % (D, pi77[D]) for D in range(DMAX + 1)))
+    A("  Pi(1) there: %.4f" % pi1_77)
     A("  so an emission that drops one neighbour is improper with prob %.4f"
       % miss_cost)
     A("  103 observed %d improper draws in %d wrong unforced emissions there."
@@ -527,7 +534,7 @@ def main():
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(6.4, 4.0))
-    exp = [n_emis * (1.0 - pi[D]) for D in Ds]
+    exp = [n_emis * (1.0 - pi77[D]) for D in Ds]
     ax.bar(Ds[1:], exp[1:], color=SERIES[0], width=0.6, rasterized=True)
     ax.set_yscale("symlog", linthresh=1)
     ax.axhline(0, color="k", lw=0.8)
