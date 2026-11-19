@@ -245,21 +245,33 @@ def f3_shint(rows, passing):
     save(f, path)
 
 
-def f4_slots(rows75, passing):
-    """Mean attention per neighbour slot, by class, pooled over the gate."""
-    f, ax, path = fig("H4_slot_classes.png")
+def _slot_bars(rows75, passing, name, keys, labels, highlight):
+    """Mean attention per neighbour token, on the registered sub-population.
+
+    R_dc is defined on k >= 4 cells and R_ab on k <= 4 cells, so each pair of
+    bars uses its own subset rather than the all-cell totals.
+    """
+    f, ax, path = fig(name)
     sub = [r for r in rows75 if r["cell"] in passing]
-    names = ["critical", "droppable", "blank"]
-    keys = ["crit_all", "drop_all", "blank_all"]
     ys = [ratio(sum(r["mass_" + k] for r in sub),
                 sum(r["n_" + k] for r in sub)) for k in keys]
-    ax.bar(names, ys, width=0.54, color=series_colors(3, highlight=1),
+    ax.bar(labels, ys, width=0.46, color=series_colors(2, highlight=highlight),
            rasterized=True)
-    for x, y in zip(names, ys):
+    for x, y in zip(labels, ys):
         ax.annotate("%.4f" % y, xy=(x, y), xytext=(0, 4), ha="center",
-                    textcoords="offset points", fontsize=9)
+                    textcoords="offset points", fontsize=10)
+    ax.set_ylim(0, max(ys) * 1.18)
     style_axes(ax, ylabel="mean attention mass per neighbour token")
     save(f, path)
+
+
+def f4_slots(rows75, passing):
+    _slot_bars(rows75, passing, "H4_crit_vs_drop.png",
+               ["crit_dc", "drop_dc"],
+               ["critical", "droppable"], 1)
+    _slot_bars(rows75, passing, "H5_assigned_vs_blank.png",
+               ["assigned_ab", "blank_ab"],
+               ["assigned by a hint", "still blank"], 1)
 
 
 def f5_n50(rows75, passing):
@@ -279,10 +291,21 @@ def f5_n50(rows75, passing):
     save(f, path)
 
 
-def f6_headmap(byhead, run_id, title_cell):
-    """Own-row mass per (layer, head) for one run — the circuit, drawn."""
+def f6_headmap(byhead, cell, title_cell):
+    """Own-row mass per (layer, head) for ONE seed — the circuit, drawn.
+
+    Heads are not aligned across seeds, so this cannot be averaged.  The seed
+    shown is the cell's lowest seed number, chosen before the figure was
+    looked at; the others are in heads_byhead_*.csv.
+    """
     f, ax, path = fig("H6_headmap.png")
-    sub = [b for b in byhead if b["run_id"] == run_id
+    seeds = sorted({fnum(b, "seed") for b in byhead
+                    if " ".join(b["cell"].split()) == cell})
+    if not seeds:
+        plt.close(f)
+        return
+    sub = [b for b in byhead if " ".join(b["cell"].split()) == cell
+           and fnum(b, "seed") == seeds[0]
            and abs(fnum(b, "rho") - MAIN) < 1e-9]
     if not sub:
         plt.close(f)
@@ -299,6 +322,7 @@ def f6_headmap(byhead, run_id, title_cell):
     cb = f.colorbar(im, ax=ax)
     cb.set_label("own-row attention mass", fontsize=9)
     ax.set_xticks(range(L))
+    ax.set_xticklabels([str(i + 1) for i in range(L)])
     ax.set_yticks(range(H))
     style_axes(ax, xlabel="block application (depth)", ylabel="head")
     ax.grid(False)
@@ -307,23 +331,31 @@ def f6_headmap(byhead, run_id, title_cell):
 
 
 def f7_layer_profile(byhead, pairs):
-    """Own-row mass by depth for a passing run and a failing one."""
+    """Own-row mass by depth for a passing cell and a failing one.
+
+    Averaged over the cell's seeds: unlike the head map this is a per-depth
+    total, so the seeds are commensurable.
+    """
     f, ax, path = fig("H1_layer_profile.png")
-    for i, (run_id, name) in enumerate(pairs):
-        sub = [b for b in byhead if b["run_id"] == run_id
+    for i, (cell, name) in enumerate(pairs):
+        sub = [b for b in byhead if " ".join(b["cell"].split()) == cell
                and abs(fnum(b, "rho") - MAIN) < 1e-9]
         if not sub:
             continue
         nq = max(fnum(b, "n_q") for b in sub)
-        by_l = collections.defaultdict(float)
+        ns = len({fnum(b, "seed") for b in sub})
         nh = len({int(fnum(b, "head")) for b in sub})
+        by_l = collections.defaultdict(float)
         for b in sub:
-            by_l[int(fnum(b, "layer"))] += fnum(b, "own_row") / nq / nh
+            by_l[int(fnum(b, "layer"))] += fnum(b, "own_row") / nq / nh / ns
         xs = sorted(by_l)
         ys = [by_l[x] for x in xs]
         ax.plot([x + 1 for x in xs], ys, "-o", ms=3.5, color=SERIES[i],
                 rasterized=True)
-        label_line(ax, xs[-1] + 1, ys[-1], name, color=SERIES[i])
+        # at the peak, not the right-hand end: the two curves end within
+        # 0.004 of each other and the labels would collide there
+        top = int(np.argmax(ys))
+        label_line(ax, xs[top] + 1, ys[top], name, color=SERIES[i], dy=8)
     ax.axhline(6.0 / 288.0, color=MUTED, lw=1.0, ls=":")
     ax.annotate("uniform over the 48 rows", xy=(1, 6.0 / 288.0),
                 xytext=(4, 5), textcoords="offset points",
@@ -552,16 +584,17 @@ def main():
     print("  wrote heads_runs.csv (%d rows)" % len(rows_all))
 
     # -------------------------------------------------------------- figures
-    best = min(pass75, key=lambda r: cell_rho50.get(r["cell"], 9.0))
-    worst = max(fail75, key=lambda r: cell_rho50.get(r["cell"], -1.0))
+    best = min({r["cell"] for r in pass75},
+               key=lambda c: cell_rho50.get(c, 9.0))
+    worst = max({r["cell"] for r in fail75},
+                key=lambda c: cell_rho50.get(c, -1.0))
     f1_gate(rows75, cell_rho50, passing)
-    f7_layer_profile(byhead, [(best["run_id"], best["cell"]),
-                              (worst["run_id"], worst["cell"])])
+    f7_layer_profile(byhead, [(best, best), (worst, worst)])
     f2_depth16(rows75)
     f3_shint(rows, passing)
     f4_slots(rows75, passing)
     f5_n50(rows75, passing)
-    f6_headmap(byhead, best["run_id"], best["cell"] + r"  at $\rho=0.75$")
+    f6_headmap(byhead, best, best + r"  (one seed) at $\rho=0.75$")
     print("  figures in", FIGS)
 
 
