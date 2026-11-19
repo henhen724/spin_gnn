@@ -1,0 +1,155 @@
+STAGE LOCAL -- how much of the adjacency join does the colour step do?
+==============================================================================
+j=0 error records 43598   runs with any improper draw (fit densities): 2
+
+Pi(D) = properness of an emitter joining against only k-D of the named
+        cell's k assigned neighbours, averaged over which D are dropped.
+        Pi(0) = 1 identically; the full-drop rung is 103's Q_null
+        rescaled to unforced cells -- see E1, which caught that.
+
+------------------------------------------------------------------------------
+E1 -- THE FULL-DROP RUNG AGAINST 103's Q_null
+
+  THE REGISTRATION GOT THIS WRONG AND E1 IS WHY IT EXISTS.  It asserted
+  Pi(k) = Q_null 'to the digit'.  It is not: 103's Q_null averaged over
+  every FREE named cell, with forced ones (c = 1) contributing 0, while
+  the ladder is defined only on UNFORCED cells because c = 1 makes
+  Pi(0) = 0/0.  The two differ by exactly the unforced share.
+
+  103's Q_null recomputed here on 103's own population: 0.3379
+  103's published Q_null:                               0.3379
+    |difference| 0.000023  (bar 0.0005)  ->  PASS
+
+  full-drop rung on the LADDER's population (unforced only): 0.3469
+  unforced share of named free cells:                        0.9742
+  identity Q_null = (unforced share) x (full-drop rung):     0.3379
+    |difference from Q_null| 0.000000  (bar 0.0005)  ->  PASS
+  E1 overall: PASS
+
+E2 -- Pi(0) = 1 ON EVERY CELL, AND k AGREES WITH CAND's
+  cells checked 25259   Pi(0) violations 0   k mismatches 0  ->  PASS
+  DOMAIN: E1 over the ten fit densities on the matched named-cell
+  population; E2 over every named cell read, forced cells excluded
+  because c = 1 makes the ratio 0/0.  3 records naming an ALREADY-
+  COLOURED cell were skipped, as in 103.
+
+------------------------------------------------------------------------------
+L1 -- DOES GLOBAL COLOUR PRESENCE CARRY ANY INFORMATION (check)
+  fraction of instances in which all 4 colours appear among the hints:
+   0.95:1.0000  0.90:1.0000  0.85:1.0000  0.80:1.0000  0.75:1.0000
+   0.70:1.0000  0.65:1.0000  0.60:1.0000  0.55:1.0000  0.50:0.9975
+  minimum over the ten fit densities 0.9975  (bar >= 0.99)  ->  HIT
+  DISCLOSED AS NEAR-CERTAIN IN ADVANCE.  What it buys is account (B1):
+  if every colour is always visible in context, an emitter inhibited by
+  GLOBAL colour presence has no basis to choose and cannot reach 1.0000.
+
+------------------------------------------------------------------------------
+L2/L3 -- THE LADDER
+    D   Pi(D)   cells contributing
+    0  1.0000   25259
+    1  0.8702   25255
+    2  0.6225   25156
+    3  0.4088   24270
+    4  0.3333   9496
+   full 0.3469   25259   <- D = k per cell; x 0.9742 unforced share = Q_null
+  L2: Pi(1) = 0.8702 in [0.70, 0.90]  ->  HIT   falsifier not tripped
+  L3: Pi(2) = 0.6225 in [0.40, 0.70]  ->  HIT   falsifier not tripped
+      strictly decreasing at 10 of 10 fit densities
+  NOTE ON THE DENOMINATOR: Pi(D) averages only over cells with k >= D,
+  so the population shrinks as D grows and the far rungs are not a
+  fixed-population comparison.  Counts are printed above for that reason.
+
+------------------------------------------------------------------------------
+L4 -- HOW MUCH SLACK THE JOIN HAS
+  named cells with at least one DROPPABLE neighbour (its colour also
+  appears on another assigned neighbour, so S is unchanged):
+   0.95:1.000  0.90:1.000  0.85:0.973  0.80:0.979  0.75:0.978
+   0.70:0.976  0.65:0.976  0.60:0.958  0.55:0.956  0.50:0.949
+  pooled 0.9677   minimum 0.9490  (bar >= 0.50 at every fit density)  ->  HIT
+  falsifier (< 0.30 at >= 4 of 10): not tripped
+
+------------------------------------------------------------------------------
+L5 -- Pi(1) BY k, THE NUMBER OF ASSIGNED NEIGHBOURS (direction a check)
+    k   Pi(1|k)   cells
+    1   0.6667   99
+    2   0.5976   886
+    3   0.8418   14774
+    4   0.9419   9496
+    5     n/a    0
+
+  L5 IS VOID, AND THE REASON IS THE INTERESTING PART.  It was registered
+  as Pi(1|k=2) <= Pi(1|k=5) - 0.10, but THERE ARE NO k = 5 CELLS: 0 of
+  25255.  A named cell with all five neighbours already coloured is unforced
+  only if those five carry at most two distinct colours, and at q = 4 on
+  a 5-regular graph that never happened.  The registered comparison has
+  an empty arm, so it is scored VOID rather than MISS -- the bar was
+  unmeetable when it was written and I did not check the support first.
+
+  REPORTED INSTEAD, AND NOT AS A HIT: the largest populated stratum is
+  k = 4, and Pi(1|k=4) - Pi(1|k=2) = +0.3443, which clears the registered
+  +0.10 margin.  This is a SUBSTITUTED comparison chosen after seeing the
+  supports, so it scores nothing; it is here because the monotone trend
+  across k = 1..4 is what L5 was trying to look at.
+  THE SIGN WAS DISCLOSED AS PIGEONHOLE; only the magnitude was live.
+
+------------------------------------------------------------------------------
+L6 -- THE HEADLINE: HOW OFTEN MUST THE JOIN COMPLETE
+  Pi(1) on the matched cells of the 77 NON-CARRIER runs: 0.8746
+  so an emission that drops one neighbour is improper with prob 0.1254
+  103 observed 0 improper draws in 24008 wrong unforced emissions there.
+  Rule of three: the 95% upper bound on the rate of such emissions is
+  3/24008 = 1.250e-04, so the join-completion rate is bounded below by
+     pi >= 1 - 3/(24008 * 0.1254) = 0.999004
+  registered: > 0.999, falsified below 0.99  ->  HIT
+  THE HIT IS MARGINAL AND I AM NOT GOING TO DRESS IT UP: 0.999004
+  against a bar of 0.999000.  The bar was set by the arithmetic of the
+  rule of three on a count I already knew (24,008), so writing 0.999
+  was close to writing the answer; a fourth digit either way would have
+  flipped it.  The robust statement is the one below it -- ~3011 expected
+  violations against 0 observed -- which does not depend on the bar.
+  expected improper draws if the join dropped one neighbour EVERY time:
+     3011.  Observed: 0.
+
+==============================================================================
+SCORECARD
+  L1 global presence uninformative (check)     HIT
+  L2 dropping one neighbour is expensive       HIT
+  L3 the ladder keeps falling                  HIT
+  L4 the join has slack                        HIT
+  L6 the join completes essentially always     HIT
+  L5 small-k cells are unforgiving (check)     VOID -- no k=5 cells exist
+  E1 full-drop rung == 103's Q_null            PASS
+  E2 Pi(0) == 1                                PASS
+
+==============================================================================
+WHAT THIS ANSWERS, AND WHAT IT LEAVES OPEN
+
+  103 showed the colour step never writes an illegal colour.  This
+  stage asks what computation that requires, and the answer is: the
+  COMPLETE join, on essentially every emission.
+
+  An emitter that joined against all but one of the named cell's
+  assigned neighbours would be improper 12.5% of the time.  Over the
+  24,008 wrong unforced emissions 103 measured on the 77 exact runs
+  that is ~3011 expected violations.  Zero were observed, which bounds
+  the join-completion rate at >= 0.9990 with 95% confidence.
+
+  ACCOUNT (B1), GLOBAL INHIBITION, IS DEAD.  All four colours appear
+  among the hints in 99.75% of instances, so 'this colour is visible in
+  context' is true of every colour nearly always and cannot select the
+  1-2 the model actually suppresses.  The suppressed set is cell-
+  specific, and identifying it requires reading the named node's row of
+  BEGIN_GRAPH and joining it against BEGIN_HINTS.
+
+  ACCOUNT (B2), ADJACENCY-LOCAL INHIBITION, SURVIVES -- AND THAT WAS
+  DISCLOSED.  Suppressing exactly the colours on this cell's neighbours
+  IS computing the candidate set; the two are the same function and no
+  output-only measurement can separate them.  What has changed is that
+  the surviving account is now a specific, named, two-hop computation
+  rather than 'some mechanism that agrees'.
+
+  AND THE SLACK IS THE ARCHITECTURAL FINDING.  96.8% of named cells
+  have at least one neighbour whose colour is duplicated on another
+  neighbour, so a correct emitter does not need equal attention on all
+  k.  For the smallest-analyzable-architecture brief that is the useful
+  number: the join must be complete in EFFECT, not in EFFORT.
