@@ -104,7 +104,7 @@ def _bar_ladder(rows, path):
     block and only falls when every copy of v's adjacency is removed."""
     names = EXPLORATORY
     vals = [med(accs(rows, cond=c, group="gate")) for c in names]
-    fig, ax = plt.subplots(figsize=(7.2, 4.0))
+    fig, ax = plt.subplots(figsize=(8.0, 4.2))
     cols = series_colors(len(names), highlight=len(names) - 1)
     y = np.arange(len(names))[::-1]
     ax.barh(y, vals, color=cols, height=0.62)
@@ -113,7 +113,7 @@ def _bar_ladder(rows, path):
     ax.set_yticks(y)
     ax.set_yticklabels([LADDER_LABEL[c] for c in names], fontsize=9)
     ax.set_xlim(0, 1.12)
-    style_axes(ax, xlabel="argmax-colour accuracy at the j=0 query (median over the 18 gate-passing runs)")
+    style_axes(ax, xlabel="argmax-colour accuracy (median, 18 gate-passing runs)")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -126,10 +126,12 @@ def _dose(rows, path):
     rnd = [med(accs(rows, cond="RAND", m=m, group="gate")) if m != 2 else np.nan
            for m in ms]
     fig, ax = plt.subplots(figsize=(6.4, 4.0))
-    ax.plot(ms, top, "-o", color=SERIES[0], lw=2, ms=5, rasterized=True)
+    ax.plot(ms, top, "-o", color=SERIES[0], lw=3.5, ms=7, rasterized=True)
     rm = [m for m, v in zip(ms, rnd) if v == v]
     rv = [v for v in rnd if v == v]
-    ax.plot(rm, rv, "-s", color=SERIES[1], lw=2, ms=5, rasterized=True)
+    # dashed and thinner, because the two curves coincide exactly at 1.000 and
+    # a solid overlay would hide the one the claim is about.
+    ax.plot(rm, rv, "--s", color=SERIES[1], lw=1.6, ms=4, rasterized=True)
     ax.axhline(A1_BAR, color=MUTED, ls="--", lw=1)
     label_line(ax, ms[-1], top[-1], "top-m heads", color=SERIES[0])
     label_line(ax, rm[-1], rv[-1], "random m heads", color=SERIES[1], dy=-12)
@@ -143,11 +145,45 @@ def _dose(rows, path):
     plt.close(fig)
 
 
-def _groups(rows, path):
-    """A6.  Per-run accuracy under ALLROWS6, gate-passing against below gate."""
-    g = accs(rows, cond="ALLROWS6", group="gate")
-    b = accs(rows, cond="ALLROWS6", group="below")
-    fig, ax = plt.subplots(figsize=(6.4, 4.0))
+def _tail(rows, path):
+    """POST-HOC, not registered.  The count of damaged (run, density) pairs
+    against m, which is what the registered medians hid: TOP damages a growing
+    minority and RAND damages none at all."""
+    ms = [1, 2, 3, 6]
+    n = len(accs(rows, cond="TOP", m=1, rho=None, group="gate"))
+    top = [sum(1 for a in accs(rows, cond="TOP", m=m, rho=None, group="gate")
+               if a < 1.0) for m in ms]
+    rnd = [(m, sum(1 for a in accs(rows, cond="RAND", m=m, rho=None,
+                                   group="gate") if a < 1.0))
+           for m in (1, 3, 6)]
+    fig, ax = plt.subplots(figsize=(6.8, 4.2))
+    ax.plot(ms, top, "-o", color=SERIES[0], lw=3.5, ms=7, rasterized=True)
+    ax.plot([m for m, _ in rnd], [v for _, v in rnd], "--s", color=SERIES[1],
+            lw=1.6, ms=4, rasterized=True)
+    label_line(ax, ms[-1], top[-1], "top-m heads", color=SERIES[0])
+    label_line(ax, rnd[-1][0], rnd[-1][1], "random m heads", color=SERIES[1])
+    ax.set_xticks(ms)
+    ax.set_ylim(-1.5, n * 0.62)
+    style_axes(ax, xlabel="m: heads blocked from reading v's own row",
+               ylabel="(run, density) pairs damaged, out of %d" % n)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def _groups(rows, path, cond, m, ylabel):
+    """Per-run accuracy, gate-passing against below gate.
+
+    A6 is registered on TOP-3, so that is the figure the verdict table points
+    at.  ALLROWS6 gets the same plot separately because it is the only
+    condition with any spread to compare -- but it is EXPLORATORY and the page
+    that carries it has to say so.
+    """
+    g = accs(rows, cond=cond, m=m, group="gate")
+    b = accs(rows, cond=cond, m=m, group="below")
+    # taller than the other panels: the y label is rotated and long enough to
+    # be clipped at 4.0 in.
+    fig, ax = plt.subplots(figsize=(6.4, 5.0))
     rs = np.random.RandomState(0)
     for i, (v, c, name) in enumerate(((g, SERIES[0], "gate-passing"),
                                       (b, SERIES[1], "below gate"))):
@@ -159,24 +195,27 @@ def _groups(rows, path):
     ax.set_xlim(-0.6, 1.6)
     ax.set_ylim(0, 1.05)
     ax.set_xticks([])
-    style_axes(ax, ylabel="accuracy with all six rows naming v blocked")
+    style_axes(ax, ylabel=ylabel)
     fig.subplots_adjust(bottom=0.22)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
 def _density(rows, path):
-    """A7 and the ladder against hint density."""
+    """The EXPLORATORY ladder against hint density.  Not A7: A7 is registered
+    on TOP-3, which is flat at 1.000 at every density, so a figure of it would
+    carry no information the verdict table does not already state."""
     keep = ["ALLBOTH", "ALLROWS6", "ALLSEC"]
-    fig, ax = plt.subplots(figsize=(6.4, 4.0))
+    fig, ax = plt.subplots(figsize=(7.8, 4.0))
     for c, col in zip(keep, SERIES):
         v = [med(accs(rows, cond=c, rho=rho, group="gate")) for rho in RHOS]
         ax.plot(RHOS, v, "-o", color=col, lw=2, ms=5, rasterized=True)
         label_line(ax, RHOS[-1], v[-1], LADDER_LABEL[c], color=col)
-    ax.set_xlim(0.56, 0.95)
+    ax.set_xlim(0.50, 0.95)
     ax.set_ylim(-0.05, 1.12)
     ax.invert_xaxis()
-    style_axes(ax, xlabel="hint density rho", ylabel="argmax-colour accuracy")
+    style_axes(ax, xlabel=r"hint density $\rho$",
+               ylabel="argmax-colour accuracy")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -199,13 +238,18 @@ def _mass(rows, path):
     plt.close(fig)
 
 
-def _depth(rows, path):
-    """Does the surviving redundancy depend on depth?"""
+def _depth(rows, path, cond, ylabel):
+    """Accuracy against depth, split by group.
+
+    For ALLHINT this is the control on the post-hoc group difference: if the
+    two groups part because gate-passing runs are deeper, the gap has to close
+    once depth is held fixed.
+    """
     pts = [(r["depth"], r["acc"], r["group"]) for r in rows
-           if r["cond"] == "ALLROWS6" and abs(r["rho"] - MAIN) < 1e-9]
-    fig, ax = plt.subplots(figsize=(6.4, 4.0))
-    for grp, col, name in (("gate", SERIES[0], "gate-passing"),
-                           ("below", SERIES[1], "below gate")):
+           if r["cond"] == cond and abs(r["rho"] - MAIN) < 1e-9]
+    fig, ax = plt.subplots(figsize=(7.4, 4.4))
+    for i, (grp, col, name) in enumerate((("gate", SERIES[0], "gate-passing"),
+                                          ("below", SERIES[1], "below gate"))):
         v = [(d, a) for d, a, g in pts if g == grp]
         if not v:
             continue
@@ -213,10 +257,12 @@ def _depth(rows, path):
         ax.plot([d + j for (d, _), j in zip(v, jitter)], [a for _, a in v],
                 "o", color=col, ms=5, alpha=0.7, rasterized=True)
         xm = max(d for d, _ in v)
-        label_line(ax, xm, med([a for d, a in v if d == xm]), name, color=col)
+        label_line(ax, xm, med([a for d, a in v if d == xm]), name, color=col,
+                   dy=10 if i == 0 else -14)
+    ax.set_xlim(2, 21)
     ax.set_ylim(0, 1.08)
-    style_axes(ax, xlabel="depth (applications)",
-               ylabel="accuracy with all six rows naming v blocked")
+    ax.set_xticks([4, 6, 8, 12, 16])
+    style_axes(ax, xlabel="depth (transformer block applications)", ylabel=ylabel)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -344,10 +390,20 @@ def main():
 
     _bar_ladder(rows, os.path.join(FIG, "ladder.png"))
     _dose(rows, os.path.join(FIG, "A1_dose.png"))
-    _groups(rows, os.path.join(FIG, "A6_groups.png"))
-    _density(rows, os.path.join(FIG, "A7_density.png"))
+    _tail(rows, os.path.join(FIG, "dose_tail.png"))
+    _groups(rows, os.path.join(FIG, "A6_groups.png"), "TOP", 3,
+            "accuracy, top 3 heads blocked from v's row")
+    _groups(rows, os.path.join(FIG, "groups_allrows6.png"), "ALLROWS6", 0,
+            "accuracy, all six rows naming v blocked")
+    # POST-HOC, not registered: the one condition where the two groups part.
+    _groups(rows, os.path.join(FIG, "groups_allhint.png"), "ALLHINT", 0,
+            "accuracy, neighbours' hint colours blocked")
+    _density(rows, os.path.join(FIG, "ladder_density.png"))
     _mass(rows, os.path.join(FIG, "mass_vs_acc.png"))
-    _depth(rows, os.path.join(FIG, "depth.png"))
+    _depth(rows, os.path.join(FIG, "depth_allrows6.png"), "ALLROWS6",
+           "accuracy, all six rows naming v blocked")
+    _depth(rows, os.path.join(FIG, "depth_allhint.png"), "ALLHINT",
+           "accuracy, neighbours' hint colours blocked")
     print("\nfigures -> %s" % FIG)
 
 

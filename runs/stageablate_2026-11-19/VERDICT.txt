@@ -1,0 +1,36 @@
+STAGE ABLATE (finding 106) -- scored against runs/stageablate_2026-11-19/REGISTERED.md
+
+18 gate-passing runs, 25 below-gate cells, 3 densities, 1935 rows.
+held-out instances per (run, rho): [200]
+
+EXECUTION CHECKS
+  E1 intact accuracy == 1.0000 on all 54 gate-passing (run, rho): PASS
+  E2 block landed and row renormalises         PASS
+  E3 locality (rows p < q unchanged)           PASS
+  E4 token layout                              PASS
+
+REGISTERED PREDICTIONS (rho = 0.75 unless stated, median over the 18 gate-passing runs)
+  A1  acc, top-3 heads blocked from v's own row             1.0000   bar 0.5     fals 0.9      MISS
+  A2  acc, 3 random heads blocked (control)                 1.0000   bar 0.9     fals 0.7      HIT
+  A3  acc, top-3 blocked from a WRONG row (control)         1.0000   bar 0.9     fals 0.7      HIT
+  A4  runs with acc monotone non-increasing in m           16.0000   bar 15      fals 9        HIT  (16 of 18)
+  A5  acc, top-1 head blocked                               1.0000   bar 0.95    fals 0.995    MISS
+  A6  |below-gate - gate-passing| at top-3 (a NULL)         0.0100   bar 0.15    fals 0.3      HIT  (gate 1.0000, below 0.9900)
+  A7  worst density, top-3 blocked                          1.0000   bar 0.5     fals 0.9      MISS  (0.90:1.0000, 0.75:1.0000, 0.60:1.0000)
+
+  SCORECARD  4 HIT, 0 SPLIT, 3 MISS
+
+EXPLORATORY CONDITIONS -- no registered bar, not predictions.
+  blocked at the query                    gate     below   per density (gate)
+  v's own row                           1.0000    0.9800   0.90:0.998, 0.75:1.000, 0.60:1.000   [0.320, 1.000]
+  neighbours' hint colours              1.0000    0.2350   0.90:1.000, 0.75:1.000, 0.60:1.000   [0.405, 1.000]
+  own row + neighbours' hints           0.6950    0.2250   0.90:0.748, 0.75:0.695, 0.60:0.600   [0.225, 1.000]
+  all six rows naming v                 0.3500    0.3550   0.90:0.372, 0.75:0.350, 0.60:0.300   [0.205, 0.445]
+  six rows + neighbours' hints          0.2150    0.2150   0.90:0.223, 0.75:0.215, 0.60:0.198   [0.120, 0.350]
+  the whole hints + graph sections      0.0550    0.0600   0.90:0.090, 0.75:0.055, 0.60:0.048   [0.000, 0.345]
+
+  The ladder is the result: every partial block leaves the colour step
+  intact, and accuracy only falls once every copy of v's adjacency is
+  removed.  ALLSEC is the positive control -- it proves the harness can
+  break the model, which is what makes the nulls above readable.
+
