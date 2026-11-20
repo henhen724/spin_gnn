@@ -221,6 +221,7 @@ def probe(n_nodes, n_instances, seed_start):
         "novel_nats": nv, "order_nats": no,
         "n_novel": m("n_novel"), "n_order": m("n_order"),
         "per_novel": nv / max(m("n_novel"), 1e-9),
+        "per_order": no / max(m("n_order"), 1e-9),
         "floor_graph": graph_floor,
         "floor_hints": hn / total,
         "floor_reason": orn / total,
@@ -240,13 +241,29 @@ def main():
 
     print(f"{'N':>5} {'tokens':>8} {'graph%':>7} {'reason%':>8} {'hints%':>7} "
           f"{'f_graph':>8} {'f_hints':>8} {'f_order':>8} {'FLOOR':>7} "
-          f"{'rho_min':>8} {'T':>6}")
+          f"{'nov/slot':>9} {'cpy/slot':>9} {'rho_min':>8} {'T':>6}")
     for r in out:
         print(f"{r['n_nodes']:>5} {r['total']:>8.0f} "
               f"{100 * r['graph_frac']:>6.1f}% {100 * r['reason_frac']:>7.1f}% "
               f"{100 * r['hints_frac']:>6.1f}% {r['floor_graph']:>8.3f} "
               f"{r['floor_hints']:>8.3f} {r['floor_reason']:>8.3f} "
-              f"{r['floor_nll']:>7.3f} {r['rho']:>8.3f} {r['T']:>6.1f}")
+              f"{r['floor_nll']:>7.3f} {r['per_novel']:>9.4f} "
+              f"{r['per_order']:>9.4f} {r['rho']:>8.3f} {r['T']:>6.1f}")
+
+    print("\nPER-SLOT is what stage SECTION measures against: the IDEAL cost "
+          "of one novel and one copy neighbour slot, comparable directly with "
+          "a trained model's measured graph_nbr_novel / graph_nbr_copy NLL.")
+    print("THE NOVEL SLOT IS ROBUST AND IS TWO-THIRDS OF THE LOSS: 3.317 here, "
+          "3.339 from an independent discrete-slot recount, against stage "
+          "SECTION's measured 3.4269 at N=48 -- the model is within 0.11 nats "
+          "of the bound on the term that dominates total val_nll.")
+    print("THE COPY SLOT IS MODEL-DEPENDENT AND IS NOT SETTLED HERE.  This "
+          "probe's probability-weighted count gives 0.676; a discrete recount "
+          "that assumes the remaining copy neighbours are ordered uniformly "
+          "gives 1.047.  Measured is 0.9671, INSIDE that bracket, so how far "
+          "the model sits from the copy-slot bound cannot be read off until "
+          "the within-row order's encoding is pinned down.  Only the novel "
+          "half may be quoted as a near-bound result.")
 
     print("\nThe FLOOR is the graph section's irreducible content spread over "
           "ALL tokens -- what a perfect DD solver that still has to transmit "
