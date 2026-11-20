@@ -1,0 +1,255 @@
+{
+ "degree": 5,
+ "q": 4,
+ "grid": [
+  0.95,
+  0.9,
+  0.8,
+  0.7,
+  0.6,
+  0.5,
+  0.45,
+  0.4,
+  0.35,
+  0.33,
+  0.31,
+  0.3
+ ],
+ "sizes": [
+  {
+   "n_nodes": 48,
+   "fall": true,
+   "n_instances": 40,
+   "secs_total": 0.64,
+   "secs_per_instance": 0.0161,
+   "rho_min": {
+    "mean": 0.3328125,
+    "sd": 0.01646195898883241,
+    "min": 0.2916666666666667,
+    "max": 0.3541666666666667
+   },
+   "T_end": {
+    "mean": 13.475,
+    "sd": 3.9178278420573815,
+    "min": 6.0,
+    "max": 25.0
+   },
+   "T_grid_median": [
+    1.0,
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    7.0,
+    9.0,
+    10.0,
+    13.0,
+    13.0,
+    14.0,
+    14.0
+   ],
+   "vocab_size": 58,
+   "encoded_len_at_floor": 404,
+   "analytic_len_at_Tmax": 413,
+   "max_len_with_margin": 511,
+   "cost_vs_n96_linear": 0.512,
+   "cost_vs_n96_quadratic": 0.262
+  },
+  {
+   "n_nodes": 96,
+   "fall": true,
+   "n_instances": 40,
+   "secs_total": 0.06,
+   "secs_per_instance": 0.0016,
+   "rho_min": {
+    "mean": 0.3223958333333333,
+    "sd": 0.01891564562222383,
+    "min": 0.28125,
+    "max": 0.3541666666666667
+   },
+   "T_end": {
+    "mean": 22.375,
+    "sd": 4.322542654503249,
+    "min": 15.0,
+    "max": 32.0
+   },
+   "T_grid_median": [
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    6.0,
+    9.0,
+    12.0,
+    15.0,
+    19.0,
+    23.0,
+    21.5,
+    22.0
+   ],
+   "vocab_size": 106,
+   "encoded_len_at_floor": 799,
+   "analytic_len_at_Tmax": 804,
+   "max_len_with_margin": 998,
+   "cost_vs_n96_linear": 1.0,
+   "cost_vs_n96_quadratic": 1.0
+  },
+  {
+   "n_nodes": 144,
+   "fall": true,
+   "n_instances": 40,
+   "secs_total": 0.09,
+   "secs_per_instance": 0.0023,
+   "rho_min": {
+    "mean": 0.3189236111111111,
+    "sd": 0.014348934702037405,
+    "min": 0.2847222222222222,
+    "max": 0.3541666666666667
+   },
+   "T_end": {
+    "mean": 28.2,
+    "sd": 4.980963762164908,
+    "min": 17.0,
+    "max": 38.0
+   },
+   "T_grid_median": [
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    7.0,
+    12.0,
+    14.5,
+    19.0,
+    25.0,
+    27.0,
+    24.0,
+    30.0
+   ],
+   "vocab_size": 154,
+   "encoded_len_at_floor": 1194,
+   "analytic_len_at_Tmax": 1194,
+   "max_len_with_margin": 1484,
+   "cost_vs_n96_linear": 1.487,
+   "cost_vs_n96_quadratic": 2.211
+  },
+  {
+   "n_nodes": 192,
+   "fall": true,
+   "n_instances": 40,
+   "secs_total": 0.14,
+   "secs_per_instance": 0.0036,
+   "rho_min": {
+    "mean": 0.3196614583333333,
+    "sd": 0.013211494717288065,
+    "min": 0.2916666666666667,
+    "max": 0.3489583333333333
+   },
+   "T_end": {
+    "mean": 34.625,
+    "sd": 7.9299668977871525,
+    "min": 19.0,
+    "max": 50.0
+   },
+   "T_grid_median": [
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    7.0,
+    11.0,
+    16.0,
+    22.0,
+    29.5,
+    32.0,
+    38.0,
+    32.0
+   ],
+   "vocab_size": 202,
+   "encoded_len_at_floor": 1581,
+   "analytic_len_at_Tmax": 1590,
+   "max_len_with_margin": 1976,
+   "cost_vs_n96_linear": 1.98,
+   "cost_vs_n96_quadratic": 3.92
+  },
+  {
+   "n_nodes": 252,
+   "fall": true,
+   "n_instances": 13,
+   "secs_total": 0.06,
+   "secs_per_instance": 0.0044,
+   "rho_min": {
+    "mean": 0.3165445665445666,
+    "sd": 0.009358797140876618,
+    "min": 0.29365079365079366,
+    "max": 0.3253968253968254
+   },
+   "T_end": {
+    "mean": 40.69230769230769,
+    "sd": 7.310525766471828,
+    "min": 26.0,
+    "max": 56.0
+   },
+   "T_grid_median": [
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    7.0,
+    12.0,
+    18.0,
+    27.0,
+    36.0,
+    36.0,
+    39.0,
+    39.0
+   ],
+   "vocab_size": 262,
+   "encoded_len_at_floor": 2059,
+   "analytic_len_at_Tmax": 2076,
+   "max_len_with_margin": 2582,
+   "cost_vs_n96_linear": 2.587,
+   "cost_vs_n96_quadratic": 6.693
+  },
+  {
+   "n_nodes": 384,
+   "fall": true,
+   "n_instances": 13,
+   "secs_total": 0.09,
+   "secs_per_instance": 0.007,
+   "rho_min": {
+    "mean": 0.31350160256410253,
+    "sd": 0.008205808953631427,
+    "min": 0.2994791666666667,
+    "max": 0.328125
+   },
+   "T_end": {
+    "mean": 57.15384615384615,
+    "sd": 12.70884703265439,
+    "min": 36.0,
+    "max": 82.0
+   },
+   "T_grid_median": [
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    8.0,
+    15.0,
+    19.0,
+    29.0,
+    44.0,
+    51.0,
+    47.0,
+    54.0
+   ],
+   "vocab_size": 394,
+   "encoded_len_at_floor": 3138,
+   "analytic_len_at_Tmax": 3158,
+   "max_len_with_margin": 3928,
+   "cost_vs_n96_linear": 3.936,
+   "cost_vs_n96_quadratic": 15.491
+  }
+ ],
+ "note": "fall=True only; see module docstring"
+}
