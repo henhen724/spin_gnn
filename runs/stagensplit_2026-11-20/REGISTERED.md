@@ -98,6 +98,33 @@ DN3 is the important one: the N=96 L12_s0 cell is measured by both stage
 ENTROPY and this probe, so it is a free cross-check that the N=192 extension
 did not perturb the existing path.
 
+### Amendment, 2026-11-21: DN3 is scored at matched instance count
+
+As written, DN3 did not say how many instances the two sides use, and they did
+not use the same number. Stage ENTROPY ran with `--limit 100`; this probe
+defaults to the whole cache, which stage SCALE had already grown to 200 per
+density bin. The first run of the cross-check (job 53203618's predecessor,
+53203355, 200 instances) gave **max |diff| 3.157e-03 against the 1e-3 bar —
+FAIL**.
+
+That failure is recorded here rather than removed. The diagnosis: a per-row
+comparison showed the largest deltas on `begin` (6.3e-02, a section the scorer
+excludes) and `round_mark` (2.0e-02), with an `n_instances` column reading 200
+on one side and 100 on the other and 389,960 more tokens in total — the
+signature of extra sampling, not of a different code path.
+
+Re-running the identical cell with `--limit 100` gives **max |diff| exactly
+0.000e+00**: bit-identical to stage ENTROPY, not merely inside the bar. So the
+extension demonstrably did not perturb the existing path, which is the only
+thing DN3 was ever asking.
+
+**The amendment is a clarification, not a loosening: the 1e-3 bar stands
+unchanged, and DN3 is scored on the matched-count arm** written to
+`dn3_limit100/`. The science cells keep the full 200 instances, since more data
+is strictly better and the two counts move the reported split by ~2e-4
+(pooled 1.7483 vs 1.7485, ded 0.0246 vs 0.0245, exc 0.1233 vs 0.1235) — far
+below anything TA1–TA4 turn on.
+
 ## Method
 
 Reuses `scripts/stageentropy_probe.py` unchanged apart from the cell list.

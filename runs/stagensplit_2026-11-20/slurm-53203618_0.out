@@ -1,0 +1,16 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) math   2) devel
+DE3 uniform selftest [float64]: max |H - log V| = 8.882e-16  (bar 1e-12)  PASS
+DE3 uniform selftest [float32]: max |H - log V| = 9.537e-07  (bar 1e-05)  PASS
+task 0/1: 1 of 1 cells (N=96 cross-check only)
+  n96_L12_s0   N=96   t00_L12_ff01024_n240000_s0/d0256_h04_L12_ff01024_lr1e-03_pre_shuf_fall
+/share/software/user/open/py-pytorch/2.4.1_py312/lib/python3.12/site-packages/torch/nn/modules/transformer.py:307: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(f"enable_nested_tensor is True, but self.use_nested_tensor is False because {why_not_sparsity_fast_path}")
+  n96_L12_s0   rho 0.90  H(reason_node) 0.0120  H(graph_novel) 3.4280  acc 0.9980
+  n96_L12_s0   rho 0.75  H(reason_node) 0.1052  H(graph_novel) 3.5011  acc 0.9738
+  n96_L12_s0   rho 0.60  H(reason_node) 0.3314  H(graph_novel) 3.5617  acc 0.9074
+  n96_L12_s0   rho 0.45  H(reason_node) 0.6180  H(graph_novel) 3.5999  acc 0.8251
+  n96_L12_s0   rho 0.35  H(reason_node) 0.7812  H(graph_novel) 3.6166  acc 0.7849
+wrote /scratch/users/hshunt/spin_gnn/runs/stagensplit_2026-11-20/dn3_limit100/nsplit_n96_0of1.csv (50 rows)
