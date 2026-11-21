@@ -1,0 +1,53 @@
+STAGE NSPLIT -- VERDICT
+Scored 2026-11-21. Job 53203962_0, chained afterok:53062385, COMPLETED
+00:19:48 at 08:26:00. Scorer scripts/stagensplit_fit.py. Commit ca03912.
+
+PURPOSE. finding 109's val_nll floor f(N) = (5/16) log N is a MODEL, so a
+rung that misses it could mean the floor is wrong rather than the network.
+This probe splits val_nll by token section to tell those two apart.
+
+DIAGNOSTICS (must pass before the TA predictions are read)
+
+  DN1  PASS, 0.000e+00. Section NLLs recombine to the pooled val_nll.
+  DN2  PASS, 0 violations.
+  DN3  PASS, exactly 0.000e+00 -- scored on the registered matched-count
+       arm dn3_limit100/. The default run reports 3.157e-03, which is the
+       KNOWN AND ANTICIPATED instance-count artifact (science cells use
+       200 instances, stage ENTROPY used --limit 100). The registered
+       amendment says this in advance: "The amendment is a clarification,
+       not a loosening: the 1e-3 bar stands unchanged, and DN3 is scored
+       on the matched-count arm." Not a new bug.
+
+TARGET PREDICTIONS
+
+  TA1  HIT on both seeds. Deduction's share of the N=192 excess over the
+       floor is 0.724 (s0) and 0.769 (s1), against a bar of >= 0.60.
+  TA2  MISS. The complement of TA1, mutually exclusive by construction.
+  TA3  MISS on both, but NOT falsified. Floor growth per doubling is
+       +0.2743 (s0) and +0.2753 (s1) against (5/16) log 2 = 0.2166 with a
+       +-0.05 tolerance -- so it misses by about 0.008. Both sit INSIDE
+       the registered falsifier band [0.10, 0.33]. finding 109's
+       (5/16) log N is roughly 27% LOW, and stands.
+  TA4  HIT on both. The deterministic sections stay at essentially zero:
+       graph row head 0.0000, terminator 0.0006.
+
+PER-CELL SPLIT (pooled / excess over floor / deduction / g_novel)
+  n192_L12_s0   2.1344 / 0.2734 / 0.1332 / 1.5277
+  n192_L12_s1   2.1722 / 0.3112 / 0.1692 / 1.5287
+  n96_L12_s0    1.7483 / 0.1233 / 0.0246 / 1.2534
+
+CONTRIBUTION ARITHMETIC (nll x token share; scripts/n192_ladder_figs.py)
+  n96_L12_s0   excess 0.1195 | colour 0.0002 ( 0.1%)  node 0.0204 (17.1%)
+  n192_L12_s0  excess 0.2709 | colour 0.0672 (24.8%)  node 0.0610 (22.5%)
+  n192_L12_s1  excess 0.3088 | colour 0.0672 (21.8%)  node 0.0967 (31.3%)
+  The two reasoning sections are 9.7% of the tokens and carry 47.3% /
+  53.1% of the N=192 excess, against 17.2% at N=96.
+
+CONCLUSION. The N=192 excess is NOT an underestimated graph floor. It is
+the model failing at deduction, and -- see runs/n192_ladder_2026-11-20/
+VERDICT.txt, finding 116 -- the single largest piece of that is the
+deduced colour sitting at the uniform prior ln(q) = 1.3863 nats.
+
+Counterfactual from the same split: give the N=192 s0 cell N=96's skill on
+reason_color ALONE and pooled val_nll goes 2.1319 -> 2.0649, excess
+0.2709 -> 0.2039. That one section is a quarter of the gap.

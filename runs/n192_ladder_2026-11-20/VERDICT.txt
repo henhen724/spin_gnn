@@ -1,0 +1,119 @@
+STAGE N192 LADDER -- VERDICT
+Scored 2026-11-21. Job 53062385 array 0-1, both COMPLETED exit 0:0
+(1-06:43:24 and 1-06:37:55). Commit ca03912, branch sudoku-dd.
+Deck: https://slides-hshunt.pages.dev/spin-gnn/n192-ladder/
+
+THE HEADLINE
+  Both N=192 seeds solve EXACTLY ZERO puzzles in all 14 density bins
+  (400 instances per bin, 5,600 rollouts per seed). Traces are
+  well-formed (0.9675-1.0000) and truncation is 0.0000 everywhere, so
+  the failure is wrong answers, not malformed or cut-off output.
+
+REGISTERED PREDICTIONS (scripts/slurm/sudoku2_n192_ladder_2026-11-20.sbatch)
+
+  N1  HALF-RESOLVED. The matched-depth bin is rho=0.500, T=12.63,
+      n_blank=96, with 0 solves of 400. Zero successes is not evidence
+      of zero skill, so a_eff=0 is NOT reported; the one-sided
+      Clopper-Pearson bound is p < 1 - 0.05^(1/400) = 0.00746, giving
+      a_eff < 0.00746^(1/96) = 0.9503.
+      N1's FALSIFIER (a_eff >= 0.9626) is EXCLUDED by that bound.
+      N1's PREDICTION (a_eff < 0.9118) is NOT reached by it.
+      Settling it would need more instances per bin; findings 116 below
+      makes that unnecessary.
+
+  N2  HIT, VACUOUS. rho_50 is censored ABOVE the top of the grid -- the
+      solve curve never reaches 0.5 even at rho=0.95, where only 10 of
+      192 cells are blank. "rho_50 > 0.46" is satisfied, but by
+      censoring, not by measurement.
+
+  N3  UNSCOREABLE. s*_192 = |rho_50(s0) - rho_50(s1)| requires two
+      rho_50 values and there are none. NO seed yardstick is reported
+      for N=192, and s*_48=0.1484 / s*_96=0.119 are NOT carried over.
+
+  N4  HIT. Neither cell turns up; epoch 49 is the argmin for both.
+      final val_nll 2.1274 (s0) / 2.1581 (s1) against the 1.861 floor,
+      excess 0.2664 / 0.2971. Last-5-epoch drop -0.0122 / -0.0028.
+      N4's BREAKING POINT DOES NOT FIRE: the cells are not flat at their
+      initial plateau, they fell 3.65 -> ~2.13 within ten epochs. So the
+      run is NEITHER of the two cases N4 anticipated -- it trained, it
+      converged, and what it converged to does not include the task.
+
+  N5  HIT, VACUOUS. The condition was "truncation <= 0.01 in every bin
+      with solve_rate > 0.1" and there are ZERO such bins. The
+      unconditional version also passes: truncation 0.0000 in all 14
+      bins, both seeds; max_len 1984 vs a longest training sequence of
+      1598 was never close to binding.
+
+  Three of the five were written assuming the model would still solve
+  SOMETHING. The registered grid could not see the actual result.
+
+FINDING 116 -- WHAT ACTUALLY HAPPENED (from the NSPLIT probe, 53203962)
+
+  At N=192 the model predicts the DEDUCED COLOUR with a teacher-forced
+  cross-entropy of 1.3863 nats = ln(4) and an accuracy of 0.248 = 1/q,
+  AT EVERY DENSITY AND ON BOTH SEEDS. Those two facts together pin it
+  down: only the uniform distribution over q colours scores ln q. The
+  model places equal probability on all four colours every time.
+
+  The same quantity at N=96 is 0.0036 nats / 0.9991 accuracy.
+
+  IT IS FLAT ACROSS DENSITY, which is the argument against "undertrained":
+      rho      0.90      0.75      0.60      0.45      0.35
+      n96_s0   0.000000  0.000062  0.000612  0.003318  0.007718
+      n192_s0  1.386301  1.386300  1.386290  1.386303  1.386296
+      n192_s1  1.386374  1.386336  1.386334  1.386312  1.386314
+  At rho=0.90 nearly every neighbour is already a hint and the deduction
+  is a one-hop lookup over five stated colours -- the easiest the task
+  ever gets. An undertrained model is better on the easy end. This one
+  is identical there.
+
+  CONFIRMED BY A LENGTH-FREE EVAL. Solve rate with only k blank cells
+  (mean over k>=1): N=48 s0 0.9350, N=96 s0 1.0000, N=96 s1 0.5400,
+  N=192 s0 0.0700, N=192 s1 0.0350. At k=1 -- ONE blank cell, 191 of 192
+  handed over, so solving reduces to naming one colour -- N=192 scores
+  0.200 and 0.070 against 1/q = 0.250 for guessing. At or below chance.
+
+  reason_node also degrades (0.4212 -> 1.2585 / 1.9949 nats) but stays
+  well above chance. round_mark 0.3553 -> 0.6247 / 0.6590. The
+  DETERMINISTIC sections are untouched: graph row head 0.0000, terminator
+  0.0006, so the model is healthy and the grammar is fully learned.
+
+  The hint_color control confirms the reading: hint colours genuinely ARE
+  random, ln q there is CORRECT, and both sizes score it (1.3747 / 1.3864).
+  The N=192 model treats the DEDUCED colour exactly as it treats a random
+  hint colour.
+
+THE DATA-BUG ALTERNATIVE WAS TESTED FIRST AND RULED OUT
+
+  If the deduced colour were not actually forced in the N=192 training
+  data, a uniform prediction would be CORRECT and ln q would be the Bayes
+  floor rather than a failure -- which would invert the entire reading.
+  scripts/n192_datacheck.py regenerates the training distribution and
+  checks every deduction (runs/n192_datacheck_2026-11-21/datacheck.txt):
+
+                                              N=96        N=192
+    deduction forced by pre-round neighbours  0/1046 bad  0/2088 bad
+    deduced colour == planted colour          0 bad       0 bad
+    forcing neighbour already emitted         0 bad       0 bad
+    sequences over max_len 1984               0/25        0/25
+    marginal entropy of the colour token      1.3861      1.3859
+
+  The marginal is 1.3859 and the model scores 1.3863: it is reproducing
+  the CONTEXT-BLIND PRIOR to within 0.0004 nats. The data is sound.
+
+WHAT THIS DOES AND DOES NOT LICENSE
+
+  NOT "train it longer" -- val_nll was converged by epoch 15, training
+  budget is a CLOSED knob, and the flatness across density says the same.
+  NOT "go bigger" -- the registered rule for a cell that fails at this
+  budget is to report it, not retry at a larger size.
+  NOT a threshold claim -- the colour head is at the prior at N=192 and
+  not at N=96; no rung was run in between and none is located.
+
+  The honest statement is narrow: at d=5, q=4, 12 layers and this budget,
+  colour deduction is learned at N <= 96 and not at N = 192.
+
+  THIS RUNG IS OFF THE N-PENALTY CURVE, NOT AN EXTENSION OF IT. Findings
+  108/115 characterise sizes that lose SEARCH (which cell is forced next)
+  while holding the colouring rule perfectly. This one loses the colouring
+  rule. Different failure; do not plot it as a third point on that trend.
