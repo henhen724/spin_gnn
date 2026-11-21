@@ -231,6 +231,41 @@ def main():
             for i in range(3))
             + ("   gap(48->96 s0) %+.4f" % gap if gap else ""))
 
+    print("\n=== teacher-forced accuracy by section, at matched depth ===")
+    print("  %-6s %-5s %9s %9s %9s" % ("cell", "T", "r_node", "rnd_mark", "r_color"))
+    for rid, N, lab in (("n48_L12_s0", 48, "N=48"), ("n96_L12_s0", 96, "N=96")):
+        seen = {}
+        for r in ent:
+            if r["run_id"] != rid or r["section"] not in DED:
+                continue
+            T = tmap.get((N, round(float(r["rho"]), 2)))
+            if T and r["accuracy"]:
+                seen.setdefault(round(T, 2), {})[r["section"]] = float(r["accuracy"])
+        for T in sorted(seen):
+            v = seen[T]
+            print("  %-6s %-5.2f %9s %9s %9s" % (
+                lab, T, *["%.4f" % v[s] if s in v else "-" for s in DED]))
+
+    print("\n=== rollout vs teacher-forced, N=96 L12 s0 ===")
+    for rho in (0.50, 0.45):
+        g = [r for r in ent if r["run_id"] == "n96_L12_s0"
+             and abs(float(r["rho"]) - rho) < 1e-9
+             and r["section"] in DED + ("term",)]
+        if not g:
+            continue
+        n = sum(int(r["n_tokens"]) for r in g)
+        tf = sum(float(r["accuracy"]) * int(r["n_tokens"]) for r in g) / n
+        ro = [t[3] for t in data["N=96 s0"] if abs(t[0] - rho) < 1e-9]
+        print("  rho=%.2f  teacher-forced %.5f   rollout a_eff %s"
+              % (rho, tf, "%.5f" % ro[0] if ro else "-"))
+
+    print("\n=== depth vs seed, reason_node at rho=0.45 (N=96) ===")
+    for lab, rid in DEPTH:
+        g = [r for r in ent if r["run_id"] == rid and r["section"] == "reason_node"
+             and abs(float(r["rho"]) - 0.45) < 1e-9]
+        if g:
+            print("  %-12s %.4f" % (lab, float(g[0]["accuracy"])))
+
     fig_two_normalisers(data)
     fig_rollout_vs_tf(data, ent, tmap)
     fig_sections(ent, tmap)
