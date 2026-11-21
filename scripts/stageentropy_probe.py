@@ -55,6 +55,14 @@ REGISTERED PREDICTIONS.  Scored on the nine SCALE cells at five densities.
   DE1 token counts per section agree with stage SCALE's, cell for cell.
   DE2 H <= log(vocab_size) at every position, and H >= 0.
   DE3 on a UNIFORM distribution the estimator returns log V to 1e-9.
+      AMENDED AFTER THE FIRST RUN, AND THE AMENDMENT IS THE HONEST RECORD:
+      1e-9 is unachievable in the precision the probe actually uses.  The
+      forward pass is float32, log V = log 58 = 4.06, and float32 has ~1.2e-7
+      relative resolution, so the floor is ~5e-7; the first run returned
+      9.537e-07 and "failed" a bar that no correct implementation could pass.
+      DE3 is now scored in BOTH precisions: float64 to 1e-12, which tests the
+      estimator, and float32 to 1e-5, which tests the pipeline. The estimator
+      was never wrong -- the registered tolerance was.
 
 E4 and E6 are controls: if they fail, the probe is measuring something other
 than what it claims.  E3 is the one hshunt asked for and is reported whichever
@@ -207,15 +215,23 @@ def probe_run(rec, rows_out, limit):
 
 
 def selftest():
-    """DE3 -- the estimator returns log V on a uniform distribution."""
-    v = 58
-    logits = torch.zeros(1, 3, v)
-    logp = F.log_softmax(logits, dim=-1)
-    ent = -(logp.exp() * logp).sum(dim=-1)
-    err = float((ent - math.log(v)).abs().max())
-    print("DE3 uniform-distribution selftest: max |H - log V| = %.3e  %s"
-          % (err, "PASS" if err < 1e-9 else "FAIL"))
-    return err < 1e-9
+    """DE3 -- the estimator returns log V on a uniform distribution.
+
+    Scored in both precisions; see the DE3 note in the module docstring for
+    why the registered 1e-9 applies only to the float64 arm.
+    """
+    v, ok = 58, True
+    for dtype, bar in ((torch.float64, 1e-12), (torch.float32, 1e-5)):
+        logits = torch.zeros(1, 3, v, dtype=dtype)
+        logp = F.log_softmax(logits, dim=-1)
+        ent = -(logp.exp() * logp).sum(dim=-1)
+        err = float((ent - math.log(v)).abs().max())
+        good = err < bar
+        ok = ok and good
+        print("DE3 uniform selftest [%s]: max |H - log V| = %.3e  (bar %.0e)  %s"
+              % (str(dtype).replace("torch.", ""), err, bar,
+                 "PASS" if good else "FAIL"))
+    return ok
 
 
 def main():
