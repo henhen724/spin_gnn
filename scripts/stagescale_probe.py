@@ -58,6 +58,7 @@ OUT = os.path.join(SCRATCH, "spin_gnn/runs/stagescale_2026-11-20")
 CACHE = os.path.join(OUT, "instances")
 SCAN_48 = os.path.join(SCRATCH, "spin_gnn/sudoku_n48_fall_scan_2026-11-02")
 SCAN_96 = os.path.join(SCRATCH, "spin_gnn/sudoku_n96_fall_scan_2026-11-02")
+SCAN_192 = os.path.join(SCRATCH, "spin_gnn/sudoku_n192_ladder_2026-11-20")
 
 # Five densities, not SECTION's three.  The two low ones exist ONLY so the DD
 # depths overlap across N: at rho 0.60 the N=48 instances sit at T ~ 5 and the
@@ -91,7 +92,7 @@ RUNS = [
 
 def run_path(n_nodes, rel):
     """The run DIRECTORY -- load_checkpoint reads config.json beside model.pt."""
-    root = SCAN_48 if n_nodes == 48 else SCAN_96
+    root = {48: SCAN_48, 96: SCAN_96, 192: SCAN_192}[n_nodes]
     return os.path.join(root, rel)
 
 
