@@ -1,0 +1,63 @@
+450 rows, 9 cells, 5 densities
+
+DE1 section SHARE agrees with stage SCALE: max 1.554e-03 over 405 cells  PASS
+DE2 0 <= H <= log(vocab) everywhere: 0 violation(s)  PASS
+
+best cell by pooled reason_node accuracy: n48_L12_s0 (0.9939)
+
+PER-DENSITY ENTROPY AT THE BEST CELL (nats)
+     rho  H reason_node  H reason_color     H graph_novel
+  0.9000         0.0003          0.0000            2.8044
+  0.7500         0.0004          0.0000            2.8846
+  0.6000         0.0039          0.0000            2.9618
+  0.4500         0.0177          0.0001            3.0125
+  0.3500         0.0483          0.0001            3.0294
+
+E1 mean H reason_color at best cell: 0.0000  (bar < 0.05)  HIT
+E2 mean H reason_node  at best cell: 0.0219  (bar < 0.15)  HIT
+
+E3 DISTRIBUTION of per-token H on reason_node, best cell (9573 tokens)
+     H < 0.01  :  82.98%
+     H < 0.05  :  92.64%
+     H < 0.10  :  95.18%
+     H < 0.25  :  97.39%
+     H < 0.50  :  98.79%
+     H < 1.00  :  99.95%
+     H < 2.00  : 100.00%
+  fraction with H < 0.10 = 0.9518  (bar >= 0.70)  HIT
+
+E4 graph_nbr_novel entropy per cell (must stay > 1.00)
+  lowest is n48_L12_s0 at 2.9385 nats  HIT
+
+E5 reasoning entropy vs reason_node accuracy, over 9 cells
+  cell                acc H(reasoning)
+  n48_L04_s0       0.7409       0.9133
+  n48_L08_s0       0.9106       0.1434
+  n48_L08_s1       0.9048       0.1643
+  n48_L12_s0       0.9939       0.0110
+  n96_L08_s0       0.8570       0.2472
+  n96_L08_s1       0.7286       0.4191
+  n96_L12_s0       0.8567       0.2620
+  n96_L12_s1       0.9489       0.1013
+  n96_L16_s0       0.9035       0.1608
+  Spearman = -0.9667  (bar <= -0.70)  HIT
+
+E6 H(rho=0.3500) > H(rho=0.9000): fails in 0 of 9 cells  HIT
+
+E7 reasoning entropy at matched pair, N=48 vs N=96
+  L08_s0   N=48 0.2868  N=96 0.4923  up
+  L08_s1   N=48 0.3285  N=96 0.8372  up
+  L12_s0   N=48 0.0219  N=96 0.5159  up
+  rose in 3 of 3 pairs  HIT
+
+CALIBRATION on reason_node (H vs NLL; NLL >> H = confidently wrong)
+  cell                  H      NLL     NLL-H      top1
+  n48_L04_s0       0.7568   0.7032   -0.0536    0.7337
+  n48_L08_s0       0.2868   0.2498   -0.0370    0.8937
+  n48_L08_s1       0.3285   0.2725   -0.0560    0.8814
+  n48_L12_s0       0.0219   0.0169   -0.0050    0.9932
+  n96_L08_s0       0.4923   0.4280   -0.0643    0.8392
+  n96_L08_s1       0.8372   0.7749   -0.0622    0.7180
+  n96_L12_s0       0.5159   0.4211   -0.0948    0.8315
+  n96_L12_s1       0.2026   0.1457   -0.0570    0.9323
+  n96_L16_s0       0.3110   0.2664   -0.0446    0.8958
