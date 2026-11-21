@@ -1,0 +1,89 @@
+======================================================================
+N=96  d=4  q=3   rho~U[0.14, 0.95]   40 instances   1989 deductions
+    vocab size 105   node_offset 9   (n_special = 6 + q = 9)
+======================================================================
+  F1 deduction NOT forced by prior-round neighbours    PASS  0/1989
+  F2 deduced colour != planted colour                  PASS  0/1989
+  F3 forcing neighbour not yet emitted                 PASS  0/1989
+  F4 node token does not round-trip                    PASS  0/1989
+
+  marginal over reason_color (the finding-116 chance level):
+        COLOR_0  0.3358
+        COLOR_1  0.3369
+        COLOR_2  0.3273
+        marginal entropy 1.098529 nats   (ln q = 1.098612)
+        -> a context-blind predictor scores 1.0985 nats here
+        -> a cell in THIS ensemble sitting at 1.0985 on reason_color
+           has finding 116's failure. The number is per-ensemble:
+           ln 3 = 1.0986 at q=3, ln 4 = 1.3863 at q=4, and neither
+           may be quoted against the other.
+
+  encoded length: min 677  mean 686.8  max 717   (max_len 1024)
+        over max_len: 0 of 40
+
+  D  depth/density mix actually sampled:
+        T      min 1  median 6.0  mean 10.8  max 41
+        rho    min 0.146  median 0.484  max 0.844
+        rho_c ~ 0.250  ->  27.5% of instances are SLOW phase
+        deepest decile mean T = 32.8
+
+======================================================================
+N=120  d=4  q=3   rho~U[0.14, 0.95]   40 instances   2478 deductions
+    vocab size 129   node_offset 9   (n_special = 6 + q = 9)
+======================================================================
+  F1 deduction NOT forced by prior-round neighbours    PASS  0/2478
+  F2 deduced colour != planted colour                  PASS  0/2478
+  F3 forcing neighbour not yet emitted                 PASS  0/2478
+  F4 node token does not round-trip                    PASS  0/2478
+
+  marginal over reason_color (the finding-116 chance level):
+        COLOR_0  0.3313
+        COLOR_1  0.3313
+        COLOR_2  0.3374
+        marginal entropy 1.098576 nats   (ln q = 1.098612)
+        -> a context-blind predictor scores 1.0986 nats here
+        -> a cell in THIS ensemble sitting at 1.0986 on reason_color
+           has finding 116's failure. The number is per-ensemble:
+           ln 3 = 1.0986 at q=3, ln 4 = 1.3863 at q=4, and neither
+           may be quoted against the other.
+
+  encoded length: min 845  mean 855.9  max 885   (max_len 1024)
+        over max_len: 0 of 40
+
+  D  depth/density mix actually sampled:
+        T      min 1  median 7.0  mean 11.8  max 41
+        rho    min 0.150  median 0.487  max 0.850
+        rho_c ~ 0.250  ->  27.5% of instances are SLOW phase
+        deepest decile mean T = 35.0
+
+======================================================================
+N=96  d=5  q=4   rho~U[0.30, 0.95]   40 instances   1630 deductions
+    vocab size 106   node_offset 10   (n_special = 6 + q = 10)
+======================================================================
+  F1 deduction NOT forced by prior-round neighbours    PASS  0/1630
+  F2 deduced colour != planted colour                  PASS  0/1630
+  F3 forcing neighbour not yet emitted                 PASS  0/1630
+  F4 node token does not round-trip                    PASS  0/1630
+
+  marginal over reason_color (the finding-116 chance level):
+        COLOR_0  0.2534
+        COLOR_1  0.2534
+        COLOR_2  0.2460
+        COLOR_3  0.2472
+        marginal entropy 1.386202 nats   (ln q = 1.386294)
+        -> a context-blind predictor scores 1.3862 nats here
+        -> a cell in THIS ensemble sitting at 1.3862 on reason_color
+           has finding 116's failure. The number is per-ensemble:
+           ln 3 = 1.0986 at q=3, ln 4 = 1.3863 at q=4, and neither
+           may be quoted against the other.
+
+  encoded length: min 773  mean 781.3  max 800   (max_len 1024)
+        over max_len: 0 of 40
+
+  D  depth/density mix actually sampled:
+        T      min 1  median 7.5  mean 9.3  max 28
+        rho    min 0.302  median 0.578  max 0.865
+        rho_c ~ 0.465  ->  37.5% of instances are SLOW phase
+        deepest decile mean T = 22.5
+
+OVERALL: PASS

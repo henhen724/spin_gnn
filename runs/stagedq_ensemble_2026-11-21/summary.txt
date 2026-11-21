@@ -1,0 +1,124 @@
+STAGE DQ -- ENSEMBLE PRE-CHECK
+date 2026-11-21   seeds/cell 24
+
+Q1. Does (d=4,q=3) buy DD depth at small N? For each lever
+    size, the REF (d=5,q=4) size with the nearest T at
+    rho_min -- computed SEPARATELY per fall setting, because
+    the two are different ensembles and must not be mixed.
+    A saving marked CENSORED is a lower bound: the matching
+    REF size is off the top of the ladder.
+
+  --- fall=True  (OUR ensemble, every training cell)
+   lever N       T       L |   ref N       T       L |   N saved  tok saved
+        48   16.88     357 |      72   17.83     598 |     1.50x      1.68x
+        60   19.92     444 |      96   21.54     794 |     1.60x      1.79x
+        72   23.25     531 |      96   21.54     794 |     1.33x      1.50x
+        96   28.75     705 |     144   27.04    1183 |     1.50x      1.68x
+       120   35.00     879 |     192   35.38    1575 |     1.60x      1.79x
+       144   41.08    1053 |     300   43.12    2447 |     2.08x      2.32x
+       192   48.25    1396 |     300   43.12    2447 |     1.56x      1.75x
+       240   54.58    1739 |     384   55.04    3131 |     1.60x      1.80x
+       300   67.88    2172 |     384   55.04    3131 |     1.28x      1.44x CENSORED
+       384   78.21    2770 |     384   55.04    3131 |     1.00x      1.13x CENSORED
+  median over uncensored rows: 1.58x in N, 1.77x in tokens
+
+  --- fall=False (finding 10's ensemble, sweep 49509101)
+   lever N       T       L |   ref N       T       L |   N saved  tok saved
+        48   15.46     355 |     240   15.17    1939 |     5.00x      5.46x
+        60   17.21     441 |     300   17.21    2421 |     5.00x      5.49x
+        72   18.62     527 |     384   18.08    3094 |     5.33x      5.87x CENSORED
+        96   19.79     696 |     384   18.08    3094 |     4.00x      4.45x CENSORED
+       120   26.67     871 |     384   18.08    3094 |     3.20x      3.55x CENSORED
+       144   29.17    1041 |     384   18.08    3094 |     2.67x      2.97x CENSORED
+       192   34.29    1382 |     384   18.08    3094 |     2.00x      2.24x CENSORED
+       240   38.62    1723 |     384   18.08    3094 |     1.60x      1.80x CENSORED
+       300   46.04    2150 |     384   18.08    3094 |     1.28x      1.44x CENSORED
+       384   55.33    2747 |     384   18.08    3094 |     1.00x      1.13x CENSORED
+  median over uncensored rows: 5.00x in N, 5.48x in tokens
+
+Q1b. RECONCILIATION WITH FINDING 10 -- IT NEEDS AMENDING.
+    Finding 10 reports ~6x ('at N=60 (d=4,q=3) reaches mean
+    DD depth 14.5, which (5,4) does not reach until N~333').
+    That was measured WITHOUT the fall constraint. Measured
+    here:
+      fall=True   1.58x in N, 1.77x in tokens
+      fall=False  5.00x in N, 5.48x in tokens
+    MECHANISM, read off the rho_min rows below. The fall
+    constraint removes the nodes that can never be deduced and
+    so must stay hints forever, which is what caps depth near
+    the floor -- and it helps the REF ensemble far more than
+    the lever, because q=4 d=5 has 0.3827 such nodes against a
+    much smaller fraction at q=3 d=4. At N=192 turning fall on
+    moves rho_min 0.4729 -> 0.3134 for the REF (-0.1595) but
+    only 0.1944 -> 0.1437 for the lever (-0.0507): the REF gains
+    3.1x more room below its floor, and that is the gap closing.
+    THE 6x DOES NOT TRANSFER TO THE ENSEMBLE WE TRAIN ON.
+    (Note: a 'never deducible' COUNT at rho_min is identically
+    zero by construction and is not evidence either way --
+    greedy removal only drops a hint if DD still recovers
+    everything, so the survivors are all deducible. The rho_min
+    shift is the measurement; a frac_inf column would be noise.)
+
+Q2. rho_min -- it MOVES, and no q=4 constant (rho_c ~ 0.46,
+    free line 0.740, the val_nll floors 1.371/1.625/1.861,
+    s* 0.1484/0.119) may be carried over to a d4q3 cell.
+
+  d5q4_fall: rho_min N=48:0.3333, N=60:0.3264, N=72:0.3229, N=96:0.3242, N=120:0.3181, N=144:0.3174, N=192:0.3134, N=240:0.3144, N=300:0.3143, N=384:0.3117
+  d4q3_fall: rho_min N=48:0.1649, N=60:0.1583, N=72:0.1603, N=96:0.1502, N=120:0.1500, N=144:0.1461, N=192:0.1437, N=240:0.1431, N=300:0.1407, N=384:0.1399
+  d5q4_nofall: rho_min N=48:0.4523, N=60:0.4785, N=72:0.5041, N=96:0.4666, N=120:0.4698, N=144:0.4731, N=192:0.4729, N=240:0.4806, N=300:0.4771, N=384:0.4781
+  d4q3_nofall: rho_min N=48:0.2031, N=60:0.2069, N=72:0.1869, N=96:0.1997, N=120:0.1993, N=144:0.1950, N=192:0.1944, N=240:0.1911, N=300:0.1883, N=384:0.1904
+
+Q4. WHERE DOES d4q3 GO SLOW? This is what picks the training
+    density range, and it cannot be copied from q=4. Finding
+    1+34's diagnostic: in the FAST phase T ~ log N, so T/log N
+    COLLAPSES across sizes; approaching rho_c the curves FAN
+    OUT. Below: T/log N by density, fall=True, N=48..384.
+    'spread' is max/min across sizes -- near 1 is collapsed
+    (fast), growing means the slow phase is being entered.
+
+  --- d5q4_fall
+     rho     48     60     72     96    120    144    192    240    300    384   spread
+    0.95   0.30   0.24   0.26   0.26   0.24   0.28   0.27   0.27   0.23   0.30     1.33
+    0.90   0.34   0.32   0.36   0.37   0.44   0.39   0.44   0.38   0.39   0.41     1.38
+    0.85   0.48   0.48   0.48   0.48   0.54   0.53   0.52   0.49   0.52   0.50     1.13
+    0.80   0.60   0.57   0.65   0.57   0.68   0.69   0.70   0.65   0.61   0.73     1.29
+    0.75   0.69   0.73   0.71   0.64   0.86   0.81   0.79   0.83   0.70   0.82     1.35
+    0.70   0.93   1.00   0.90   0.85   0.94   1.00   0.91   1.02   0.90   1.13     1.33
+    0.65   1.05   1.19   1.12   1.11   1.11   1.22   1.21   1.22   1.20   1.41     1.33
+    0.60   1.40   1.41   1.32   1.35   1.31   1.48   1.40   1.51   1.52   1.66     1.26
+    0.55   1.58   1.65   1.76   1.73   1.63   1.91   1.75   1.90   1.87   2.14     1.35
+    0.50   1.84   1.84   2.06   1.96   2.14   2.23   2.42   2.39   2.34   2.77     1.50
+    0.45   2.27   2.24   2.55   2.37   2.76   2.70   2.97   3.24   3.27   4.00     1.79
+    0.40   2.59   2.71   3.30   3.20   3.52   3.63   4.07   4.09   4.50   5.38     2.08
+    0.35   3.40   3.22   3.70   4.40   4.53   4.89   5.60   5.62   6.38   7.44     2.31
+    0.33   3.84   3.52   4.01   4.69   4.92   5.37   6.32   6.39   7.20   8.61     2.44
+    0.30   3.75   3.62   4.68   5.26   5.92   5.37   7.04   7.39   7.19   9.07     2.50
+
+  --- d4q3_fall
+     rho     48     60     72     96    120    144    192    240    300    384   spread
+    0.95   0.26   0.26   0.23   0.23   0.24   0.22   0.21   0.21   0.23   0.24     1.28
+    0.90   0.28   0.33   0.33   0.27   0.29   0.34   0.29   0.34   0.37   0.32     1.36
+    0.85   0.40   0.43   0.41   0.41   0.37   0.44   0.40   0.42   0.46   0.39     1.26
+    0.80   0.46   0.47   0.51   0.50   0.49   0.54   0.48   0.51   0.51   0.51     1.16
+    0.75   0.55   0.55   0.60   0.58   0.57   0.63   0.59   0.57   0.60   0.65     1.19
+    0.70   0.68   0.60   0.72   0.68   0.70   0.75   0.71   0.68   0.69   0.71     1.24
+    0.65   0.74   0.77   0.83   0.79   0.84   0.82   0.78   0.81   0.79   0.78     1.14
+    0.60   0.91   0.84   0.93   0.89   0.93   0.99   0.87   1.00   0.95   0.94     1.19
+    0.55   0.98   0.91   1.10   1.10   1.08   1.14   0.98   1.16   1.12   1.11     1.28
+    0.50   1.11   1.11   1.24   1.23   1.26   1.27   1.10   1.33   1.29   1.33     1.21
+    0.45   1.33   1.23   1.55   1.44   1.38   1.53   1.29   1.60   1.50   1.46     1.30
+    0.40   1.61   1.50   1.85   1.73   1.69   1.82   1.71   1.86   1.87   1.79     1.25
+    0.35   1.96   1.88   2.14   2.25   2.13   2.41   2.09   2.44   2.37   2.19     1.30
+    0.33   2.20   2.17   2.49   2.37   2.27   2.64   2.33   2.67   2.62   2.57     1.23
+    0.30   2.39   2.53   2.84   2.81   2.58   2.94   2.94   3.22   3.00   3.01     1.35
+    0.27   2.83   3.00   3.18   3.41   3.14   3.37   3.78   4.35   3.89   4.01     1.54
+    0.24   3.08   3.64   3.76   3.87   3.96   4.05   4.81   5.28   5.49   5.27     1.78
+    0.21   3.38   4.14   4.07   4.52   4.72   5.08   5.86   6.65   7.48   7.26     2.21
+    0.18   4.12   4.52   5.08   5.28   6.05   6.53   7.52   8.17   9.08   9.42     2.29
+    0.16   4.49   4.78   5.05   5.95   6.85   7.20   8.48   9.14  10.46  11.31     2.52
+    0.14   5.68   4.64   5.79   5.59   8.36   7.37   9.16   9.35  11.59  12.39     2.67
+
+Q3. Colour-token chance level (the finding-116 diagnostic) is
+    ln q, so it MOVES: ln 4 = 1.3863 -> ln 3 = 1.0986.
+    A d4q3 cell sitting at 1.0986 nats on reason_color is the
+    same failure 116 found; 1.3863 means nothing there.
