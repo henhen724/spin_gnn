@@ -30,7 +30,11 @@ OUT = "/home/users/hshunt/slides/decks/spin-gnn/round-width/figures"
 DPI = 150
 
 TRAINED = (48, 96, 192)          # sizes with a model; 192 still training
-THREE = ["0.90", "0.60", "0.35"]  # the <=3 densities the by-rho page shows
+# The <=3 densities the by-rho page shows. 0.60 is deliberately NOT here:
+# its curve sits on top of 0.90 at every N (34.80 against 35.25 at N=1020),
+# so its label would print through 0.90's. That near-coincidence is its own
+# claim and gets a table page instead of being crammed in here.
+THREE = ["0.90", "0.45", "0.35"]
 
 
 def load():
@@ -112,9 +116,40 @@ def fig_width_by_rho(rows):
     ax.set_xticks(Ns)
     ax.set_xticklabels([str(n) for n in Ns])
     ax.set_xlim(Ns[0] * 0.88, Ns[-1] * 3.1)
+    # a log y-axis over 2.4..35 otherwise labels only the 10^1 decade
+    ax.set_yticks([2, 3, 5, 10, 20, 35])
+    ax.set_yticklabels(["2", "3", "5", "10", "20", "35"])
+    ax.minorticks_off()
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "ladder_width_by_rho.png"), dpi=DPI)
     plt.close(fig)
+    return out
+
+
+def equal_count_bins(hist, rho_sum, n_bins=10):
+    """Group integer widths into ~equal-count bins.
+
+    At N=1020 the width tail runs to 219 and the per-integer bins out there
+    hold a handful of rounds each, so plotting one point per integer width is
+    mostly sampling noise. Equal-count bins give every plotted point the same
+    statistical weight. Returns (mean width in bin, mean rho in bin, count)."""
+    ws = sorted(hist)
+    tot = sum(hist.values())
+    target = tot / float(n_bins)
+    out, c, s, wsum, lo = [], 0, 0.0, 0.0, ws[0]
+    for w in ws:
+        c += hist[w]
+        s += rho_sum[w]
+        wsum += w * hist[w]
+        if c >= target or w == ws[-1]:
+            out.append((wsum / c, s / c, c, lo, w))
+            c, s, wsum, lo = 0, 0.0, 0.0, w + 1
+    # a trailing stub smaller than a third of a bin gets folded back
+    if len(out) > 1 and out[-1][2] < target / 3:
+        a, b = out[-2], out[-1]
+        c = a[2] + b[2]
+        out[-2:] = [((a[0] * a[2] + b[0] * b[2]) / c,
+                     (a[1] * a[2] + b[1] * b[2]) / c, c, a[3], b[4])]
     return out
 
 
@@ -124,39 +159,37 @@ def fig_confound_ladder(rows):
     d = by(rows, "pool")
     Ns = sorted(d)
     fig, axes = plt.subplots(2, 4, figsize=(11.5, 5.6), sharey=True)
+    spans = {}
     for ax, n in zip(axes.ravel(), Ns):
         r = d[n]
-        ws = sorted(r["hist"])
-        tot = sum(r["hist"].values())
-        # drop the thin tail so the panel is not 80% noise
-        keep, run = [], 0
-        for w in ws:
-            keep.append(w)
-            run += r["hist"][w]
-            if run >= 0.99 * tot:
-                break
-        ys = [r["rho_by_w"][w] / r["hist"][w] for w in keep]
+        b = equal_count_bins(r["hist"], r["rho_by_w"])
+        xs = [p[0] for p in b]
+        ys = [p[1] for p in b]
+        spans[n] = (ys[0], ys[-1], b[0][3], b[0][4], b[-1][3], b[-1][4],
+                    min(p[2] for p in b))
         col = SERIES[0] if n in TRAINED else MUTED
-        ax.plot(keep, ys, "-", color=col, linewidth=1.8)
-        ax.set_title("$N=%d$%s" % (n, "" if n in TRAINED else ""),
-                     fontsize=13, color=col)
-        style_axes(ax, xlabel="round width $w$")
-        ax.set_ylim(0.30, 1.0)
+        ax.plot(xs, ys, "-o", color=col, linewidth=1.8, markersize=4)
+        ax.set_title("$N=%d$" % n, fontsize=13, color=col)
+        # log x: the equal-count bins are geometrically spaced, so on a linear
+        # axis the first seven of ten pile up against the left spine
+        style_axes(ax, xlabel="round width $w$", logx=True)
+        ax.set_ylim(0.40, 0.80)
     for ax in axes[:, 0]:
         ax.set_ylabel(r"mean hint density $\rho$")
-    fig.suptitle("blue = a model exists at this size; grey = instances only",
+    fig.suptitle("blue = a model exists at this size; grey = instances only; "
+                 "10 equal-count width bins per panel",
                  fontsize=12, color=MUTED)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(os.path.join(OUT, "ladder_confound.png"), dpi=DPI)
     plt.close(fig)
-    return {n: (sorted(d[n]["hist"]),) for n in Ns}
+    return spans
 
 
 def fig_width_dist(rows):
     """Where the rounds actually are: fraction of rounds at each width."""
     d = by(rows, "pool")
     Ns = sorted(d)
-    fig, axes = plt.subplots(2, 4, figsize=(11.5, 5.6))
+    fig, axes = plt.subplots(2, 4, figsize=(11.5, 6.1))
     for ax, n in zip(axes.ravel(), Ns):
         r = d[n]
         tot = sum(r["hist"].values())
@@ -167,9 +200,9 @@ def fig_width_dist(rows):
         ax.plot(ws, ys, "-", color=col, linewidth=1.5)
         ax.axvline(r["mean_width"], color=SERIES[1], linewidth=1.4,
                    linestyle="--")
-        ax.set_title("$N=%d$   mean %.1f   max %d"
+        ax.set_title("$N=%d$\nmean %.1f, max %d"
                      % (n, r["mean_width"], r["max_width"]),
-                     fontsize=11.5, color=col)
+                     fontsize=11.5, color=col, linespacing=1.25)
         style_axes(ax, xlabel="round width $w$")
         ax.set_xlim(0, max(6, r["p90_width"] * 1.6))
     for ax in axes[:, 0]:
@@ -200,23 +233,15 @@ def main():
         print("  rho=%s  slope %.4f   w: %s"
               % (rho, out[rho][2],
                  " ".join("%.2f" % v for v in out[rho][1])))
-    fig_confound_ladder(rows)
+    spans = fig_confound_ladder(rows)
     fig_width_dist(rows)
-    print("\nconfound: mean rho in the narrowest and widest kept bin")
-    d = by(rows, "pool")
-    for n in sorted(d):
-        r = d[n]
-        ws = sorted(r["hist"])
-        tot = sum(r["hist"].values())
-        keep, run = [], 0
-        for w in ws:
-            keep.append(w); run += r["hist"][w]
-            if run >= 0.99 * tot:
-                break
-        lo = r["rho_by_w"][keep[0]] / r["hist"][keep[0]]
-        hi = r["rho_by_w"][keep[-1]] / r["hist"][keep[-1]]
-        print("  N=%4d  w=%d rho %.3f  ->  w=%d rho %.3f   (delta %+.3f)"
-              % (n, keep[0], lo, keep[-1], hi, hi - lo))
+    print("\nconfound, 10 equal-count bins: mean rho in the narrowest vs "
+          "widest bin")
+    for n in sorted(spans):
+        lo, hi, l0, l1, h0, h1, mn = spans[n]
+        print("  N=%4d  w in [%d,%d] rho %.3f  ->  w in [%d,%d] rho %.3f"
+              "   delta %+.3f   (min bin count %d)"
+              % (n, l0, l1, lo, h0, h1, hi, hi - lo, mn))
     print("\nwrote 4 figures to %s" % OUT)
     return 0
 
