@@ -1,0 +1,60 @@
+
+=== N=192 transition curve, both seeds (14 densities x 400) ===
+  N=192 s0: solve_rate max 0.0000 over 14 bins; well_formed 0.9675-1.0000; truncated max 0.0000
+      outcome_accuracy 0.9675-1.0000   dd_mean_T 1.44-33.57
+  N=192 s1: solve_rate max 0.0000 over 14 bins; well_formed 1.0000-1.0000; truncated max 0.0000
+      outcome_accuracy 1.0000-1.0000   dd_mean_T 1.44-33.57
+
+=== small-k solve rate (k blank cells), the length-free eval ===
+  cell           k=0     k=1     k=2     k=3     k=4     mean
+  N=48 s0      0.710   1.000   0.740   1.000   1.000   0.8900  (k>=1 mean 0.9350)
+  N=96 s0      0.010   1.000   1.000   1.000   1.000   0.8020  (k>=1 mean 1.0000)
+  N=96 s1      1.000   0.240   0.920   1.000   0.000   0.6320  (k>=1 mean 0.5400)
+  N=192 s0     0.300   0.200   0.060   0.010   0.010   0.1160  (k>=1 mean 0.0700)
+  N=192 s1     0.280   0.070   0.040   0.020   0.010   0.0840  (k>=1 mean 0.0350)
+  NB k=0 is degenerate -- no cell to fill, only the terminator to emit -- and is erratic at every size (0.710 / 0.010 / 1.000).
+  The k>=1 mean is the one to read. 100 instances per k, so a single k is noisy; the ordering is not.
+
+=== training ===
+  cell       final_nll  best_nll   best_ep   floor    excess
+  N=48 s0       1.4841    1.4840        47   1.371    0.1131
+             last-5 drop -0.0001   val_accuracy 0.5004
+  N=96 s0       1.7455    1.7455        49   1.625    0.1205
+             last-5 drop -0.0007   val_accuracy 0.4811
+  N=96 s1       1.7283    1.7283        49   1.625    0.1033
+             last-5 drop -0.0034   val_accuracy 0.4856
+  N=192 s0      2.1274    2.1274        49   1.861    0.2664
+             last-5 drop -0.0122   val_accuracy 0.4257
+  N=192 s1      2.1581    2.1581        49   1.861    0.2971
+             last-5 drop -0.0028   val_accuracy 0.4159
+
+=== teacher-forced per section (NSPLIT probe) ===
+  section                       n96_L12_s0            n192_L12_s0            n192_L12_s1
+  reason_color          0.0036 nats  0.999     1.3863 nats  0.248     1.3863 nats  0.248
+  reason_node           0.4212 nats  0.857     1.2585 nats  0.591     1.9949 nats  0.342
+  round_mark            0.3553 nats  0.843     0.6247 nats  0.817     0.6590 nats  0.860
+  term                  0.0002 nats  1.000     0.0006 nats  1.000     0.0005 nats  1.000
+  hint_color            1.3747 nats  0.287     1.3864 nats  0.248     1.3864 nats  0.249
+  hint_node             0.9827 nats  0.670     0.9720 nats  0.672     0.9708 nats  0.672
+  graph_nbr_novel       4.0614 nats  0.025     4.9298 nats  0.010     4.9329 nats  0.010
+  graph_nbr_copy        0.9519 nats  0.578     0.9538 nats  0.579     0.9569 nats  0.581
+  graph_lead            0.0000 nats  1.000     0.0000 nats  1.000     0.0002 nats  1.000
+  begin                 0.2945 nats  0.865     0.2589 nats  0.867     0.2788 nats  0.865
+
+  pooled / floor / excess, and what the two reasoning sections cost:
+    n96_L12_s0    pooled 1.7445  floor 1.625  excess 0.1195 | colour 0.0002 ( 0.1%)  node 0.0204 (17.1%)  together 17.2% of excess on  9.7% of tokens
+    n192_L12_s0   pooled 2.1319  floor 1.861  excess 0.2709 | colour 0.0672 (24.8%)  node 0.0610 (22.5%)  together 47.3% of excess on  9.7% of tokens
+    n192_L12_s1   pooled 2.1698  floor 1.861  excess 0.3088 | colour 0.0672 (21.8%)  node 0.0967 (31.3%)  together 53.1% of excess on  9.7% of tokens
+
+=== a_eff at matched DD depth (N1's quantity) ===
+  N=48 s0    T=13.32 rho=0.341 solve=0.7900 a_eff=0.9927
+  N=96 s0    T=12.05 rho=0.448 solve=0.0075 a_eff=0.9118
+  N=96 s1    T=12.05 rho=0.448 solve=0.1325 a_eff=0.9626
+  N=192 s0   T=12.63 rho=0.500 solve=0/400 -> p<0.00746 (95%), n_blank=96, so a_eff < 0.9503
+             N1 predicted a_eff < 0.9118; its falsifier was a_eff >= 0.9626.
+             The bound EXCLUDES the falsifier but does not reach the prediction -> N1 half-resolved.
+  N=192 s1   T=12.63 rho=0.500 solve=0/400 -> p<0.00746 (95%), n_blank=96, so a_eff < 0.9503
+             N1 predicted a_eff < 0.9118; its falsifier was a_eff >= 0.9626.
+             The bound EXCLUDES the falsifier but does not reach the prediction -> N1 half-resolved.
+
+wrote figures to /home/users/hshunt/slides/decks/spin-gnn/n192-ladder/figures

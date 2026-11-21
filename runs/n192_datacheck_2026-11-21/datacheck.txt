@@ -1,0 +1,36 @@
+==================================================================
+N=96   25 instances   1046 deductions
+==================================================================
+  F1 deduction NOT forced by prior-round neighbours    PASS  0/1046
+  F2 deduced colour != planted colour                  PASS  0/1046
+  F3 forcing neighbour not yet emitted                 PASS  0/1046
+
+  marginal over reason_color:
+        COLOR_0  0.2543
+        COLOR_1  0.2553
+        COLOR_2  0.2457
+        COLOR_3  0.2447
+        marginal entropy 1.386110 nats   (ln q = 1.386294)
+        -> a context-blind predictor scores 1.3861 nats here
+
+  encoded length: min 773  mean 782.0  max 800   (max_len 1984)
+        over max_len: 0 of 25
+
+==================================================================
+N=192   25 instances   2088 deductions
+==================================================================
+  F1 deduction NOT forced by prior-round neighbours    PASS  0/2088
+  F2 deduced colour != planted colour                  PASS  0/2088
+  F3 forcing neighbour not yet emitted                 PASS  0/2088
+
+  marginal over reason_color:
+        COLOR_0  0.2601
+        COLOR_1  0.2514
+        COLOR_2  0.2490
+        COLOR_3  0.2395
+        marginal entropy 1.385864 nats   (ln q = 1.386294)
+        -> a context-blind predictor scores 1.3859 nats here
+
+  encoded length: min 1542  mean 1554.2  max 1579   (max_len 1984)
+        over max_len: 0 of 25
+
