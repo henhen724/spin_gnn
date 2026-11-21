@@ -137,3 +137,11 @@ Cells: `n96_L12_s0` (exists) and `n192_L12_s0`, `n192_L12_s1` (pending
 53062385). Inference only, CPU, no training, no closed knob.
 
 **Blocked until 53062385 writes its checkpoints.** Do not submit before then.
+
+2026-11-21: submitted as **53203962** with `--dependency=afterok:53062385`,
+held `PD` until the whole ladder array exits 0. The block above exists because
+`resolve_inner` would raise on a missing `model.pt`; an `afterok` hold makes
+that state unreachable, and `afterok` rather than `afterany` so a crashed
+ladder cannot launch the probe onto a partial checkpoint. Chaining also avoids
+polling for the checkpoint, which AGENTS.md rule 10 asks for directly. Nothing
+about the predictions or the cell list changed.
