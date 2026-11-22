@@ -339,6 +339,20 @@ so the method is calibrated rather than fitted.
 
 ---
 
+## $T/\log N$ lies on one curve above $\rho_c$ and fans apart below it
+
+![](figures/collapse.png)
+
+Each panel is one ensemble, each curve one size. Density runs **right to
+left**: easy puzzles on the left, hard on the right. Where the three sizes
+overlap, $T$ is just $\log N$ times a function of $\rho$; where they separate,
+depth has started growing faster than $\log N$. The dashed line marks that
+density. The left panel is the calibration: the same reading applied to the
+previously published ensemble returns its published $\rho_c$. Its curves stop
+early because that ensemble has no instances below its own hint floor.
+
+---
+
 ## The prior result: at the largest size, the colour head sat exactly at chance
 
 In the previous run, on a different ensemble, `reason_color` landed **at that
@@ -379,6 +393,18 @@ structural, not statistical, so more data along the same axis cannot fix it.
 
 ---
 
+## Raising $N$ raises $T$ at every single density — the two never move apart
+
+![](figures/depth_vs_rho.png)
+
+DD rounds against hint density for three sizes of the $d=4, q=3$ ensemble,
+density again running right to left. There is no density at which the three
+curves cross or meet below $\rho_c$: bigger is deeper, everywhere. That is the
+confound stated as a picture. To change $T$ without changing $N$ you have to
+leave the curve — which is what changing $(d,q)$ does.
+
+---
+
 ## $(d,q) = (4,3)$ buys depth from the local parameters at fixed $N$
 
 Lowering the number of colours and the degree makes each individual deduction
@@ -395,6 +421,22 @@ instances per cell, deepest decile of DD depth:
 $N=96$ here is **deeper than the matched cell while being shorter**, and
 $N=120$ **matches the depth of the cell that failed** at 1.8× fewer tokens —
 both at an $N$ where the colouring rule is known to be learnable.
+
+---
+
+## The depth gap holds at every size, 1.3× at $N=48$ widening to 1.6×
+
+![](figures/depth_vs_n.png)
+
+The same lever across the whole size range, 24 seeds per point. Each curve is
+taken at **its own** ensemble's lowest reachable density, because the two do
+not share a hint floor; comparing them at a common density would instead be
+comparing a hard puzzle to an impossible one.
+
+This is the **mean** depth at the floor, which is a different estimator from
+the deepest-decile figure in the table on the previous page — that is why
+$N=96$ reads 28.8 here and 32.8 there. Both say the same thing, and neither
+is quoted as a result.
 
 ---
 
