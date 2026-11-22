@@ -207,6 +207,19 @@ def fig_depth_vs_n():
 
 
 # ------------------------------------------------------------- results figs
+def facet(ns, w=5.5, h=4.3):
+    """One panel per size, sized from how many sizes actually landed.
+
+    The array finishes a cell at a time, so a figure asked for before the
+    last one lands must not reserve an empty panel for it -- a blank axis
+    reads as a size that failed rather than a size still running.
+    """
+    ns = sorted(ns)
+    fig, axes = plt.subplots(1, len(ns), figsize=(w * len(ns), h),
+                             sharey=True, squeeze=False)
+    return fig, dict(zip(ns, axes[0])), ns
+
+
 def _by_cell(pattern, casts, key):
     out = defaultdict(list)
     for p in sorted(glob.glob(pattern)):
@@ -221,15 +234,14 @@ def fig_d5_trainability():
     if not hits:
         print("skip d5_trainability: no history.json yet")
         return
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.3), sharey=True)
-    panels = {96: axes[0], 120: axes[1]}
+    def cell_of(p):
+        c = os.path.basename(os.path.dirname(os.path.dirname(p)))
+        return int(c.split("_")[0][1:]), int(c.rsplit("_s", 1)[1])
+
+    fig, panels, _ = facet({cell_of(p)[0] for p in hits})
     for p in hits:
-        cell = os.path.basename(os.path.dirname(os.path.dirname(p)))
-        n = int(cell.split("_")[0][1:])
-        seed = int(cell.rsplit("_s", 1)[1])
-        ax = panels.get(n)
-        if ax is None:
-            continue
+        n, seed = cell_of(p)
+        ax = panels[n]
         h = json.load(open(p))
         xs, ys = curve((r["epoch"], r["nll"]) for r in h)
         if xs is None:
@@ -240,7 +252,7 @@ def fig_d5_trainability():
     for n, ax in panels.items():
         ax.set_title("N = %d" % n, color=MUTED, fontsize=11)
         style_axes(ax, xlabel="epoch")
-    style_axes(axes[0], ylabel="validation NLL (nats / token)")
+    style_axes(panels[min(panels)], ylabel="validation NLL (nats / token)")
     save(fig, "d5_trainability.png")
 
 
@@ -285,8 +297,7 @@ def fig_d4():
         print("skip d4: no rho_curve CSVs yet")
         return
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.3), sharey=True)
-    panels = {n: axes[i] for i, n in enumerate(sorted({k[0] for k in cells}))}
+    fig, panels, _ = facet({k[0] for k in cells})
     for (n, seed), rs in sorted(cells.items()):
         ax = panels[n]
         xs, ys = curve((r["rho"], r["solve_rate"]) for r in rs)
@@ -297,19 +308,26 @@ def fig_d4():
         label_line(ax, xs[0], ys[0], "seed %d" % seed, color=col)
     for n, ax in panels.items():
         ax.axvline(RHO_C_LEVER, color=MUTED, lw=1.4, ls="--")
+        ax.text(RHO_C_LEVER, 0.97, r"$\rho_c \approx %.2f$  " % RHO_C_LEVER,
+                transform=ax.get_xaxis_transform(), color=MUTED,
+                fontsize=11, ha="right", va="top")
         ax.set_title("N = %d" % n, color=MUTED, fontsize=11)
         style_axes(ax, xlabel=r"hint density $\rho$   (harder $\rightarrow$)")
         hard_left(ax)
-    style_axes(axes[0], ylabel="whole-instance solve rate")
+    style_axes(panels[min(panels)], ylabel="whole-instance solve rate")
     save(fig, "d4_solve_vs_rho.png")
 
     # a_eff against DD depth, with the Clopper-Pearson bound drawn as a
     # DOWNWARD ARROW wherever a bin solved nothing -- a zero bin bounds the
     # per-deduction rate from above and must never be plotted as a point.
+    # Faceted by N and coloured by seed, matching the solve figure: four
+    # cells on one axis would exceed the 3-slot palette, and with a seed
+    # spread this wide the seed is the identity a reader needs anyway.
     p_up = 1.0 - (1.0 - CONF) ** (1.0 / N_PER_BIN)
-    fig, ax = plt.subplots(figsize=(7.2, 4.4))
+    fig, panels, _ = facet({k[0] for k in cells})
     for (n, seed), rs in sorted(cells.items()):
-        col = SERIES[sorted({k[0] for k in cells}).index(n) % len(SERIES)]
+        ax = panels[n]
+        col = SERIES[seed % len(SERIES)]
         solid, bounds = [], []
         for r in rs:
             nb = r["n_nodes"] - round(r["n_nodes"] * r["realized_rho"])
@@ -322,15 +340,31 @@ def fig_d4():
         xs, ys = curve(solid)
         if xs is not None:
             ax.plot(xs, ys, "o-", color=col, lw=2.0, ms=5, rasterized=True)
-            label_line(ax, xs[-1], ys[-1], "N = %d" % n, color=col)
-        for x, y in bounds:
-            ax.annotate("", xy=(x, y - 0.012), xytext=(x, y),
-                        arrowprops=dict(arrowstyle="-|>", color=col, lw=1.4))
-    ax.text(0.02, 0.04, "arrows: 0 of %d solved, so $a_{\\mathrm{eff}}$ is "
-                        "bounded above, not measured" % N_PER_BIN,
-            transform=ax.transAxes, color=MUTED, fontsize=10)
-    style_axes(ax, xlabel="DD rounds in the instance, $T$",
+            if len(xs) >= 3:
+                label_line(ax, xs[-1], ys[-1], "seed %d" % seed, color=col)
+        bx, by = curve(bounds)
+        if bx is not None:
+            ax.plot(bx, by, ":", color=col, lw=1.2, rasterized=True)
+            for x, y in zip(bx, by):
+                ax.annotate("", xy=(x, y - 0.015), xytext=(x, y),
+                            arrowprops=dict(arrowstyle="-|>", color=col,
+                                            lw=1.4))
+            # One label per seed, on whichever branch is the longer one, so
+            # a cell that is mostly bounds is not labelled twice in the same
+            # colour three centimetres apart.
+            if xs is None or len(xs) < 3 or len(bx) > len(xs):
+                label_line(ax, bx[-1], by[-1], "seed %d" % seed, color=col)
+    for n, ax in panels.items():
+        ax.set_title("N = %d" % n, color=MUTED, fontsize=11)
+        style_axes(ax, xlabel="DD rounds in the instance, $T$")
+    style_axes(panels[min(panels)],
                ylabel=r"per-deduction rate $a_{\mathrm{eff}}$")
+    panels[min(panels)].text(
+        0.98, 0.04, "dotted, with arrows: 0 of %d solved, so\n"
+                    "$a_{\\mathrm{eff}}$ is bounded above, not measured"
+                    % N_PER_BIN,
+        transform=panels[min(panels)].transAxes, color=MUTED, fontsize=10,
+        ha="right", va="bottom")
     save(fig, "d4_aeff_vs_depth.png")
 
 
