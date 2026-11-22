@@ -198,5 +198,16 @@ print("first val_nll %.4f -> final %.4f" % (h[0]["nll"], h[-1]["nll"]))
 PY
 
 echo
-echo "=== D1/D2/D3 need the section split; scored after the array by"
-echo "    scripts/stagensplit_fit.py pointed at $SCAN (chance = ln 3)."
+echo "=== D1/D2/D3 need the section split, which this job does NOT produce."
+echo "    POINTER CORRECTED 2026-11-21 AFTER SUBMIT (the running array uses"
+echo "    Slurm's stored copy of this script, so only the echo changed; the"
+echo "    commit it ran at is printed at the top of this log). It named"
+echo "    scripts/stagensplit_fit.py, which is hard-wired to q=4: its"
+echo "    FLOOR = {48: 1.371, 96: 1.625, 192: 1.861} is keyed on N ALONE, so"
+echo "    it KeyErrors at N=120 and silently applies a q=4 val_nll floor to a"
+echo "    q=3 cell at N=96. Both that and its (5/16) log 2 target are on this"
+echo "    stage's banned list. The correct chain is:"
+echo "      sbatch --dependency=afterany:\$SLURM_ARRAY_JOB_ID \\"
+echo "          scripts/slurm/sudoku2_dq_split_2026-11-21.sbatch"
+echo "    which runs scripts/stagedq_probe.py then scripts/stagedq_fit.py"
+echo "    (chance = ln 3 = 1.098612, no q=4 constant)."
