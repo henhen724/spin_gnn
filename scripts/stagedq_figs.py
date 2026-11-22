@@ -93,6 +93,45 @@ def hard_left(ax):
     ax.invert_xaxis()
 
 
+def label_column(ax, items, min_gap=0.06):
+    """Right-hand-end labels, nudged apart when two curves finish together.
+
+    This stage produces the collision as its NORMAL case, not an edge case: a
+    cell whose colour head sat at the prior solves nothing at every density,
+    so it flatlines at exactly 0.0 next to a cell that also ends near 0.0, and
+    the two seed names print on top of each other. A stacked pair of names is
+    worse than no name, because it still reads as one legible word.
+
+    items are (x, y, text, color). The nudge moves only the annotation, never
+    a plotted point, and the group is recentred on its own mean so a pair that
+    does collide stays attached to the curves it names.
+    """
+    if not items:
+        return
+    items = sorted(items, key=lambda it: it[1])
+    lo, hi = ax.get_ylim()
+    span = (hi - lo) or 1.0
+    ys = [it[1] for it in items]
+    for i in range(1, len(ys)):
+        ys[i] = max(ys[i], ys[i - 1] + min_gap * span)
+    shift = sum(y - it[1] for y, it in zip(ys, items)) / len(items)
+    for (x, _y0, text, color), y in zip(items, ys):
+        label_line(ax, x, y - shift, text, color=color)
+
+
+def guide_text(ax, y, txt):
+    """A dashed reference line named at the DISPLAY-LEFT edge.
+
+    Axes-fraction x, so it lands on the left of the picture whether or not the
+    caller later inverts the axis -- data-coordinate placement put this on top
+    of the seed labels at the low-rho end, which is where every curve label
+    already lives.
+    """
+    ax.axhline(y, color=MUTED, lw=1.3, ls="--")
+    ax.text(0.015, y, txt, transform=ax.get_yaxis_transform(), color=MUTED,
+            va="bottom", ha="left", fontsize=10)
+
+
 def curve(pairs):
     """Sorted (x, y) with non-finite y dropped.
 
@@ -267,6 +306,7 @@ def fig_d1_reason_color():
         return
     for n in sorted({k[0] for k in cells}):
         fig, ax = plt.subplots(figsize=(7.2, 4.4))
+        marks = []
         for seed in sorted(s for nn, s in cells if nn == n):
             xs, ys = curve((r["rho"], r["mean_nll"])
                            for r in cells[(n, seed)]
@@ -275,13 +315,12 @@ def fig_d1_reason_color():
                 continue
             col = SERIES[seed % len(SERIES)]
             ax.plot(xs, ys, "o-", color=col, lw=2.2, ms=6, rasterized=True)
-            label_line(ax, xs[0], ys[0], "seed %d" % seed, color=col)
+            marks.append((xs[0], ys[0], "seed %d" % seed, col))
+        ax.set_ylim(bottom=-0.04)
+        label_column(ax, marks)
         for y, txt in ((CHANCE, r"chance, $\ln 3$"),
                        (D1_HT, "H-T bar"), (D1_HN, "H-N bar")):
-            ax.axhline(y, color=MUTED, lw=1.3, ls="--")
-            ax.text(ax.get_xlim()[0], y, " " + txt, color=MUTED,
-                    va="bottom", ha="left", fontsize=10)
-        ax.set_ylim(bottom=-0.04)
+            guide_text(ax, y, txt)
         style_axes(ax, xlabel=r"hint density $\rho$   (harder $\rightarrow$)",
                    ylabel="colour-token NLL (nats)")
         hard_left(ax)
@@ -298,6 +337,7 @@ def fig_d4():
         return
 
     fig, panels, _ = facet({k[0] for k in cells})
+    marks = {n: [] for n in panels}
     for (n, seed), rs in sorted(cells.items()):
         ax = panels[n]
         xs, ys = curve((r["rho"], r["solve_rate"]) for r in rs)
@@ -305,8 +345,9 @@ def fig_d4():
             continue
         col = SERIES[seed % len(SERIES)]
         ax.plot(xs, ys, "o-", color=col, lw=2.2, ms=5, rasterized=True)
-        label_line(ax, xs[0], ys[0], "seed %d" % seed, color=col)
+        marks[n].append((xs[0], ys[0], "seed %d" % seed, col))
     for n, ax in panels.items():
+        label_column(ax, marks[n])
         ax.axvline(RHO_C_LEVER, color=MUTED, lw=1.4, ls="--")
         ax.text(RHO_C_LEVER, 0.97, r"$\rho_c \approx %.2f$  " % RHO_C_LEVER,
                 transform=ax.get_xaxis_transform(), color=MUTED,
@@ -323,45 +364,49 @@ def fig_d4():
     # Faceted by N and coloured by seed, matching the solve figure: four
     # cells on one axis would exceed the 3-slot palette, and with a seed
     # spread this wide the seed is the identity a reader needs anyway.
+    # a_eff against DD depth. THE CENSORING LIMIT IS DRAWN ONCE, IN GREY, AND
+    # NOT PER SEED. p_up^(1/n_blank) depends only on n_blank, which depends
+    # only on the bin -- so every censored seed at a given bin gets the
+    # IDENTICAL bound, and drawing one per seed stacked two curves exactly on
+    # top of each other. That read as two independent measurements landing in
+    # agreement, which is the opposite of the truth: it is one formula plotted
+    # twice. A seed is now drawn only where it actually solved something, so a
+    # cell that stops being measurable simply stops.
     p_up = 1.0 - (1.0 - CONF) ** (1.0 / N_PER_BIN)
     fig, panels, _ = facet({k[0] for k in cells})
+    marks = {n: [] for n in panels}
+    limit = {}
     for (n, seed), rs in sorted(cells.items()):
         ax = panels[n]
         col = SERIES[seed % len(SERIES)]
-        solid, bounds = [], []
+        solid = []
         for r in rs:
             nb = r["n_nodes"] - round(r["n_nodes"] * r["realized_rho"])
             if nb <= 0:
                 continue
+            limit.setdefault(n, {})[r["rho"]] = (r["dd_mean_T"],
+                                                 p_up ** (1.0 / nb))
             if r["solve_rate"] > 0:
                 solid.append((r["dd_mean_T"], r["solve_rate"] ** (1.0 / nb)))
-            else:
-                bounds.append((r["dd_mean_T"], p_up ** (1.0 / nb)))
         xs, ys = curve(solid)
-        if xs is not None:
-            ax.plot(xs, ys, "o-", color=col, lw=2.0, ms=5, rasterized=True)
-            if len(xs) >= 3:
-                label_line(ax, xs[-1], ys[-1], "seed %d" % seed, color=col)
-        bx, by = curve(bounds)
-        if bx is not None:
-            ax.plot(bx, by, ":", color=col, lw=1.2, rasterized=True)
-            for x, y in zip(bx, by):
-                ax.annotate("", xy=(x, y - 0.015), xytext=(x, y),
-                            arrowprops=dict(arrowstyle="-|>", color=col,
-                                            lw=1.4))
-            # One label per seed, on whichever branch is the longer one, so
-            # a cell that is mostly bounds is not labelled twice in the same
-            # colour three centimetres apart.
-            if xs is None or len(xs) < 3 or len(bx) > len(xs):
-                label_line(ax, bx[-1], by[-1], "seed %d" % seed, color=col)
+        if xs is None:
+            continue
+        ax.plot(xs, ys, "o-", color=col, lw=2.0, ms=5, rasterized=True)
+        marks[n].append((xs[-1], ys[-1], "seed %d" % seed, col))
     for n, ax in panels.items():
+        lx, ly = curve(limit.get(n, {}).values())
+        if lx is not None:
+            ax.plot(lx, ly, "--", color=MUTED, lw=1.4, rasterized=True)
+            label_line(ax, lx[-1], ly[-1], "limit", color=MUTED)
+        label_column(ax, marks[n])
         ax.set_title("N = %d" % n, color=MUTED, fontsize=11)
         style_axes(ax, xlabel="DD rounds in the instance, $T$")
     style_axes(panels[min(panels)],
                ylabel=r"per-deduction rate $a_{\mathrm{eff}}$")
     panels[min(panels)].text(
-        0.98, 0.04, "dotted, with arrows: 0 of %d solved, so\n"
-                    "$a_{\\mathrm{eff}}$ is bounded above, not measured"
+        0.98, 0.04, "grey: a bin solving 0 of %d bounds $a_{\\mathrm{eff}}$\n"
+                    "only BELOW this line. It rises with $T$ because\n"
+                    "$n_{\\mathrm{blank}}$ grows, not because anything improves."
                     % N_PER_BIN,
         transform=panels[min(panels)].transAxes, color=MUTED, fontsize=10,
         ha="right", va="bottom")

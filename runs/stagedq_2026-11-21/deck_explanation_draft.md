@@ -1,17 +1,16 @@
 ---
 title: "Does the colour head break because of size, or because of depth?"
 author: "hshunt"
-date: "2026-11-21"
+date: "2026-11-22"
 ---
 
 <!--
-DRAFT -- EXPLANATION PAGES ONLY. The results pages are deliberately absent:
-array 53243550 is still training and the section split 53264789 is chained
-behind it. This file lives in the PROJECT repo, not in ~/slides, precisely so
-that a half-finished deck cannot be picked up by a build and listed on the
-spin-gnn contents page. When the cells land, copy this into
-~/slides/decks/spin-gnn/depth-lever/deck.md, append the results pages, and
-publish with claude-slides-publish.sh.
+COMPLETE. Array 53243550 (4 cells) and the section split 53264789 (4 tasks)
+all finished COMPLETED 0:0; the results pages below are scored against
+runs/stagedq_2026-11-21/REGISTERED.md and its VERDICT.txt. This file is the
+source of record in the PROJECT repo; the published copy lives at
+~/slides/decks/spin-gnn/depth-lever/deck.md. Keep them in step by editing
+here and copying forward, never the other way round.
 
 No q=4 constant appears anywhere below. That is a rule of this stage, not a
 style choice: a reader who sees a q=4 number on the same page as a q=3 number
@@ -532,11 +531,248 @@ avoiding them.
 
 ---
 
-<!-- RESULTS PAGES GO HERE when 53243550 and 53264789 land:
-     D5 trainability curve; D3 health; D1 per seed; D1 per density; D1
-     verdict; D2; D4 solve-vs-rho; D4 a_eff vs depth with the CP bounds
-     drawn as upper arrows; and a final page comparing against the previous
-     best ON THE SAME EVAL, or stating that there is none because this
-     ensemble has never been run before -- which is the likely outcome and
-     must be said plainly rather than skipped. Record the git commit, the
-     config and the seeds on the last page. -->
+## Every cell trained: validation loss fell from 3.06 to 1.70 at $N=120$
+
+![](figures/d5_trainability.png)
+
+All four cells descend smoothly and are still descending at epoch 50. No cell
+was flat.
+
+---
+
+## D5's flag fired on a 0.0002-nat ordering, not on a flat curve
+
+| cell | first val NLL | final | best | best epoch | final − best | D5 |
+|---|---|---|---|---|---|---|
+| $N=96$ s0 | 2.3167 | 1.6362 | 1.6362 | 49 | $+0.0000$ | OK |
+| $N=96$ s1 | 2.0445 | 1.5225 | 1.5225 | 49 | $+0.0000$ | OK |
+| $N=120$ s0 | 3.0566 | 1.7443 | 1.7441 | 47 | $+0.0002$ | **FLAG** |
+| $N=120$ s1 | 3.0402 | 1.6972 | 1.6971 | 47 | $+0.0000$ | **FLAG** |
+
+The registered falsifier was "flat at the initial plateau for all 50 epochs".
+These cells fell by 1.3 nats. The flag is reported as it fell, and the
+criterion is not adjusted after the fact.
+
+---
+
+## The forced sections stayed learned, so the colour numbers are readable
+
+| cell | `graph_lead` | `term` | bar | D3 |
+|---|---|---|---|---|
+| $N=96$ s0 | 0.0000 | 0.0002 | $<0.01$ | OK |
+| $N=96$ s1 | 0.0000 | 0.0000 | $<0.01$ | OK |
+| $N=120$ s0 | 0.0004 | 0.0017 | $<0.01$ | OK |
+| $N=120$ s1 | 0.0000 | 0.0008 | $<0.01$ | OK |
+
+D3 **PASS**: no cell is sick, so D1 and D2 mean what they say.
+
+---
+
+## At $N=96$ one seed has the colouring rule exactly, the other never got it
+
+![](figures/d1_reason_color_n96.png)
+
+Seed 1 is at 0.0000 nats at every density. Seed 0 stays inside the registered
+partial band, and is worst where hints are densest.
+
+---
+
+## At $N=120$ one seed sits exactly at chance and the other at exactly zero
+
+![](figures/d1_reason_color_n120.png)
+
+Seed 0 is at $\ln 3$ to four decimals with accuracy 0.3297, which is $1/q$ —
+the prior. Seed 1 has the rule exactly.
+
+---
+
+## `reason_color` per cell is 0.4468, 0.0000, 1.0987, 0.0001 — no trend in $N$
+
+| cell | `reason_color` NLL | accuracy | state |
+|---|---|---|---|
+| $N=96$ s0 | 0.4468 | 0.7671 | partial |
+| $N=96$ s1 | 0.0000 | 1.0000 | rule exact |
+| $N=120$ s0 | **1.0987** | **0.3297** | at the prior |
+| $N=120$ s1 | 0.0001 | 1.0000 | rule exact |
+
+Three of the four cells sit at an extreme. The deepest cell that has the rule
+exactly is at $N=120$.
+
+---
+
+## The pooled D1 number averages a perfect cell with a partial one
+
+| quantity | value | reading |
+|---|---|---|
+| $N=96$ s0 | 0.4468 | inside the 0.10–0.55 partial band |
+| $N=96$ s1 | 0.0000 | below 0.10, so **H-N** outright |
+| pooled | **0.2234** | inside the partial band |
+
+D1 scored **PARTIAL**, but the pooled value describes neither seed. The
+verdict file flagged this itself: the two seeds straddle the bar.
+
+---
+
+## D2's $+0.3260$ nats is one collapsed seed, not a depth trend
+
+| grouping | $N=96$ | $N=120$ | difference |
+|---|---|---|---|
+| pooled over seeds | 0.2234 | 0.5494 | $+0.3260$ |
+| seed 0 alone | 0.4468 | 1.0987 | $+0.6519$ |
+| seed 1 alone | 0.0000 | 0.0001 | $+0.0001$ |
+
+D2 scored **HIT** on the pooled row. Split by seed, the whole effect lives in
+seed 0, and seed 1 is flat to one part in $10^4$ across the depth step.
+
+---
+
+## Validation loss separates a cell at chance from a cell at zero by 0.04 nats
+
+| cell | final val NLL | `reason_color` | solve rate at $\rho=0.32$ |
+|---|---|---|---|
+| $N=120$ s0 | 1.7443 | 1.0987 | 0.0000 |
+| $N=120$ s1 | 1.6972 | 0.0001 | 0.0000 |
+| $N=96$ s0 | 1.6362 | 0.4468 | 0.0000 |
+| $N=96$ s1 | 1.5225 | 0.0000 | 0.5850 |
+
+Aggregate next-token loss is almost blind to the collapse: the colour tokens
+are a small share of the sequence.
+
+---
+
+## One cell has the colouring rule exactly and still solves nothing
+
+| head | NLL | per-token accuracy | over 82 deductions |
+|---|---|---|---|
+| `reason_color` | 0.0001 | 1.0000 | $1.000$ |
+| `reason_node` | 1.0507 | 0.6479 | $3.5\times10^{-16}$ |
+
+$N=120$ seed 1. The rule is perfect and the search is not: it cannot choose
+which node to deduce next, so it solves 0 of 400 at $T=12.2$.
+
+---
+
+## Seed 0 at $N=96$ fails arithmetically, not syntactically
+
+| head | per-token accuracy | over 66 deductions |
+|---|---|---|
+| `reason_color` | 0.7671 | $2.5\times10^{-8}$ |
+| `reason_node` | 0.7803 | $7.7\times10^{-8}$ |
+
+Its traces are well-formed and none is truncated. A head at 77% simply cannot
+complete 66 consecutive deductions, so whole-instance solving is arithmetically
+out of reach.
+
+---
+
+## `round_mark` has a floor of zero, was never gated, and grows with $N$
+
+| cell | `round_mark` NLL | accuracy |
+|---|---|---|
+| $N=96$ s1 | 0.1075 | 0.9547 |
+| $N=96$ s0 | 0.3677 | 0.8091 |
+| $N=120$ s0 | 0.4449 | 0.7853 |
+| $N=120$ s1 | 0.5410 | 0.7469 |
+
+D3 gated only `graph_lead` and `term`. This section has the same floor of zero
+and is 10–50× above that bar on every cell — including seed 1 at $N=120$,
+whose colour head is perfect. Knowing *when the round ends* is a separate,
+$N$-sensitive difficulty, and D3 as registered did not see it.
+
+---
+
+## Below $\rho_c$, one cell of four still solves whole instances
+
+![](figures/d4_solve_vs_rho.png)
+
+D4 **HIT** on seed 1 at $N=96$: 0.270 at $\rho=0.22$, still 0.1325 at
+$\rho=0.154$ where $T=29$.
+
+---
+
+## Measurement stops at $T\approx4$ for $N=120$ and runs to $T=29$ for $N=96$
+
+![](figures/d4_aeff_vs_depth.png)
+
+A coloured curve is a measurement. Where one ends, that cell solved 0 of 400
+and only the grey bound is left.
+
+---
+
+## $a_{\text{eff}}$ at $T=12$ is 0.99191 before the run and 0.99191 after
+
+| cell | $T$ | $n_{\text{blank}}$ | solve rate | $a_{\text{eff}}$ |
+|---|---|---|---|---|
+| $N=96$ s1 | 11.58 | 66 | 0.5850 | **0.99191** |
+| $N=96$ s0 | 11.58 | 66 | 0.0000 | $<0.92847$ |
+| $N=120$ s0 | 12.21 | 82 | 0.0000 | $<0.94202$ |
+| $N=120$ s1 | 12.21 | 82 | 0.0000 | $<0.94202$ |
+
+The best cell is unchanged by the larger size. At $N=120$ neither seed yields
+a measurement at this depth at all.
+
+---
+
+## The $N$ penalty was reproduced, not narrowed
+
+| at matched $T\approx12$ | best solve rate | best $a_{\text{eff}}$ |
+|---|---|---|
+| $N=96$ | 0.5850 | 0.99191 |
+| $N=120$ | 0.0000 | $<0.94202$ |
+
+Going from 96 to 120 nodes lost everything measurable at this depth. **No
+improvement is claimed.**
+
+---
+
+## There is no previous best on this eval, because this ensemble is new
+
+This 14-bin grid at $d=4$, $q=3$ had never been run before this stage, so
+there is no earlier number on the same eval to compare against. That is the
+honest answer, not an omission.
+
+The earlier ladder ran at $d=5$, $q=4$, where the chance level, the critical
+density $\rho_c$ and the hint floor are all different and the sequences are a
+different length at the same $N$. None of its numbers is comparable here, and
+none is quoted anywhere in this deck.
+
+The only within-eval comparisons available are therefore seed against seed and
+size against size, both given on the pages above. Every future run on this
+ensemble compares against 0.99191 at $T=11.58$.
+
+---
+
+## What this settles, and the one thing it cannot
+
+- The colour-head collapse **reproduces in this ensemble**, at $N=120$, on one
+  seed of two — so it is not special to the earlier $(d,q)$ family.
+- It is **not** a clean function of size or of depth: the deepest cell that
+  holds the rule exactly is at $N=120$, and the two $N=120$ seeds land at
+  opposite extremes.
+- H-T in its strong form is **contradicted**: seed 1 at $N=96$ keeps
+  `reason_color` at 0.0000 while solving instances out to $T=29$.
+- Failure has (at least) **two distinct mechanisms** — the colour rule at the
+  prior, and the rule perfect with search broken. One metric cannot tell them
+  apart; the per-section split can.
+- What two seeds **cannot** settle is whether the collapsed state is a basin
+  the run falls into, or the tail of a continuous degradation. A third seed at
+  each size is now running to test exactly that.
+
+---
+
+## Provenance
+
+| item | value |
+|---|---|
+| repo | `github.com/henhen724/spin_gnn`, branch `sudoku-dd` |
+| commit at submit | `496c766` (predictions registered), scored at `5af3d21` |
+| training job | `53243550`, 4-cell array, all COMPLETED `0:0` |
+| section-split job | `53264789`, 4 tasks, all COMPLETED `0:0` |
+| ensemble | $d=4$, $q=3$, fall colouring, `--shuffle-adj` |
+| sizes | $N=96$ and $N=120$ |
+| seeds | 0 and 1 (seed 2 running as `53313361`) |
+| model | 12 layers, $d_{\text{model}}=256$, 4 heads, FFN 1024 |
+| data | 240k fresh instances, 50 epochs, $\rho \sim U[0.14, 0.95]$ |
+| eval | 14 densities $\times$ 400 instances, identical instances per seed |
+| registered | `runs/stagedq_2026-11-21/REGISTERED.md` |
+| verdict | `runs/stagedq_2026-11-21/VERDICT.txt` |
