@@ -1,0 +1,14 @@
+stage DQ3 figures -- merged sources
+scan   /scratch/users/hshunt/spin_gnn/sudoku_dq_2026-11-21
+scan   /scratch/users/hshunt/spin_gnn/sudoku_dq3_2026-11-22
+split  /scratch/users/hshunt/spin_gnn/runs/stagedq_2026-11-21
+split  /scratch/users/hshunt/spin_gnn/runs/stagedq3_2026-11-22
+
+DQ3 contribution at draw time:
+  rho_curve 1
+      /scratch/users/hshunt/spin_gnn/sudoku_dq3_2026-11-22/rho_curve_n96_s2_53313361_0.csv
+  history   1
+      /scratch/users/hshunt/spin_gnn/sudoku_dq3_2026-11-22/n96_d4_q3_L12_s2/d0256_h04_L12_ff01024_lr1e-03_pre_shuf_fall_s02/history.json
+  dqsplit   0
+
+PARTIAL -- not every DQ3 source had landed.
