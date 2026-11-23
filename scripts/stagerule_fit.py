@@ -474,6 +474,80 @@ def score(fh, arch, named):
     line(fh)
 
 
+def posthoc(fh, arch):
+    """The OTHER reading of "smallest", computed after R1-R5 were scored and
+    labelled as such.
+
+    R5 ranks by the size partial order in smaller_than(): no more machinery, no
+    more depth, no more width. That order calls S1 (tied_no_mlp d320)
+    INCOMPARABLE to J2 -- one block instead of sixteen, but width 320 instead of
+    192 -- so R5 could not name it however good its hazard was. Parameter count
+    is the other reading of the brief's "smallest", and STATUS.md says
+    explicitly that it is not this project's figure of merit, so it is reported
+    here as a second column and never as a replacement for R5.
+
+    Nothing in this block was registered in advance. It is a reading of the same
+    table, flagged so a reader can discount it accordingly.
+    """
+    line(fh, "=" * 72)
+    line(fh, "POST-HOC, NOT REGISTERED -- the same table read by parameter")
+    line(fh, "count instead of by the size partial order. R5 above is the")
+    line(fh, "registered result; this is a second column, not a correction.")
+    line(fh, "=" * 72)
+
+    order = sorted(arch, key=lambda a: a["params"])
+    has = [a for a in order
+           if a["h_rule"] == a["h_rule"] and a["h_rule"] < R1_BAR]
+    seeded = [a for a in has if a["n_seeds"] >= 3]
+    if not seeded:
+        line(fh, "no 3+-seed architecture has h_rule < %.2f" % R1_BAR)
+        line(fh)
+        return
+    best = seeded[0]
+    blo, bhi = wilson(int(best["err_in_F"]), int(best["in_F"]))
+    line(fh, "FEWEST PARAMETERS WITH DD'S RULE INTACT (3+ seeds): %s, %d "
+             "params, %d seeds, h_rule %.5f [%.5f, %.5f] (%d / %d forced; "
+             "per-seed %s), rho_50 %.4f -- it also FAILS the %.3f gate."
+         % (best["cell"], best["params"], best["n_seeds"], best["h_rule"],
+            blo, bhi, int(best["err_in_F"]), int(best["in_F"]),
+            "/".join("%.4f" % h for _, h, _, _ in best["seeds"]),
+            best["rho50"], GATE))
+
+    below = [a for a in order if a["params"] < best["params"]]
+    if below:
+        line(fh)
+        line(fh, "   AND THE LADDER RUNS OUT DIRECTLY BELOW IT: all %d "
+                 "architectures with fewer parameters break the rule."
+             % len(below))
+        for a in below:
+            line(fh, "   %-30s %7d params  %d seed%s  h_rule %.5f"
+                 % (a["cell"], a["params"], a["n_seeds"],
+                    " " if a["n_seeds"] == 1 else "s", a["h_rule"]))
+        line(fh, "   These are finding 100's two worst rule-breakers, so the "
+                 "boundary is not a quiet gradient: the smallest objects in "
+                 "this ladder are exactly the ones that lose DD's rule.")
+
+    if best["mode"] == "tied_no_mlp":
+        line(fh)
+        line(fh, "   THIS IS ALSO THE BRIEF'S SECOND CLAUSE. tied_no_mlp is one "
+                 "block applied L times, h_{t+1} = F(h_t) -- an iterated map "
+                 "with a single operator, which is the analytically tractable "
+                 "object the brief asks for, not merely a small one.")
+        same = [a for a in arch if a["mode"] == "tied_no_mlp"]
+        line(fh, "   every tied rung, by width: %s"
+             % ", ".join("%s %.5f (%d seed%s)"
+                         % (a["cell"].replace("L=16 h=4 tied_no_mlp ", ""),
+                            a["h_rule"], a["n_seeds"],
+                            "" if a["n_seeds"] == 1 else "s")
+                         for a in sorted(same, key=lambda a: a["params"])))
+        line(fh, "   The tied map keeps the rule from width 320 up and loses it "
+                 "at width 192, where it is the worst rule-breaker measured. "
+                 "That is a WIDTH boundary on the iterated map and it has one "
+                 "seed at the bottom rung, so it is a thing to seed, not a "
+                 "measured threshold.")
+    line(fh)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     cells, viol, n_haz, n_summ = load()
@@ -495,6 +569,7 @@ def main():
         assert len(arch) == 31, "expected 31 cell labels, got %d" % len(arch)
         report(fh, arch)
         score(fh, arch, named)
+        posthoc(fh, arch)
     print("\nwrote", path)
     return 0
 

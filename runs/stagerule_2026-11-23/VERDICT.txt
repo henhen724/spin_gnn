@@ -95,3 +95,19 @@ R5 HIT: 8 architectures are strictly smaller objects than J2 (L=16 h=4 no_mlp d1
 
    WIDEST WITHIN-ARCHITECTURE SPREAD among 3+-seed cells: L=12 h=4 no_mlp d160, 0.0000 to 0.0104. The rule is not a property of the architecture alone.
 
+========================================================================
+POST-HOC, NOT REGISTERED -- the same table read by parameter
+count instead of by the size partial order. R5 above is the
+registered result; this is a second column, not a correction.
+========================================================================
+FEWEST PARAMETERS WITH DD'S RULE INTACT (3+ seeds): L=16 h=4 tied_no_mlp d320, 613818 params, 3 seeds, h_rule 0.00003 [0.00001, 0.00012] (2 / 63213 forced; per-seed 0.0000/0.0000/0.0000), rho_50 0.7581 -- it also FAILS the 0.740 gate.
+
+   AND THE LADDER RUNS OUT DIRECTLY BELOW IT: all 2 architectures with fewer parameters break the rule.
+   L=16 h=4 tied_no_mlp d192       270010 params  1 seed   h_rule 0.07339
+   L=6 h=4 no_mlp d128 ep100       480058 params  1 seed   h_rule 0.03364
+   These are finding 100's two worst rule-breakers, so the boundary is not a quiet gradient: the smallest objects in this ladder are exactly the ones that lose DD's rule.
+
+   THIS IS ALSO THE BRIEF'S SECOND CLAUSE. tied_no_mlp is one block applied L times, h_{t+1} = F(h_t) -- an iterated map with a single operator, which is the analytically tractable object the brief asks for, not merely a small one.
+   every tied rung, by width: d192 0.07339 (1 seed), d320 0.00003 (3 seeds), d320 k2 0.00000 (3 seeds), d448 0.00000 (1 seed), d320 k4 0.00004 (3 seeds)
+   The tied map keeps the rule from width 320 up and loses it at width 192, where it is the worst rule-breaker measured. That is a WIDTH boundary on the iterated map and it has one seed at the bottom rung, so it is a thing to seed, not a measured threshold.
+
