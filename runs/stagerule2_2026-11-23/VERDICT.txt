@@ -1,0 +1,117 @@
+STAGE RULE2 -- h_rule over all fourteen densities
+one knob: the pooling set, ten fitted -> all fourteen
+20039 hazard rows, 1120 summary rows, 1106 in79 cells
+NOTHING SUBMITTED, NO MODEL TRAINED, NO NEW DATA.
+
+========================================================================
+DIAGNOSTICS -- if either fails, nothing below is reported
+========================================================================
+D2 PASS: n_in_F > n_at_risk on 0 rows; n_err_in_F > n_err on 0
+D1 totals over all 14 densities: n_err_in_F 1988 (expected 1988), cells where S_joint < S_ddf 63 of 1106 (expected 63 of 1106)
+   77 cells carry a rule error at all; 14 of those sit at S_ddf = 0 already, where no error can lower the product -- that difference, not drift, is why a naive count reads 77.
+   resolved 'tied_no_mlp d192' -> L=16 h=4 tied_no_mlp d192      977 errors
+   resolved 'no_mlp d128 ep100' -> L=6 h=4 no_mlp d128 ep100      677 errors
+   resolved 'no_mlp d160' -> L=12 h=4 no_mlp d160           307 errors
+   the three named architectures hold 39 of 63 affected cells and 1961 of 1988 errors
+D1 PASS
+
+D3 PASS: all-14 rule errors summed over the 31 architectures = 1988 (expected 1988); ten-density total = 1569; 0 architectures non-monotone (expected 0)
+D4 PASS (checked outside this script): stage RULE's VERDICT.txt md5 b06bcbdd9071651ed2e68706cb16e617 before and after the per_cell(rhos=) patch.
+
+==============================================================================
+h_rule BEFORE (ten fitted densities, rho 0.95-0.50) and AFTER
+(all fourteen, adding 0.45/0.40/0.35/0.33 -- the bins at or below rho_c ~ 0.465).
+Same shards, same 79 runs, same eval. A blind guess is 0.75.
+==============================================================================
+architecture                    params  h_rule 10  h_rule 14   added %  forced
+L=16 h=4 tied_no_mlp d192       270010    0.07339    0.08106      8.4%   12053
+L=6 h=4 no_mlp d128 ep100       480058    0.03364    0.03618     16.5%   18714
+L=16 h=4 tied_no_mlp d320       613818    0.00003    0.00002     21.9%   80956
+L=12 h=4 no_mlp d128            879418    0.00000    0.00004     18.2%   24737
+L=16 h=4 tied_no_mlp d320 k2   1025978    0.00000    0.00000     26.4%  116165
+L=16 h=4 tied_no_mlp d448      1088698    0.00000    0.00000     22.4%   26949
+L=16 h=4 no_mlp d128           1145658    0.00001    0.00004     21.4%  132392
+L=4 h=4 no_mlp                 1218106    0.00000    0.00000     19.7%   24955
+L=12 h=4 no_mlp d160           1345018    0.00362    0.00406     20.9%   75548
+L=6 h=4 no_mlp                 1746490    0.00000    0.00000     20.8%   52712
+L=6 h=4 no_mlp ep100           1746490    0.00000    0.00000     21.4%   78282
+L=16 h=4 no_mlp d160           1759738    0.00001    0.00001     25.7%  113385
+L=16 h=4 tied_no_mlp d320 k4   1850298    0.00004    0.00003     26.9%  116975
+L=12 h=4 no_mlp d192           1908922    0.00001    0.00001     26.0%  105946
+L=16 h=4 no_mlp d176           2115930    0.00000    0.00002     23.0%   86749
+L=4 h=4 rf_mlp                 2267706    0.00005    0.00008     18.8%   23891
+L=8 h=4 no_mlp                 2274874    0.00002    0.00001     21.6%   81210
+L=16 h=4 no_mlp d192           2504890    0.00001    0.00001     30.3%  164070
+L=3 h=4 full                   2530618    0.00002    0.00001     20.6%   72781
+L=6 h=4 full ff256             2535994    0.00000    0.00000     25.8%  110689
+L=12 h=4 no_mlp d224           2571130    0.00000    0.00000     30.9%  163756
+L=4 h=4 full                   3320378    0.00002    0.00002     22.1%   51400
+L=4 h=4 linear                 3320378    0.00000    0.00000     19.0%   73969
+L=6 h=4 rf_mlp                 3320890    0.00002    0.00002     20.9%   51841
+L=12 h=4 no_mlp                3331642    0.00002    0.00002     30.3%  186861
+L=6 h=4 full d192              3381562    0.00000    0.00000     22.7%   83896
+L=6 h=4 no_mlp d384            3799354    0.00000    0.00000     21.3%   79801
+L=6 h=4 full                   4899898    0.00000    0.00000     31.0%  192235
+L=6 h=4 linear                 4899898    0.00000    0.00000     20.6%   52929
+L=8 h=4 full                   6479418    0.00001    0.00001     36.5%  233898
+L=12 h=4 full                  9638458    0.00000    0.00000     39.7%  260922
+
+==============================================================================
+PER DENSITY, pooled over all 79 runs. The last four rows are the
+bins stage RULE never read. rho_c ~ 0.465 on this ensemble (117).
+==============================================================================
+   rho     h_rule    forced     errors      at risk empty cells
+  0.95    0.00062     89988         56        93191    0 of 79
+  0.90    0.00070    141573         99       150329    0 of 79
+  0.85    0.00088    200948        176       220306    0 of 79
+  0.80    0.00086    226486        194       255050    0 of 79
+  0.75    0.00085    248082        210       284246    0 of 79
+  0.70    0.00087    262132        229       306870    0 of 79
+  0.65    0.00069    259067        180       310157    0 of 79
+  0.60    0.00060    248296        148       306172    0 of 79
+  0.55    0.00061    244050        148       303656    0 of 79
+  0.50    0.00057    227824        129       289176    0 of 79
+  0.45    0.00053    210191        112       272364    0 of 79   <- added
+  0.40    0.00050    201402        101       263279    0 of 79   <- added
+  0.35    0.00052    196221        103       257409    0 of 79   <- added
+  0.33    0.00053    194407        103       255529    0 of 79   <- added
+
+SURVIVORSHIP, the bias that governs the last four rows: a rollout
+is censored at its first error of any kind, so the deep bins are
+scored only on rollouts that reached them without erring. That
+selection pushes h_rule DOWN at low rho. A rise is real; a fall
+is the artefact and is never read as the rule improving.
+
+   L=16 h=4 no_mlp d128           0.95:0.00000  0.90:0.00000  0.85:0.00000  0.80:0.00000  0.75:0.00000  0.70:0.00000  0.65:0.00000  0.60:0.00000  0.55:0.00000  0.50:0.00012  0.45:0.00000  0.40:0.00015  0.35:0.00027  0.33:0.00014
+   L=16 h=4 tied_no_mlp d320      0.95:0.00000  0.90:0.00019  0.85:0.00000  0.80:0.00000  0.75:0.00000  0.70:0.00000  0.65:0.00014  0.60:0.00000  0.55:0.00000  0.50:0.00000  0.45:0.00000  0.40:0.00000  0.35:0.00000  0.33:0.00000
+
+==============================================================================
+REGISTERED PREDICTIONS
+==============================================================================
+E1 HIT: the four added bins are 21.9% of total forced emissions (median over 31), against a 25% bar
+   range 8.4% to 39.7%; pooled over the population the added bins hold 802221 of 2950667 forced emissions (27.2%)
+E2 HIT: L=16 h=4 no_mlp d128 reads h_rule 0.00004 [0.00002, 0.00009] on all 14 (5 / 132392 forced), against 0.00001 on the ten, bar 0.01
+   per-seed on all 14: 0.00015/0.00000/0.00000/0.00004/0.00000
+E3 HIT: 2 architectures sit above 0.01 before and 2 after; crossings 0
+E4 HIT: top three by h_rule unchanged
+   before: L=16 h=4 tied_no_mlp d192, L=6 h=4 no_mlp d128 ep100, L=12 h=4 no_mlp d160
+   after:  L=16 h=4 tied_no_mlp d192, L=6 h=4 no_mlp d128 ep100, L=12 h=4 no_mlp d160
+E5 MISS: pooled h_rule at rho 0.33 is 0.00053 against 0.00057 at rho 0.50, a factor of 0.94x
+   IT FALLS, WHICH IS THE REGISTERED ARTEFACT AND NOT A FINDING. Censoring keeps the rollouts that reached the deep bins without erring, so the low-rho bins are scored on a selected sample and h_rule there is biased DOWN. This stage therefore CANNOT say whether DD's rule degrades below rho_c; it reports that the question is unanswerable from censored rollouts and needs an eval that scores past the first error.
+   full sequence high rho to low: 0.00062 0.00070 0.00088 0.00086 0.00085 0.00087 0.00069 0.00060 0.00061 0.00057 0.00053 0.00050 0.00052 0.00053
+E6 MISS: Spearman(h_rule 10, h_rule 14) = +0.8464 over 31 architectures, against a 0.90 bar
+   (12 cells measure exactly zero at ten densities, so ties are doing some of this work; read it as 'the ranking did not reorder', never as resolution.)
+   THE FALSIFIER FIRED, SO STATE ITS SCOPE. It falsifies the FULL RANKING: the biggest rank moves are L=16 h=4 no_mlp d176 23->9, L=12 h=4 no_mlp d128 17->5, L=16 h=4 no_mlp d128 14->6, L=8 h=4 no_mlp 10->14.
+   It does NOT falsify the claim finding 121 actually made. E3 and E4 both HIT: the same 2 architectures sit above the bar, the same 3 are worst, and the headline cells move by less than 0.0001. 121 said in terms that h_rule SEPARATES and does not rank -- 12 cells at exactly zero, 5.4x across the whole sub-gate bulk -- so a bulk reordering under a density change is that caveat coming true, not a surprise.
+   WHAT IS NOW ON RECORD: the h_rule RANKING is density-dependent and must never be quoted; the h_rule SEPARATION is not.
+
+==============================================================================
+WHAT THIS DOES TO FINDING 121'S ANSWER
+==============================================================================
+object order    L=16 h=4 no_mlp d128           1145658 params  5 seeds  0.00001 -> 0.00004 [0.00002, 0.00009]
+parameter count L=16 h=4 tied_no_mlp d320       613818 params  3 seeds  0.00003 -> 0.00002 [0.00001, 0.00009]
+standing J2     L=16 h=4 no_mlp d192           2504890 params  3 seeds  0.00001 -> 0.00001
+
+   6 objects strictly smaller than J2 are still rule-intact and gate-failing on all 14 densities (6 on the ten).
+   NEITHER READING OF "smallest" IS PROMOTED HERE. The object order is the project's standing one; parameter count is the other reading of the 2026-11-23 brief; the choice is hshunt's.
+

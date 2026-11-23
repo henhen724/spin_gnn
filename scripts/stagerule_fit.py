@@ -217,10 +217,16 @@ def d1_d2(fh, cells, viol):
     return ok1 and ok2, named
 
 
-def per_cell(cells):
+def per_cell(cells, rhos=None):
     """Pool over the TEN FITTED densities only (trap 2), per run first so the
-    per-seed parts survive, then per architecture."""
-    fit = set(round(r, 4) for r in FIT_RHOS)
+    per-seed parts survive, then per architecture.
+
+    `rhos` exists for stage RULE2, which pools over all fourteen. It defaults to
+    FIT_RHOS, so every existing caller is byte-identical -- guarded by D4 in
+    runs/stagerule2_2026-11-23/REGISTERED.md, which requires stage RULE's
+    VERDICT.txt to regenerate with an unchanged md5 after this patch.
+    """
+    fit = set(round(r, 4) for r in (FIT_RHOS if rhos is None else rhos))
     runs = collections.defaultdict(lambda: {"in_F": 0.0, "err_in_F": 0.0,
                                             "curve": {}})
     meta = {}
