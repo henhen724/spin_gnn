@@ -1,0 +1,68 @@
+STAGE RULE3 -- how much of h_rule did censoring never see?
+runs/stagerule3_2026-11-23 | registered 73c1103 | 20039 hazard rows, 1120 summary rows, 1106 (run,rho) sequences
+
+==============================================================================
+DIAGNOSTICS -- if any fails, nothing below is reported
+==============================================================================
+D1 FAIL AS REGISTERED: the exact identity n_at_risk(j+1) = n_at_risk(j) - n_err(j) fails on 317 of 18783 consecutive pairs, and zero were permitted.
+   The registered form was wrong: it forbids a rollout LEAVING without erring, but a puzzle with ~32 blanks has no 33rd deduction index, so completion is a second exit channel. The bar is not moved; the test is split and both halves reported.
+D1b completion: 308 pairs short by 952 rollouts in total. If this is completion it must happen as the blanks run out:
+     rho 0.90: 1 pairs, j from 3 to 3, against mean_n_blank 5.00
+     rho 0.85: 1 pairs, j from 6 to 6, against mean_n_blank 8.00
+     rho 0.80: 3 pairs, j from 6 to 8, against mean_n_blank 10.00
+     rho 0.75: 4 pairs, j from 8 to 10, against mean_n_blank 12.00
+   154 of 308 sit at rho <= 0.40, where the puzzle has the most blanks to exhaust. Read as completion.
+D1a FAIL: no rollout RE-ENTERS the at-risk set -- fails on 9 of 18783 pairs, by 9 rollout-slots in total (every one by exactly one rollout).
+   Influence: recomputing L with the identity-implied denominator wherever a re-entry occurs moves the pooled L from 1140388 to 1140394, a relative change of 5.38e-06. Every number below is quoted to far less precision than that, so the defect is carried as a stated limitation and does not change a reading.
+
+D4 PASS: negative R 0, negative C 0, negative L 0
+D2 PASS: total n_err_in_F over all 14 densities = 1988 (finding 100: 1988)
+D3 PASS: max |h(lambda=1) - RULE2 h_rule| over 14 densities = 1.084e-19 at rho = 0.95 (bar 1e-12)
+
+==============================================================================
+CENSORING PER DENSITY -- pooled over all 79 runs, 400 instances per run per bin
+==============================================================================
+  rho   survive   forced F    lost L  L/F    censored C   h(1)      h(worst)  lambda*
+  0.95    96.9%      89988      1450  0.02         926  0.00062   0.0107      n/a  
+  0.90    91.9%     141573      6627  0.05        2471  0.00070   0.0173      n/a  
+  0.85    79.6%     200948     25556  0.13        6257  0.00088   0.0284      n/a  
+  0.80    68.3%     226486     43124  0.19        9820  0.00086   0.0371      n/a  
+  0.75    58.5%     248082     60927  0.25       12891  0.00085   0.0424      n/a  
+  0.70    44.7%     262132     91082  0.35       17213  0.00087   0.0494      n/a  
+  0.65    34.3%     259067    104975  0.41       20549  0.00069   0.0569      n/a  
+  0.60    22.0%     248296    113869  0.46       24447  0.00060   0.0679      n/a  
+  0.55    16.4%     244050    120708  0.49       26198  0.00061   0.0722      n/a  
+  0.50    11.2%     227824    120034  0.53       27888  0.00057   0.0805      1.00
+  0.45*    6.3%     210191    115473  0.55       29483  0.00053   0.0909      1.18
+  0.40*    4.3%     201402    112731  0.56       30130  0.00050   0.0962      1.36
+  0.35*    1.6%     196221    112309  0.57       30769  0.00052   0.1001      1.22
+  0.33*    0.7%     194407    111524  0.57       30828  0.00053   0.1011      1.19
+  (* = never fitted by stage RULE; lambda* is measured against rho = 0.50, h = 0.00057)
+  survive = rollouts reaching the last scored index with no error of any kind.
+  L is a FLOOR: R(j) already carries the survivors' own later attrition.
+  lambda* is n/a wherever the bin ALREADY reads worse than rho = 0.50: there is no fall to explain there, and the formula would return a negative number that is not a tipping point. At rho = 0.50 itself it is 1.00 by construction, which checks the algebra.
+  h(worst) is the all-or-nothing case: EVERY censored rollout breaks the rule. It exceeds the 0.01 bar at all fourteen densities, so the worst-case bound is vacuous everywhere and the tipping point is the only informative version.
+
+==============================================================================
+REGISTERED PREDICTIONS
+==============================================================================
+E1 HIT: 0.7% of rollouts reach the last scored index uncensored at rho = 0.33 (213 of 31600), bar 10%
+E2 MISS: L/F_obs = 0.57 at rho = 0.33 (L 111524 lost against F_obs 194407 scored), bar > 1.00
+E3 HIT: the all-or-nothing worst case at rho = 0.33 is h = 0.1011, bar 0.01 -- VACUOUS, it permits an architecture above the rule bar, so it is reported as saying nothing
+E4 HIT: lambda* = 1.19 at rho = 0.33 against rho = 0.50, bar < 3.0
+E5 HIT: L/F_obs = 0.02 at rho = 0.95, bar < 0.25 -- censoring is mild in the fast phase
+
+==============================================================================
+WHAT THIS DOES TO STAGE RULE2'S VERDICT
+==============================================================================
+RULE2 measured h_rule FALLING from 0.00057 at rho = 0.50 to 0.00053 at rho = 0.33 (a factor 0.94x) and refused to read it as the rule improving.
+That refusal is now quantified rather than asserted: the censored rollouts would only have to be 1.19x worse at the rule than the survivors for the fall to disappear. Nothing in these shards rules that out, because a censored rollout is never scored again after its first error.
+So RULE2's 'unanswerable' stands, and the reason is measured: 0.7% of rollouts survive to the last scored index at rho = 0.33, and censoring removed at least 111524 forced emissions, a further 57% on top of the 194407 that were scored.
+
+WHERE THE REGISTRATION WAS WRONG. E2 predicted L > F_obs at rho = 0.33 and the measurement is L/F_obs = 0.57, so censoring removed rather less than it scored, not more. The prediction is a MISS and stays one. It does not rescue the bin, because E4 does not need L to exceed F_obs: h_rule is so small that a lost denominator of 57% is already enough to make the fall vanish at lambda = 1.19.
+
+WHAT IS STILL NOT MEASURED. Which lambda is real. No value of lambda is a measurement and lambda* is never quoted as the frailty that occurred -- only as the frailty that would be required. Settling it needs a rollout that is repaired at its first error and continued, which is generation on existing checkpoints and is hshunt's call, not an action taken here.
+
+SCOPE. This measures the INSTRUMENT, not an architecture. Nothing here ranks the 31 cells, and the h_rule ranking remains density-dependent (finding 122, Spearman +0.8464) and must not be quoted. The separation from the 0.01 bar is unaffected: every number above is a statement about which emissions got scored, not about which model is smaller.
+
+E1-E5: HIT MISS HIT HIT HIT
