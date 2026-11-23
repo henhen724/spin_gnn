@@ -148,12 +148,35 @@ POST-HOC, NOT REGISTERED: the hump E3's monotone test averaged away
     rho >= 0.80 pooled       h = 0.002038   R = 0.6362  95% [0.4976, 0.8134]  excludes 1
     four added bins pooled   h = 0.002184   R = 0.6819  95% [0.5309, 0.8758]  excludes 1
 
-  So BOTH the rise to the peak and the fall away from it are
-  resolved, in a slice with no censoring at all. The fall below
-  rho_c is therefore NOT purely a survivorship artefact -- part
-  of it is real. Stage RULE3's lambda* = 1.19 bounded how much
-  censoring COULD explain; it never said the fall was entirely
-  censoring, and this says it is not.
+  THE RATIO INTERVALS ABOVE ASSUME EMISSIONS ARE EXCHANGEABLE,
+  AND THE JACKKNIFE SAYS THEY ARE NOT -- deleting one run moves
+  the pooled ratio far more than Poisson counting allows, so a
+  few runs carry much of the error mass. The SHAPE does not rest
+  on that assumption: a monotone ordering across independent
+  density bins is a distribution-free statement, tested here by
+  shuffling the bin labels.
+
+    high arm   5 bins  Spearman -1.0000   Monte-Carlo p = 8.03e-03
+    low arm   10 bins  Spearman +0.9758   Monte-Carlo p = 2.00e-05
+
+  That is the claim this stage actually supports: the SHAPE is
+  solid, the MAGNITUDE of any one ratio is not, because the 79
+  runs are not 79 exchangeable replicates. Consistent with trap
+  3 -- the per-architecture ranking is itself density-dependent.
+
+  So the ORDERING on both sides of the peak is resolved -- in a
+  slice with no censoring at all -- while the SIZE of the drop
+  is not. The weaker statement is the one that survives both
+  intervals, and it is still enough: h_rule(0) does not keep
+  falling monotonically with rho, and it does not keep rising
+  either. The fall below the peak is therefore NOT purely a
+  survivorship artefact -- some of it is real, because at j = 0
+  there is no survivorship to blame.
+
+  Stage RULE3's lambda* = 1.19 bounded how much censoring COULD
+  explain; it never claimed censoring DID explain it. A fall
+  surviving at zero censoring points at lambda near 1, the same
+  direction finding 124's off-support competence pointed.
 
 POST-HOC, NOT REGISTERED: j = 0 against every later index
 

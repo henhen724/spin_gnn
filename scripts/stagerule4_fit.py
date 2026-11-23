@@ -44,6 +44,7 @@ Run under the FIGURE env (stageexp_fit imports matplotlib at module level):
 import collections
 import math
 import os
+import random
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -487,6 +488,28 @@ def posthoc(fh, seq, e0_added):
     return jmax, acc_w, res
 
 
+def perm_p(xs, ys, obs, nrep=200000, seed=20261123):
+    """Monte-Carlo one-sided p for a Spearman as extreme as `obs`, by shuffling
+    the bin labels.
+
+    Distribution-free over the bins, so it does not assume emissions within a
+    bin are exchangeable -- which is exactly the assumption the delete-one-run
+    jackknife says is false. It DOES assume the bins are independent of each
+    other: they are different instances at different densities, though they
+    share the same 79 runs, so the correlation runs through the models rather
+    than the puzzles.
+    """
+    rnd = random.Random(seed)
+    ys = list(ys)
+    hits = 0
+    for _ in range(nrep):
+        rnd.shuffle(ys)
+        r = spearman(xs, ys)
+        if (r <= obs) if obs < 0 else (r >= obs):
+            hits += 1
+    return hits / float(nrep), nrep
+
+
 def arms(fh, acc, rhos):
     """POST-HOC, NOT REGISTERED. E3 tested a monotone trend and missed. The
     per-density table says why: h_rule(0) is HUMPED, not monotone, so a single
@@ -521,12 +544,39 @@ def arms(fh, acc, rhos):
         line(fh, "    %-24s h = %.6f   R = %.4f  95%% [%.4f, %.4f]  %s"
                  % (name, g["h"], R, lo, hi, excl))
     line(fh, "")
-    line(fh, "  So BOTH the rise to the peak and the fall away from it are")
-    line(fh, "  resolved, in a slice with no censoring at all. The fall below")
-    line(fh, "  rho_c is therefore NOT purely a survivorship artefact -- part")
-    line(fh, "  of it is real. Stage RULE3's lambda* = 1.19 bounded how much")
-    line(fh, "  censoring COULD explain; it never said the fall was entirely")
-    line(fh, "  censoring, and this says it is not.")
+    line(fh, "  THE RATIO INTERVALS ABOVE ASSUME EMISSIONS ARE EXCHANGEABLE,")
+    line(fh, "  AND THE JACKKNIFE SAYS THEY ARE NOT -- deleting one run moves")
+    line(fh, "  the pooled ratio far more than Poisson counting allows, so a")
+    line(fh, "  few runs carry much of the error mass. The SHAPE does not rest")
+    line(fh, "  on that assumption: a monotone ordering across independent")
+    line(fh, "  density bins is a distribution-free statement, tested here by")
+    line(fh, "  shuffling the bin labels.")
+    line(fh, "")
+    for nm, arm in (("high arm", hi_arm), ("low arm ", lo_arm)):
+        obs = spearman(arm, [hs[r] for r in arm])
+        p, nrep = perm_p(arm, [hs[r] for r in arm], obs)
+        line(fh, "    %s  %2d bins  Spearman %+.4f   Monte-Carlo p = %s"
+                 % (nm, len(arm), obs,
+                    ("< %.1e" % (1.0 / nrep)) if p == 0 else "%.2e" % p))
+    line(fh, "")
+    line(fh, "  That is the claim this stage actually supports: the SHAPE is")
+    line(fh, "  solid, the MAGNITUDE of any one ratio is not, because the 79")
+    line(fh, "  runs are not 79 exchangeable replicates. Consistent with trap")
+    line(fh, "  3 -- the per-architecture ranking is itself density-dependent.")
+    line(fh, "")
+    line(fh, "  So the ORDERING on both sides of the peak is resolved -- in a")
+    line(fh, "  slice with no censoring at all -- while the SIZE of the drop")
+    line(fh, "  is not. The weaker statement is the one that survives both")
+    line(fh, "  intervals, and it is still enough: h_rule(0) does not keep")
+    line(fh, "  falling monotonically with rho, and it does not keep rising")
+    line(fh, "  either. The fall below the peak is therefore NOT purely a")
+    line(fh, "  survivorship artefact -- some of it is real, because at j = 0")
+    line(fh, "  there is no survivorship to blame.")
+    line(fh, "")
+    line(fh, "  Stage RULE3's lambda* = 1.19 bounded how much censoring COULD")
+    line(fh, "  explain; it never claimed censoring DID explain it. A fall")
+    line(fh, "  surviving at zero censoring points at lambda near 1, the same")
+    line(fh, "  direction finding 124's off-support competence pointed.")
     return peak, hs
 
 
