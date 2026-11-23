@@ -51,7 +51,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stageexp_fit import fnum, tobool, read_shards  # noqa: E402
 from stagegate_fit import GRID, FIT_RHOS  # noqa: E402
 from stagerule_fit import (LOGIC, RUNS, load, line, d1_d2,  # noqa: E402
-                           R1_BAR, D1_TOTAL_ERR)
+                           R1_BAR, D1_TOTAL_ERR, BLIND)
 from stagerule2_fit import by_density, RHO_C  # noqa: E402
 
 OUT = os.path.join(RUNS, "stagerule3_2026-11-23")
@@ -412,6 +412,68 @@ def d1(fh, viol, deficit_j, blank, acc):
     return rel
 
 
+def posthoc(fh, acc, h_ref):
+    """POST-HOC, not registered. Validates the reading of n_err and finds
+    something the ladder had not been asked about.
+
+    If naming an unforced cell were itself the error, C(j) would EQUAL the
+    unforced namings n_at_risk - n_F. If off-support emissions were blind
+    guesses, the ratio would be 1 - 1/q = 0.75. It is neither, so n_err counts
+    a wrong COLOUR and the model is doing real work off-support.
+
+    The denominator is slightly inflated: a rollout that terminates at j emits
+    no pair but still counts in n_at_risk - n_F. D1b put that channel at ~950
+    rollouts in total against ~61,000 unforced namings per density, so the
+    ratio is understated by about a percent and the reading is unaffected.
+    """
+    line(fh, "")
+    line(fh, "=" * 78)
+    line(fh, "POST-HOC, NOT REGISTERED -- what the model does when it jumps "
+             "ahead of DD")
+    line(fh, "=" * 78)
+    line(fh, "  rho   unforced namings   wrong colour there   share wrong   "
+             "share RIGHT")
+    for rho in sorted(acc, reverse=True):
+        a = acc[rho]
+        unf = a["at_risk"] - a["F_obs"]
+        if unf <= 0:
+            continue
+        w = a["C_tot"] / unf
+        line(fh, "  %.2f%s %15d %19d %13.3f %13.3f"
+             % (rho, "*" if rho in ADDED else " ", int(round(unf)),
+                int(round(a["C_tot"])), w, 1.0 - w))
+    tot_unf = sum(a["at_risk"] - a["F_obs"] for a in acc.values())
+    tot_C = sum(a["C_tot"] for a in acc.values())
+    line(fh, "  pooled share wrong %.4f, so the share RIGHT is %.4f."
+         % (tot_C / tot_unf, 1.0 - tot_C / tot_unf))
+    line(fh, "")
+    line(fh, "Neither 1.000 nor %.2f. If naming an unforced cell were itself "
+             "the error the share wrong would be 1.000; if off-support "
+             "emissions were blind guesses at q = 4 it would be %.2f. So "
+             "n_err counts a wrong COLOUR, forced cell or not -- which is how "
+             "this stage reads it -- and the model colours cells DD has NOT "
+             "yet forced correctly %.0f%% of the time, against %.0f%% for a "
+             "blind guess."
+         % (BLIND, BLIND, 100.0 * (1.0 - tot_C / tot_unf),
+            100.0 * (1.0 - BLIND)))
+    line(fh, "Earlier decks on this project call n_err 'first errors of any "
+             "kind', which is loose: a rollout that names an unforced cell "
+             "and gets the colour RIGHT is a stopping-condition failure but "
+             "is NOT censored. The correction is stated in this stage's deck.")
+    line(fh, "The competence degrades with density -- %.0f%% right at rho = "
+             "0.95 down to %.0f%% at rho = 0.33 -- so the rollouts censoring "
+             "removes are not incompetent. They are the ones that ran ahead "
+             "of DD and were wrong about half the time. That is a reason to "
+             "expect lambda near 1 rather than far above it, and lambda* "
+             "needs only %.2f."
+         % (100.0 * (1.0 - acc[round(GRID[0], 4)]["C_tot"]
+                     / (acc[round(GRID[0], 4)]["at_risk"]
+                        - acc[round(GRID[0], 4)]["F_obs"])),
+            100.0 * (1.0 - acc[LOW_RHO]["C_tot"]
+                     / (acc[LOW_RHO]["at_risk"] - acc[LOW_RHO]["F_obs"])),
+            lam_star(acc[LOW_RHO], h_ref)))
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     seq, n_haz, blank = sequences()
@@ -464,6 +526,7 @@ def main():
         density_table(fh, acc, h_ref)
         hits = score(fh, acc, h_ref)
         reading(fh, acc, h_ref, hits)
+        posthoc(fh, acc, h_ref)
         line(fh, "")
         line(fh, "E1-E5: %s" % " ".join("HIT" if h else "MISS" for h in hits))
     print("\nwrote", os.path.join(OUT, "VERDICT.txt"))

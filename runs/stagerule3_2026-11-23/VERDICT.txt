@@ -65,4 +65,28 @@ WHAT IS STILL NOT MEASURED. Which lambda is real. No value of lambda is a measur
 
 SCOPE. This measures the INSTRUMENT, not an architecture. Nothing here ranks the 31 cells, and the h_rule ranking remains density-dependent (finding 122, Spearman +0.8464) and must not be quoted. The separation from the 0.01 bar is unaffected: every number above is a statement about which emissions got scored, not about which model is smaller.
 
+==============================================================================
+POST-HOC, NOT REGISTERED -- what the model does when it jumps ahead of DD
+==============================================================================
+  rho   unforced namings   wrong colour there   share wrong   share RIGHT
+  0.95             3203                 926         0.289         0.711
+  0.90             8756                2471         0.282         0.718
+  0.85            19358                6257         0.323         0.677
+  0.80            28564                9820         0.344         0.656
+  0.75            36164               12891         0.356         0.644
+  0.70            44738               17213         0.385         0.615
+  0.65            51090               20549         0.402         0.598
+  0.60            57876               24447         0.422         0.578
+  0.55            59606               26198         0.440         0.560
+  0.50            61352               27888         0.455         0.545
+  0.45*           62173               29483         0.474         0.526
+  0.40*           61877               30130         0.487         0.513
+  0.35*           61188               30769         0.503         0.497
+  0.33*           61122               30828         0.504         0.496
+  pooled share wrong 0.4373, so the share RIGHT is 0.5627.
+
+Neither 1.000 nor 0.75. If naming an unforced cell were itself the error the share wrong would be 1.000; if off-support emissions were blind guesses at q = 4 it would be 0.75. So n_err counts a wrong COLOUR, forced cell or not -- which is how this stage reads it -- and the model colours cells DD has NOT yet forced correctly 56% of the time, against 25% for a blind guess.
+Earlier decks on this project call n_err 'first errors of any kind', which is loose: a rollout that names an unforced cell and gets the colour RIGHT is a stopping-condition failure but is NOT censored. The correction is stated in this stage's deck.
+The competence degrades with density -- 71% right at rho = 0.95 down to 50% at rho = 0.33 -- so the rollouts censoring removes are not incompetent. They are the ones that ran ahead of DD and were wrong about half the time. That is a reason to expect lambda near 1 rather than far above it, and lambda* needs only 1.19.
+
 E1-E5: HIT MISS HIT HIT HIT
