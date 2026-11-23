@@ -43,7 +43,7 @@ import json
 import math
 import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import matplotlib
 matplotlib.use("Agg")
@@ -354,7 +354,17 @@ def fig_d5_trainability():
                              % (k, seen[k], p))
         seen[k] = p
 
+    # Three seeds finish within a couple of hundredths of a nat of each other,
+    # so the right-hand names collide -- at N=96 stage DQ3's seed 2 ends 0.019
+    # nats from seed 1 and the two words print on top of one another. Route the
+    # names through label_column, which nudges them apart, but ONLY once a panel
+    # holds more than two curves: at two it must keep calling label_line inline
+    # so stage DQ's published figure reproduces byte-for-byte (its N=120 pair
+    # ends 0.04 nats apart, inside label_column's gap, so the column WOULD move
+    # them). Same guard, same reason, as overlap_style.
+    per_panel = Counter(n for (n, _s) in seen)
     fig, panels, _ = facet({cell_of(p)[0] for p in hits})
+    marks = {n: [] for n in panels}
     for p in hits:
         n, seed = cell_of(p)
         ax = panels[n]
@@ -364,8 +374,12 @@ def fig_d5_trainability():
             continue
         col = SERIES[seed % len(SERIES)]
         ax.plot(xs, ys, "-", color=col, lw=2.2, rasterized=True)
-        label_line(ax, xs[-1], ys[-1], "seed %d" % seed, color=col)
+        if per_panel[n] > 2:
+            marks[n].append((xs[-1], ys[-1], "seed %d" % seed, col))
+        else:
+            label_line(ax, xs[-1], ys[-1], "seed %d" % seed, color=col)
     for n, ax in panels.items():
+        label_column(ax, marks[n])
         ax.set_title("N = %d" % n, color=MUTED, fontsize=11)
         style_axes(ax, xlabel="epoch")
     style_axes(panels[min(panels)], ylabel="validation NLL (nats / token)")
@@ -486,7 +500,17 @@ def fig_d4():
         lx, ly = curve(limit.get(n, {}).values())
         if lx is not None:
             ax.plot(lx, ly, "--", color=MUTED, lw=1.4, rasterized=True)
-            label_line(ax, lx[-1], ly[-1], "limit", color=MUTED)
+            # The censoring limit is drawn to the LAST measured density, so a
+            # seed that stays measurable all the way down ends on top of it --
+            # stage DQ3's N=120 seed 2 runs to T=33 and its name printed
+            # straight through the word "limit". Put the limit into the same
+            # label column as the seeds so they get nudged apart together, but
+            # only where a third seed exists; at two cells it keeps its own
+            # label_line so stage DQ's published panel is unchanged.
+            if len(per_n[n]) > 2:
+                marks[n].append((lx[-1], ly[-1], "limit", MUTED))
+            else:
+                label_line(ax, lx[-1], ly[-1], "limit", color=MUTED)
         label_column(ax, marks[n])
         ax.set_title("N = %d" % n, color=MUTED, fontsize=11)
         style_axes(ax, xlabel="DD rounds in the instance, $T$")

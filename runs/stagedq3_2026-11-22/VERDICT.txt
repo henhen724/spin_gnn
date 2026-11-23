@@ -1,0 +1,48 @@
+STAGE DQ3 -- scored against runs/stagedq3_2026-11-22/REGISTERED.md
+ensemble d=4 q=3   chance = ln 3 = 1.098612 nats
+one knob moves against stage DQ: the seed, 0/1 -> 2
+
+all cells, both stages (DQ seeds 0/1 for context, DQ3 seed 2 new)
+   cell         rea_color      acc     rea_node      acc     round_mk      acc
+   N=96   s0      0.4468   0.7671       0.6356   0.7803       0.3677   0.8091
+   N=96   s1      0.0000   1.0000       0.0504   0.9851       0.1075   0.9547
+   N=96   s2      0.0003   0.9999       0.3951   0.8634       0.3845   0.8294
+   N=120  s0      1.0987   0.3297       0.6628   0.7729       0.4449   0.7853
+   N=120  s1      0.0001   1.0000       1.0507   0.6479       0.5410   0.7469
+   N=120  s2      0.0002   0.9999       0.0847   0.9723       0.1402   0.9432
+
+E1 -- is reason_color bimodal? (per cell, pooled over density)
+   N=96   s2  reason_color 0.0003  -> rule exact
+   N=120  s2  reason_color 0.0002  -> rule exact
+E1 HIT: every cell is at an extreme, consistent with the colour head having two basins rather than a continuum.
+
+E2 -- is N the driver? (falsified if N=120 s2 is at the prior)
+   N=120 s2  reason_color 0.0002   chance ln 3 = 1.098612
+E2 HIT: 2 of 3 seeds at N=120 hold the colouring rule, so the collapse is not a function of size at this N.
+
+E3 -- does search degrade with N regardless?
+   N=96   s2  reason_node  0.3951  acc 0.8634
+   N=120  s2  reason_node  0.0847  acc 0.9723
+   N=120 - N=96 = -0.3103
+E3 MISS: search did NOT worsen with N on this seed, which contradicts the one trend that held across all four stage DQ cells
+E4 -- is round_mark the N-sensitive zero section?
+   N=96   s2  round_mark   0.3845  acc 0.8294
+   N=120  s2  round_mark   0.1402  acc 0.9432
+   N=120 - N=96 = -0.2443
+E4 MISS: ordering FAILS (-0.2443); both cells clear the 0.01 bar (0.3845 at N=96, 0.1402 at N=120)
+   D3 as registered never gated this section even though its data entropy is exactly zero.
+
+E5 -- a_eff at rho=0.32, the standing metric
+   (standing best on this eval: 0.99191, N=96 s1 of stage DQ)
+   DQ  N=96   s0  T  11.57  n_blank  66  solve 0.0000  a_eff < 0.9285
+   DQ  N=96   s1  T  11.57  n_blank  66  solve 0.5850  a_eff   0.9919
+   DQ3 N=96   s2  T  11.57  n_blank  66  solve 0.0125  a_eff   0.9358
+   DQ  N=120  s0  T  12.21  n_blank  82  solve 0.0000  a_eff < 0.9420
+   DQ  N=120  s1  T  12.21  n_blank  82  solve 0.0000  a_eff < 0.9420
+   DQ3 N=120  s2  T  12.21  n_blank  82  solve 0.3000  a_eff   0.9854
+E5 MISS: best DQ3 cell is 0.98542 at N=120 s2, below the standing 0.99191. No improvement is claimed.
+
+trainability (same readout as stage DQ's D5, not a prediction)
+   N=96   s2  50 ep  first 2.4336 -> final 1.5416  best 1.5416 @ep49  gap +0.0000
+   N=120  s2  50 ep  first 3.0594 -> final 1.5927  best 1.5924 @ep48  gap +0.0003
+   A gap of +0.0002 is an ORDERING in a noisy tail, not the registered 'flat at its initial plateau'. Stage DQ's N=120 cells flagged on exactly that and fell 3.06 -> 1.74.

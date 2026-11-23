@@ -5,10 +5,12 @@ split  /scratch/users/hshunt/spin_gnn/runs/stagedq_2026-11-21
 split  /scratch/users/hshunt/spin_gnn/runs/stagedq3_2026-11-22
 
 DQ3 contribution at draw time:
-  rho_curve 1
+  rho_curve 2
+      /scratch/users/hshunt/spin_gnn/sudoku_dq3_2026-11-22/rho_curve_n120_s2_53313361_1.csv
       /scratch/users/hshunt/spin_gnn/sudoku_dq3_2026-11-22/rho_curve_n96_s2_53313361_0.csv
-  history   1
+  history   2
+      /scratch/users/hshunt/spin_gnn/sudoku_dq3_2026-11-22/n120_d4_q3_L12_s2/d0256_h04_L12_ff01024_lr1e-03_pre_shuf_fall_s02/history.json
       /scratch/users/hshunt/spin_gnn/sudoku_dq3_2026-11-22/n96_d4_q3_L12_s2/d0256_h04_L12_ff01024_lr1e-03_pre_shuf_fall_s02/history.json
-  dqsplit   0
-
-PARTIAL -- not every DQ3 source had landed.
+  dqsplit   2
+      /scratch/users/hshunt/spin_gnn/runs/stagedq3_2026-11-22/dqsplit_0of2.csv
+      /scratch/users/hshunt/spin_gnn/runs/stagedq3_2026-11-22/dqsplit_1of2.csv

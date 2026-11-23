@@ -158,10 +158,16 @@ def score_e3_e4(sec, out):
                               "across all four stage DQ cells"))
         else:
             above = vals[96] > E4_BAR and vals[120] > E4_BAR
-            line(out, "E4 %s: ordering %s, both above the %.2f bar %s"
+            # E4 registered TWO conditions, so say which of them failed rather
+            # than splicing a bare "yes" onto the sentence: a reader checking
+            # a MISS needs to know whether the ordering went the wrong way or
+            # the section simply sat at its floor.
+            line(out, "E4 %s: ordering %s (%+.4f); both cells %s the %.2f "
+                      "bar (%.4f at N=96, %.4f at N=120)"
                  % ("HIT" if (d > 0 and above) else "MISS",
-                    "holds" if d > 0 else "fails", E4_BAR,
-                    "yes" if above else "NO"))
+                    "holds" if d > 0 else "FAILS", d,
+                    "clear" if above else "do NOT clear",
+                    E4_BAR, vals[96], vals[120]))
             line(out, "   D3 as registered never gated this section even "
                       "though its data entropy is exactly zero.")
 
@@ -257,8 +263,19 @@ def main():
     except SystemExit:
         secD, curD = {}, {}
 
-    table(out, dict(secD, **sec3),
-          sorted(set(list(secD) + list(sec3))),
+    # {**a, **b}, NOT dict(a, **b): cells are keyed by the (N, seed) TUPLE and
+    # `dict(a, **b)` accepts only string keyword keys, so that form raised
+    # "TypeError: keywords must be strings" the first time this ran with real
+    # DQ3 artefacts (53314246_1, 2026-11-22 20:49). The dry run could not have
+    # caught it -- it exercised score_e1..score_e5 directly, while this line
+    # lives in main(), which refuses to run at all until DQ3 data exists. The
+    # guard that makes main() safe is what made this line untestable, so the
+    # end-to-end path is now run against real CSVs before the verdict is kept.
+    merged = {**secD, **sec3}
+    assert len(merged) == len(secD) + len(sec3), \
+        "a cell key appears in both stages; they must never be pooled"
+    table(out, merged,
+          sorted(merged),
           "all cells, both stages (DQ seeds 0/1 for context, DQ3 seed 2 new)")
     line(out)
     score_e1(sec3, out)
