@@ -100,9 +100,9 @@ E5 MISS: pooled h_rule at rho 0.33 is 0.00053 against 0.00057 at rho 0.50, a fac
    IT FALLS, WHICH IS THE REGISTERED ARTEFACT AND NOT A FINDING. Censoring keeps the rollouts that reached the deep bins without erring, so the low-rho bins are scored on a selected sample and h_rule there is biased DOWN. This stage therefore CANNOT say whether DD's rule degrades below rho_c; it reports that the question is unanswerable from censored rollouts and needs an eval that scores past the first error.
    full sequence high rho to low: 0.00062 0.00070 0.00088 0.00086 0.00085 0.00087 0.00069 0.00060 0.00061 0.00057 0.00053 0.00050 0.00052 0.00053
 E6 MISS: Spearman(h_rule 10, h_rule 14) = +0.8464 over 31 architectures, against a 0.90 bar
-   (12 cells measure exactly zero at ten densities, so ties are doing some of this work; read it as 'the ranking did not reorder', never as resolution.)
+   (over these 31, 15 measure exactly zero at ten densities and 13 at fourteen, so ties are doing some of this work; read it as 'the ranking did not reorder', never as resolution.)
    THE FALSIFIER FIRED, SO STATE ITS SCOPE. It falsifies the FULL RANKING: the biggest rank moves are L=16 h=4 no_mlp d176 23->9, L=12 h=4 no_mlp d128 17->5, L=16 h=4 no_mlp d128 14->6, L=8 h=4 no_mlp 10->14.
-   It does NOT falsify the claim finding 121 actually made. E3 and E4 both HIT: the same 2 architectures sit above the bar, the same 3 are worst, and the headline cells move by less than 0.0001. 121 said in terms that h_rule SEPARATES and does not rank -- 12 cells at exactly zero, 5.4x across the whole sub-gate bulk -- so a bulk reordering under a density change is that caveat coming true, not a surprise.
+   It does NOT falsify the claim finding 121 actually made. E3 and E4 both HIT: the same 2 architectures sit above the bar, the same 3 are worst, and the headline cells move by less than 0.0001. 121 said in terms that h_rule SEPARATES and does not rank -- of its 25 sub-gate architectures 12 measured exactly zero and the remaining 13 spanned only 5.4x -- so a bulk reordering under a density change is that caveat coming true, not a surprise.
    WHAT IS NOW ON RECORD: the h_rule RANKING is density-dependent and must never be quoted; the h_rule SEPARATION is not.
 
 ==============================================================================

@@ -232,9 +232,16 @@ def score(fh, a10, a14, dens):
     line(fh, "E6 %s: Spearman(h_rule 10, h_rule 14) = %+.4f over 31 "
              "architectures, against a %.2f bar"
          % ("HIT" if rs >= E6_RHO else "MISS", rs, E6_RHO))
-    line(fh, "   (12 cells measure exactly zero at ten densities, so ties are "
-             "doing some of this work; read it as 'the ranking did not "
-             "reorder', never as resolution.)")
+    # Counted, never quoted from stage RULE: its "12 measured at exactly zero"
+    # is the 25-architecture SUB-GATE population of R3, while E6 ranks all 31.
+    # Over all 31 the count is 15 at ten densities and 13 at fourteen, and
+    # mixing the two populations is what made this line wrong once already.
+    z10 = sum(1 for a in a10 if a["h_rule"] == 0.0)
+    z14 = sum(1 for a in a14 if a["h_rule"] == 0.0)
+    line(fh, "   (over these 31, %d measure exactly zero at ten densities and "
+             "%d at fourteen, so ties are doing some of this work; read it as "
+             "'the ranking did not reorder', never as resolution.)"
+         % (z10, z14))
     if rs < E6_RHO:
         # A registered falsifier fired. Say exactly what it falsified and what
         # it did not, with the movers named -- not a paragraph defending 121.
@@ -251,9 +258,10 @@ def score(fh, a10, a14, dens):
                  "E3 and E4 both HIT: the same 2 architectures sit above the "
                  "bar, the same 3 are worst, and the headline cells move by "
                  "less than 0.0001. 121 said in terms that h_rule SEPARATES "
-                 "and does not rank -- 12 cells at exactly zero, 5.4x across "
-                 "the whole sub-gate bulk -- so a bulk reordering under a "
-                 "density change is that caveat coming true, not a surprise.")
+                 "and does not rank -- of its 25 sub-gate architectures 12 "
+                 "measured exactly zero and the remaining 13 spanned only "
+                 "5.4x -- so a bulk reordering under a density change is that "
+                 "caveat coming true, not a surprise.")
         line(fh, "   WHAT IS NOW ON RECORD: the h_rule RANKING is "
                  "density-dependent and must never be quoted; the h_rule "
                  "SEPARATION is not.")
