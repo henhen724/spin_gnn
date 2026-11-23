@@ -61,14 +61,23 @@ R1 HIT: 6 architectures clear the 0.740 gate; 0 of them fail h_rule < 0.01
    gate-passing h_rule: L=16 h=4 no_mlp d192 0.00001, L=12 h=4 no_mlp d224 0.00000, L=12 h=4 no_mlp 0.00002, L=6 h=4 full 0.00000, L=8 h=4 full 0.00001, L=12 h=4 full 0.00000
 R2 HIT: finding 100's three sit at 21806x/9996x/1074x the gate-passing median (3.37e-06); the weakest is 1074x against a 10x bar
    QUOTE THE ABSOLUTES, NOT THE RATIO: 0.0734, 0.0336, 0.0036 against ~3e-06 for the median gate-passing architecture -- three to four orders of magnitude, and the ratio's precision is an artefact of a near-zero denominator.
-   L=16 h=4 tied_no_mlp d192      h_rule 0.07339  (810 errors / 11037 forced)  21805.9x
-   L=6 h=4 no_mlp d128 ep100      h_rule 0.03364  (526 errors / 15635 forced)  9996.1x
-   L=12 h=4 no_mlp d160           h_rule 0.00362  (216 errors / 59730 forced)  1074.5x
+   L=16 h=4 tied_no_mlp d192      h_rule 0.07339 [0.06867, 0.07840]  (810 errors / 11037 forced)
+   L=6 h=4 no_mlp d128 ep100      h_rule 0.03364 [0.03093, 0.03659]  (526 errors / 15635 forced)
+   L=12 h=4 no_mlp d160           h_rule 0.00362 [0.00317, 0.00413]  (216 errors / 59730 forced)
+   gate-passing L=16 h=4 no_mlp d192 h_rule 0.00001 [0.00000, 0.00005]  (1 / 114283)
+   gate-passing L=12 h=4 no_mlp d224 h_rule 0.00000 [0.00000, 0.00003]  (0 / 113091)
+   gate-passing L=12 h=4 no_mlp   h_rule 0.00002 [0.00000, 0.00006]  (2 / 130276)
+   gate-passing L=6 h=4 full      h_rule 0.00000 [0.00000, 0.00003]  (0 / 132718)
+   gate-passing L=8 h=4 full      h_rule 0.00001 [0.00000, 0.00004]  (1 / 148563)
+   gate-passing L=12 h=4 full     h_rule 0.00000 [0.00000, 0.00002]  (0 / 157411)
+   The intervals do not overlap, so this is not a small-denominator artefact: the broken cells have 11k-60k forced emissions.
 R3 HIT: below the gate h_rule spans 0.00001-0.07339 = 7638.1x over 13 rankable architectures, against a 5x bar
    excluded: 0 with fewer than 100 forced emissions; 12 measured at exactly zero
    compare finding 99: DD-faithful rho_50 spans 0.0173 here, 'narrower than one s*', and the ranking there is noise.
+   BUT IT IS A SEPARATION, NOT A GRADED RANKING: drop finding 100's three and the remaining 10 sub-gate architectures span only 0.00001-0.00005 = 5.4x. h_rule tells 'has the rule' from 'does not'; among those that have it, it does not rank them, and this stage does not claim it does.
 R4 HIT: Spearman(h_rule, published rho_50) = +0.3609 over 31 architectures with both defined, against a |0.50| bar
    (ties are broken by argsort, the project's existing spearman; with 15 zero-hazard cells that inflates |rho_s| if anything, so a HIT here is conservative.)
+   HONEST READING: the criteria AGREE at the extreme and are uninformative through the bulk. 22 architectures sit in rho_50 0.73-0.79 (a 0.06 band) while their h_rule spans 0.00001-0.00005. The weak coefficient is that bulk, not independence.
 R5 HIT: 8 architectures are strictly smaller objects than J2 (L=16 h=4 no_mlp d192, 2504890 params); 6 of them have h_rule < 0.01 while FAILING the 0.740 gate
    J2 itself: h_rule 0.00001, rho_50 0.5955, 114283 forced emissions
    L=16 h=4 tied_no_mlp d192       270010 params  1 seed   h_rule 0.07339   rho_50 0.8560    
@@ -80,7 +89,7 @@ R5 HIT: 8 architectures are strictly smaller objects than J2 (L=16 h=4 no_mlp d1
    L=12 h=4 no_mlp d192           1908922 params  3 seeds  h_rule 0.00001   rho_50 0.7546    RULE-INTACT, GATE-FAILING
    L=16 h=4 no_mlp d176           2115930 params  3 seeds  h_rule 0.00000   rho_50 0.7431    RULE-INTACT, GATE-FAILING
 
-   SMALLEST SEEDED OBJECT WITH DD'S RULE INTACT: L=16 h=4 no_mlp d128, 1145658 params, 5 seeds, h_rule 0.00001 (per-seed 0.0000/0.0000/0.0000/0.0000/0.0000) -- it FAILS the solving gate at rho_50 0.7612.
+   SMALLEST SEEDED OBJECT WITH DD'S RULE INTACT: L=16 h=4 no_mlp d128, 1145658 params, 5 seeds, h_rule 0.00001 [0.00000, 0.00005] (1 errors / 104076 forced; per-seed 0.0000/0.0000/0.0000/0.0000/0.0000) -- it FAILS the solving gate at rho_50 0.7612.
    Against J2 (2504890 params) that is 2.19x smaller as an object, on a criterion J2 also satisfies (0.00001).
    SUGGESTIVE ONLY, NOT THE HEADLINE: L=12 h=4 no_mlp d128 is smaller still at 879418 params with h_rule 0.00000, but it has 1 seed -- findings 41/42 measured 0.1627 of seed spread at fixed architecture, and 119/120 showed a single seed flipping a size ordering. It is a candidate to seed, not a result.
 

@@ -1,0 +1,6 @@
+stage RULE figures
+loader: scripts/stagerule_fit.py load() + per_cell()
+data:   runs/stagelogic_2026-11-17/F_hazard_all_*of10.csv
+        runs/stagelogic_2026-11-17/LF_summary_all_*of10.csv
+broken (finding 100's three): ['L=12 h=4 no_mlp d160', 'L=16 h=4 tied_no_mlp d192', 'L=6 h=4 no_mlp d128 ep100']
+zeros drawn as open markers at the floor 1e-06

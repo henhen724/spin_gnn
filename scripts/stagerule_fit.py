@@ -27,7 +27,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from stageexp_fit import fnum, tobool, read_shards, med  # noqa: E402
+from stageexp_fit import fnum, tobool, read_shards, med, wilson  # noqa: E402
 from stagegate_fit import (GRID, FIT_RHOS, GATE, J2_LABEL,  # noqa: E402
                            rho50, spearman)
 
@@ -316,10 +316,22 @@ def score(fh, arch, named):
              "near-zero denominator."
          % (", ".join("%.4f" % a["h_rule"] for a in
                       sorted(three, key=lambda x: -x["h_rule"])), gmed))
+    # A rate needs an interval. 810/11037 is a tight measurement and saying so
+    # forecloses the obvious objection that small architectures simply have
+    # small denominators -- the denominators are in the tens of thousands.
     for cell, r in ratios:
         a = next(x for x in arch if x["cell"] == cell)
-        line(fh, "   %-30s h_rule %.5f  (%d errors / %d forced)  %.1fx"
-             % (cell, a["h_rule"], int(a["err_in_F"]), int(a["in_F"]), r))
+        lo, hi = wilson(int(a["err_in_F"]), int(a["in_F"]))
+        line(fh, "   %-30s h_rule %.5f [%.5f, %.5f]  (%d errors / %d forced)"
+             % (cell, a["h_rule"], lo, hi, int(a["err_in_F"]), int(a["in_F"])))
+    for a in gate:
+        lo, hi = wilson(int(a["err_in_F"]), int(a["in_F"]))
+        line(fh, "   gate-passing %-17s h_rule %.5f [%.5f, %.5f]  (%d / %d)"
+             % (a["cell"], a["h_rule"], lo, hi, int(a["err_in_F"]),
+                int(a["in_F"])))
+    line(fh, "   The intervals do not overlap, so this is not a "
+             "small-denominator artefact: the broken cells have 11k-60k "
+             "forced emissions.")
 
     # R3 -- a zero denominator is not a zero hazard (trap 6)
     thin = [a for a in below if a["in_F"] < R3_MIN_DENOM]
@@ -345,6 +357,19 @@ def score(fh, arch, named):
             len(zero)))
     line(fh, "   compare finding 99: DD-faithful rho_50 spans 0.0173 here, "
              "'narrower than one s*', and the ranking there is noise.")
+    # THE RESOLUTION IS A SEPARATION, NOT A RANKING. Strip the three broken
+    # cells and the remaining sub-gate span collapses, so h_rule tells apart
+    # "has the rule" from "does not" and does NOT grade the ones that have it.
+    rest = [a for a in rank if a["cell"] not in named]
+    if rest:
+        rlo = min(a["h_rule"] for a in rest)
+        rhi = max(a["h_rule"] for a in rest)
+        line(fh, "   BUT IT IS A SEPARATION, NOT A GRADED RANKING: drop "
+                 "finding 100's three and the remaining %d sub-gate "
+                 "architectures span only %.5f-%.5f = %.1fx. h_rule tells "
+                 "'has the rule' from 'does not'; among those that have it, it "
+                 "does not rank them, and this stage does not claim it does."
+             % (len(rest), rlo, rhi, rhi / rlo if rlo > 0 else float("inf")))
 
     # R4
     xs = [a["h_rule"] for a in arch if a["h_rule"] == a["h_rule"]
@@ -359,6 +384,21 @@ def score(fh, arch, named):
              "spearman; with %d zero-hazard cells that inflates |rho_s| if "
              "anything, so a HIT here is conservative.)"
          % sum(1 for a in arch if a["h_rule"] == 0.0))
+    # READ THE FIGURE, NOT ONLY THE COEFFICIENT. rule_vs_gate.png shows the two
+    # criteria AGREEING at the extreme -- the three broken architectures hold
+    # both the worst h_rule and the worst rho_50 -- and disagreeing through the
+    # bulk, where rho_50 sits in a narrow band while h_rule spans orders of
+    # magnitude. "+0.36" is the average of those two regimes, so the honest
+    # claim is NOT "the gate is unrelated to the rule".
+    bulk = [a for a in arch if a["rho50"] == a["rho50"]
+            and 0.73 <= a["rho50"] <= 0.79 and a["cell"] not in named]
+    blo = min((a["h_rule"] for a in bulk if a["h_rule"] > 0), default=float("nan"))
+    bhi = max((a["h_rule"] for a in bulk if a["h_rule"] > 0), default=float("nan"))
+    line(fh, "   HONEST READING: the criteria AGREE at the extreme and are "
+             "uninformative through the bulk. %d architectures sit in "
+             "rho_50 0.73-0.79 (a 0.06 band) while their h_rule spans "
+             "%.5f-%.5f. The weak coefficient is that bulk, not independence."
+         % (len(bulk), blo, bhi))
 
     # R5 -- the prediction that answers the brief
     if j2 is None:
@@ -399,11 +439,14 @@ def score(fh, arch, named):
                          "seeds; nothing here is a measurement of its "
                          "architecture and no minimum is claimed.")
             else:
+                blo, bhi = wilson(int(best["err_in_F"]), int(best["in_F"]))
                 line(fh, "   SMALLEST SEEDED OBJECT WITH DD'S RULE INTACT: %s, "
-                         "%d params, %d seeds, h_rule %.5f (per-seed %s) -- it "
+                         "%d params, %d seeds, h_rule %.5f [%.5f, %.5f] "
+                         "(%d errors / %d forced; per-seed %s) -- it "
                          "FAILS the solving gate at rho_50 %.4f."
                      % (best["cell"], best["params"], best["n_seeds"],
-                        best["h_rule"],
+                        best["h_rule"], blo, bhi, int(best["err_in_F"]),
+                        int(best["in_F"]),
                         "/".join("%.4f" % h for _, h, _, _ in best["seeds"]),
                         best["rho50"]))
                 line(fh, "   Against J2 (%d params) that is %.2fx smaller as an "
