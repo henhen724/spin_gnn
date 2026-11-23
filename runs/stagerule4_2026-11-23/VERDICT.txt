@@ -1,0 +1,259 @@
+STAGE RULE4 -- h_rule on the censoring-free j = 0 slice
+================================================================
+
+Registered in runs/stagerule4_2026-11-23/REGISTERED.md, committed
+0d74728 BEFORE this script existed. A refit of stage LOGIC's
+shards: nothing trained, nothing submitted, no rollout
+regenerated.
+
+  hazard rows read        20039
+  (run, rho) sequences    1106
+  densities               14
+
+DIAGNOSTICS
+
+  D1  zero censoring at j = 0: n_at_risk(0) = 400 everywhere
+      sequences checked 1106, violations 0, missing j=0 0
+      -> PASS
+
+  D2  reproduce finding 100's total rule errors
+      got 1988, registered 1988
+      -> PASS
+
+  D3  summing over all j reproduces stages RULE2 and RULE3
+      densities 14, worst relative difference 0.000e+00
+      -> PASS
+
+  D4  no impossible counts at j = 0
+      violations 0
+      -> PASS
+
+  D5  the denominators match the ones tabled in the
+      registration before the numerator was read
+      mismatches 0
+      -> PASS
+
+
+THE CENSORING-FREE SLICE, PER DENSITY
+
+  rho    n_F(0)   n_err_F(0)   h_rule(0)      named-forced
+  0.95     30442           35   0.001150          96.3%
+  0.90     29687           48   0.001617          93.9%
+  0.85     28502           74   0.002596          90.2%
+  0.80     27681           80   0.002890          87.6%
+  0.75     27163           87   0.003203          86.0%
+  0.70     25198           80   0.003175          79.7%
+  0.65     24924           77   0.003089          78.9%
+  0.60     24225           65   0.002683          76.7%
+  0.55     24201           62   0.002562          76.6%
+  0.50     23607           62   0.002626          74.7%
+  0.45     23659           56   0.002367          74.9%
+  0.40     23530           52   0.002210          74.5%
+  0.35     24055           50   0.002079          76.1%
+  0.33     23990           50   0.002084          75.9%
+
+  mean_n_blank per density, for scale: 3.0, 5.0, 8.0, 10.0, 12.0, 15.0, 17.0, 20.0, 22.0, 24.0, 27.0, 29.0, 31.6, 32.0
+
+
+GROUP COMPARISONS
+
+  E1: four added bins vs rho = 0.50
+    numerator group   E =   208   F =    95234   h = 0.002184
+    reference group   E =    62   F =    23607   h = 0.002626
+    ratio                     0.8316
+    Poisson 95%               [0.6263, 1.1043]   SE(log R) = 0.1447
+    jackknife 95% (79 runs)   [0.1137, 1.5495]   SE = 0.3663
+    interval width (hi/lo)    1.763
+
+  E2: four added bins vs rho >= 0.80
+    numerator group   E =   208   F =    95234   h = 0.002184
+    reference group   E =   237   F =   116312   h = 0.002038
+    ratio                     1.0719
+    Poisson 95%               [0.8898, 1.2913]   SE(log R) = 0.0950
+    jackknife 95% (79 runs)   [-0.2559, 2.3997]   SE = 0.6775
+    interval width (hi/lo)    1.451
+
+REGISTERED PREDICTIONS
+
+  E1  the clean slice does not reproduce the pooled fall
+      ratio added / rho=0.50 = 0.8316, 95% [0.6263, 1.1043]
+      MISS if the interval lies entirely below 1.0
+      -> HIT
+
+  E2  the rule genuinely degrades by >= 1.3x
+      ratio added / rho>=0.80 = 1.0719, 95% [0.8898, 1.2913]
+      MISS if below 1.3, or the interval includes 1.0
+      -> MISS
+
+  E3  Spearman(rho, h_rule(0)) over 14 densities is negative
+      rho_s = +0.1253
+      MISS if zero or positive
+      -> MISS
+
+  E4  h_rule(0) < 0.01 at all fourteen densities
+      worst density rho = 0.75 at h = 0.003203
+      MISS if any density is at or above the bar
+      -> HIT
+
+  E5  the 95% interval on E2's ratio is narrower than 2.0x
+      width hi/lo = 1.451  (Poisson); jackknife SE = 0.6775
+      MISS -> E2 is UNDERPOWERED and its verdict is not read
+      -> HIT
+
+
+WHAT THIS SAYS, AND WHAT IT STILL DOES NOT
+
+  On the one slice where censoring is exactly zero, h_rule(0) is
+  0.002038 pooled over rho >= 0.80, 0.002626 at rho = 0.50 and 0.002184
+  pooled over the four bins below rho_c = 0.465.
+
+  E1 HIT and E2 MISSED under a passing E5. The pooled FALL
+  does not survive the clean slice -- so stage RULE2's
+  reading was right to refuse it -- but the clean slice does
+  not show the registered 1.3x degradation either.
+
+  E2 AND E3 BOTH MISSED FOR THE SAME REASON, AND IT IS NOT
+  NOISE. Both tested a MONOTONE trend in rho. h_rule(0) is
+  not monotone: it is humped, peaking well above rho_c, and
+  a ratio of the four lowest bins against the four highest
+  straddles the peak and nets out near 1. The registration
+  chose the wrong shape, not the wrong size -- see the
+  post-hoc arms section, where both sides are monotone to
+  |Spearman| > 0.97 and both ratios exclude 1.
+
+  STILL NOT MEASURED, and j = 0 does not fix it: h_rule
+  conditions on the model NAMING a forced cell. That share runs
+  96.3% at rho = 0.95 down to 75.9% at rho = 0.33, so the
+  denominators are differently composed across densities. The
+  slice is censoring-free, NOT unbiased.
+
+  Also not addressed: all 79 runs are evaluated on the SAME 400
+  instances per bin, so errors concentrated on a few hard
+  instances would widen the true interval beyond both the
+  Poisson and the delete-one-run figures. The shards carry no
+  per-instance breakdown, so this is named, not corrected.
+
+  NO TRAINING FOLLOWS FROM ANY OF THIS, as registered.
+
+POST-HOC, NOT REGISTERED: the hump E3's monotone test averaged away
+
+  peak at rho = 0.75, h_rule(0) = 0.003203
+  high arm (rho >= 0.75, 5 points)  Spearman = -1.0000
+  low  arm (rho <= 0.75, 10 points)  Spearman = +0.9758
+
+  Both arms as rate ratios against the peak. Censoring is
+  exactly zero in every one of these numbers.
+
+    rho = 0.95 (densest)     h = 0.001150   R = 0.3590  95% [0.2425, 0.5314]  excludes 1
+    rho >= 0.80 pooled       h = 0.002038   R = 0.6362  95% [0.4976, 0.8134]  excludes 1
+    four added bins pooled   h = 0.002184   R = 0.6819  95% [0.5309, 0.8758]  excludes 1
+
+  So BOTH the rise to the peak and the fall away from it are
+  resolved, in a slice with no censoring at all. The fall below
+  rho_c is therefore NOT purely a survivorship artefact -- part
+  of it is real. Stage RULE3's lambda* = 1.19 bounded how much
+  censoring COULD explain; it never said the fall was entirely
+  censoring, and this says it is not.
+
+POST-HOC, NOT REGISTERED: j = 0 against every later index
+
+  rho   w0=F(0)/F_all   h_rule(0)   h_rule(j>=1)   h_rule pooled
+  0.95       0.338       0.001150      0.000353       0.000622
+  0.90       0.210       0.001617      0.000456       0.000699
+  0.85       0.142       0.002596      0.000591       0.000876
+  0.80       0.122       0.002890      0.000573       0.000857
+  0.75       0.109       0.003203      0.000557       0.000846
+  0.70       0.096       0.003175      0.000629       0.000874
+  0.65       0.096       0.003089      0.000440       0.000695
+  0.60       0.098       0.002683      0.000370       0.000596
+  0.55       0.099       0.002562      0.000391       0.000606
+  0.50       0.104       0.002626      0.000328       0.000566
+  0.45       0.113       0.002367      0.000300       0.000533
+  0.40       0.117       0.002210      0.000275       0.000501
+  0.35       0.123       0.002079      0.000308       0.000525
+  0.33       0.123       0.002084      0.000311       0.000530
+
+  The first deduction is where the rule errors are: h_rule(0) is
+  3x to 7x h_rule(j>=1) at every one of the fourteen densities.
+  So pooled h_rule is a LENGTH-WEIGHTED average of a bad first
+  index and a clean tail, and rho sets the length (mean_n_blank
+  runs 3 to 32). The weight w0 is where that bites.
+
+  BUT w0 DOES NOT EXPLAIN THE FALL. Split at the peak:
+
+    high arm  rho 0.95 -> 0.75 :  w0 0.338 -> 0.109 (0.32x)
+              h_rule(0) 0.001150 -> 0.003203 (2.79x)
+              pooled    0.000622 -> 0.000846 (1.36x)
+    low arm   rho 0.75 -> 0.33 :  w0 0.109 -> 0.123 (1.13x)
+              h_rule(0) 0.003203 -> 0.002084 (0.65x)
+              pooled    0.000846 -> 0.000530 (0.63x)
+
+  On the LOW arm w0 barely moves (0.109 -> 0.123), so there is no
+  dilution left to do the work, and the pooled fall (1.60x) and
+  the censoring-free j = 0 fall (1.54x) agree. THE FALL BELOW THE
+  PEAK IS REAL -- not dilution, and not censoring, because there
+  is none at j = 0.
+
+  What dilution DOES explain is the opposite: on the HIGH arm w0
+  falls 3.09x, which is why h_rule(0) rises 2.79x while the
+  pooled rate rises only 1.36x. Pooling MASKED a rise; it did not
+  manufacture a fall.
+
+  This does not contradict stage RULE3. lambda* = 1.19 was what
+  censoring WOULD need to erase the pooled fall, never a claim
+  that it does. The fall surviving at zero censoring is direct
+  evidence that lambda sits near 1, which is what finding 124's
+  off-support competence argued on separate grounds.
+
+  CAVEAT, stated not corrected: h_rule(j>=1) IS censored and
+  biased downward, so the j=0-vs-later gap is an upper estimate
+  of itself. The weight w0 is not -- it is a count of emissions,
+  and the pooled column is exactly stages RULE2 and RULE3's
+  number (D3 passed at 0.000e+00).
+
+POST-HOC, NOT REGISTERED: the clean window
+
+  j = 0 is clean by construction but thin. Summing instead over
+  every j where censoring has removed under 5% of rollouts
+  trades a little cleanliness for events. How much trace that
+  buys is itself the finding.
+
+  rho    jmax   n_F(<=jmax)   n_err_F   h_rule(<=jmax)
+  0.95      2         89988        56   0.000622
+  0.90      1         58227        69   0.001185
+  0.85      0         28502        74   0.002596
+  0.80      0         27681        80   0.002890
+  0.75      0         27163        87   0.003203
+  0.70      0         25198        80   0.003175
+  0.65      0         24924        77   0.003089
+  0.60      0         24225        65   0.002683
+  0.55      0         24201        62   0.002562
+  0.50      0         23607        62   0.002626
+  0.45      0         23659        56   0.002367
+  0.40      0         23530        52   0.002210
+  0.35      0         24055        50   0.002079
+  0.33      0         23990        50   0.002084
+
+  clean window, added bins vs rho >= 0.80
+    numerator group   E =   208   F =    95234   h = 0.002184
+    reference group   E =   279   F =   204398   h = 0.001365
+    ratio                     1.6001
+    Poisson 95%               [1.3371, 1.9148]   SE(log R) = 0.0916
+    jackknife 95% (79 runs)   [0.3222, 2.8780]   SE = 0.6520
+    interval width (hi/lo)    1.432
+
+  Events: 208 in the added bins against 208 at j = 0 alone.
+
+  DO NOT READ THAT RATIO AS A DENSITY EFFECT. jmax is 2 at
+  rho = 0.95 and 1 at rho = 0.90, but 0 everywhere else, so the
+  numerator is j = 0 only while the reference mixes in j = 1 and
+  j = 2. The index decomposition below shows those later indices
+  are far cleaner than j = 0, which is most of the 1.60.
+
+SCOPE
+
+  d5q4 at N = 48, 79 runs, 31 architectures, 400 instances per
+  bin, eval seed start 60,000,000,000. Nothing here is
+  per-architecture: every number is pooled over all runs,
+  because no single-seed rung is a measurement. The h_rule
+  RANKING is density-dependent and is not quoted anywhere.
