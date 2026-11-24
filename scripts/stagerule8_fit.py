@@ -367,15 +367,27 @@ def posthoc(fh, cells, runs, seq, iv, jk, j2, a14):
 
     # (d) what tightening would actually cost
     line(fh, "(d) what it would take to tighten it, since resampling cannot")
-    need = chi2.ppf(0.95, 2) / 2.0 / 1e-5
+    # The 2 errors are already observed and cannot be un-observed by adding
+    # seeds, so the numerator of the one-sided bound stays at k = 2 -- chi2(0.95,
+    # 2(k+1))/2 = 6.2958 -- and only F grows. Using the k = 0 constant 2.9957
+    # instead would describe a cell that never erred at all, which this is not,
+    # and would understate the cost by 2.1x.
+    c2 = chi2.ppf(0.95, 2 * (iv["k"] + 1)) / 2.0
+    need = c2 / 1e-5
     per_seed = iv["F"] / len(runs)
-    line(fh, "    with k = 0 further errors the one-sided bound is 2.9957/F, so "
-             "an upper bound under 1e-05 needs F >= %.0f forced emissions"
-         % need)
+    line(fh, "    the %d errors already observed stay in the numerator, so with "
+             "ZERO further errors the" % iv["k"])
+    line(fh, "    one-sided bound is %.4f/F and reaching 1e-05 needs F >= %.0f "
+             "forced emissions" % (c2, need))
     line(fh, "    this cell has %d over %d seeds = %.0f per seed, so that is "
              "~%.1f seeds at zero further errors -- i.e. %d more TRAINING runs."
          % (iv["F"], len(runs), per_seed, need / per_seed,
             math.ceil(need / per_seed) - len(runs)))
+    line(fh, "    (the k = 0 constant 2.9957/F would need only %.0f, but it "
+             "describes a cell that never"
+         % (chi2.ppf(0.95, 2) / 2.0 / 1e-5))
+    line(fh, "    erred at all; these two errors cannot be un-observed by "
+             "adding seeds.)")
     line(fh, "    the eval is already exhausted: all 14 densities, all j, all "
              "400 instances per bin are in the denominator, so no further "
              "rollouts exist to add without generating them.")

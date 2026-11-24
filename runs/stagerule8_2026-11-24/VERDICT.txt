@@ -70,8 +70,11 @@ POST-HOC -- read after the scored predictions, never a test
     that is 129x under the 0.01 'has DD's rule' bar.
     two-sided, for comparison: Wilson [6.775e-06, 9.008e-05], Clopper-Pearson [2.992e-06, 8.924e-05], exact Poisson [2.992e-06, 8.924e-05]
 (d) what it would take to tighten it, since resampling cannot
-    with k = 0 further errors the one-sided bound is 2.9957/F, so an upper bound under 1e-05 needs F >= 299573 forced emissions
-    this cell has 80956 over 3 seeds = 26985 per seed, so that is ~11.1 seeds at zero further errors -- i.e. 9 more TRAINING runs.
+    the 2 errors already observed stay in the numerator, so with ZERO further errors the
+    one-sided bound is 6.2958/F and reaching 1e-05 needs F >= 629579 forced emissions
+    this cell has 80956 over 3 seeds = 26985 per seed, so that is ~23.3 seeds at zero further errors -- i.e. 21 more TRAINING runs.
+    (the k = 0 constant 2.9957/F would need only 299573, but it describes a cell that never
+    erred at all; these two errors cannot be un-observed by adding seeds.)
     the eval is already exhausted: all 14 densities, all j, all 400 instances per bin are in the denominator, so no further rollouts exist to add without generating them.
 (e) against the standing reference J2 on the same eval
     L=16 h=4 no_mlp d192           1/164070  h_rule 6.095e-06  Wilson [1.076e-06, 3.453e-05]  1-sided < 2.891e-05
