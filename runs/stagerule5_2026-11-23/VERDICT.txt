@@ -1,0 +1,257 @@
+STAGE RULE5 -- the one denominator the model does not choose
+================================================================
+
+Registered in runs/stagerule5_2026-11-23/REGISTERED.md, committed
+b06b701 BEFORE this script existed. A refit of stage LOGIC's
+shards: nothing trained, nothing submitted, no rollout
+regenerated.
+
+  hazard rows read        20039
+  (run, rho) sequences    1106
+
+DIAGNOSTICS
+
+  D1  n_at_risk(0) = 400 everywhere; pooled = 31600 per density
+      sequences 1106, violations 0, missing j=0 0, bad pooled 0
+      -> PASS
+
+  D2  n_err(0) >= n_err_in_F(0) on every sequence
+      violations 0
+      -> PASS
+
+  D3  n_in_F(0) <= n_at_risk(0), so the unforced count is >= 0
+      violations 0
+      -> PASS
+
+  D4  n_F(0) reproduces the fourteen registered denominators
+      mismatches 0
+      -> PASS
+
+  D5  79 runs at every density
+      mismatches 0
+      -> PASS
+
+
+THE SELECTION-FREE SLICE, PER DENSITY
+
+  rho   at risk   named F    s_F     h_all(0)   h_rule(0)   h_unf(0)   unf/rule
+  0.95    31600    30442   0.963   0.020127   0.001150   0.518998     451.4x  
+  0.90    31600    29687   0.939   0.032595   0.001617   0.513330     317.5x  
+  0.85    31600    28502   0.902   0.051962   0.002596   0.506133     194.9x  
+  0.80    31600    27681   0.876   0.062184   0.002890   0.480990     166.4x  
+  0.75    31600    27163   0.860   0.070728   0.003203   0.484111     151.1x  
+  0.70    31600    25198   0.797   0.102911   0.003175   0.495470     156.1x  
+  0.65    31600    24924   0.789   0.107943   0.003089   0.499401     161.7x  
+  0.60    31600    24225   0.767   0.115063   0.002683   0.484203     180.5x  
+  0.55    31600    24201   0.766   0.119684   0.002562   0.502771     196.3x  
+  0.50    31600    23607   0.747   0.137373   0.002626   0.535343     203.8x  
+  0.45    31600    23659   0.749   0.138386   0.002367   0.543634     229.7x <
+  0.40    31600    23530   0.745   0.145886   0.002210   0.564808     255.6x <
+  0.35    31600    24055   0.761   0.135854   0.002079   0.562359     270.6x <
+  0.33    31600    23990   0.759   0.138987   0.002084   0.570565     273.8x <
+
+  s_F is the share of first emissions naming a forced cell --
+  the selection h_rule conditions on and h_all does not. Rows
+  marked < are the four bins below rho_c ~ 0.465, where an
+  off-trace colour on an UNFORCED cell need not be a logical
+  error at all, so h_all there is an UPPER BOUND (registration,
+  'the interpretive limit').
+
+  mean_n_blank for scale: 3.0, 5.0, 8.0, 10.0, 12.0, 15.0, 17.0, 20.0, 22.0, 24.0, 27.0, 29.0, 31.6, 32.0
+
+THE DECOMPOSITION, AND WHY THE SELECTION MATTERS
+
+    h_all(0) = s_F * h_rule(0) + (1 - s_F) * h_unf(0)
+
+  an identity, not a model: the two arms partition the 31,600
+  first emissions by whether the named cell was forced.
+
+  identity holds to 2.776e-17 across all fourteen densities
+
+  rho 0.95 -> 0.33:
+      s_F        0.963 -> 0.759   (0.79x)
+      h_rule(0)  0.001150 -> 0.002084   (1.81x)
+      h_unf(0)   0.518998 -> 0.570565   (1.10x)
+      h_all(0)   0.020127 -> 0.138987   (6.91x)
+
+  READ THE THREE FACTORS SEPARATELY. h_all rises 6.91x, but
+  h_unf -- the error rate ON an unforced cell -- barely moves
+  (1.10x, and it sits near 0.52 at every single density). The
+  rise is almost entirely the unforced SHARE: 1 - s_F goes
+  0.0366 -> 0.2408, a 6.57x rise, and 6.57 x 1.10 = 7.22 recovers
+  nearly all of the 6.91x.
+
+  So h_all(0) is essentially a measure of HOW OFTEN the model
+  steps off the forced set, times a roughly constant ~52%
+  error rate once it does. Density controls the frequency of
+  leaving the support, not the competence off it.
+
+  The forced arm contributes almost nothing to h_all: 5.5% of
+  it at rho = 0.95 and 1.1% at rho = 0.33. Stages RULE2 to
+  RULE4 spent four stages on that term.
+
+REGISTERED SCORING
+
+  E1  h_all(0) monotone over all 14, Spearman <= -0.95
+      Spearman = -0.9648, maximum at rho = 0.40 (interior)
+      Monte-Carlo p = < 5.0e-06
+      -> HIT
+
+  E2  h_unf(0) >= 10x h_rule(0) at every density
+      smallest factor 151.1x at rho = 0.75; largest 451.4x
+      -> HIT
+
+  E3  predicted endpoints within a factor of 1.5
+      rho 0.95  predicted 0.0117  [0.0078, 0.0175]  got 0.0201  OUT
+      rho 0.33  predicted 0.1220  [0.0813, 0.1830]  got 0.1390  in
+      -> MISS
+
+  E4  the fall disappears: Spearman <= +0.00
+      REGISTRATION ERROR: E4 said 'the ten fitted bins' and
+      quoted RULE4's +0.9758, but that was RULE4's LOW ARM
+      (rho <= 0.75), a different ten bins. Both are scored.
+
+        bin set                       h_all(0)  h_rule(0)
+        FIT_RHOS, rho >= 0.50 (10)    -1.0000    -0.3333
+        RULE4 low arm, rho <= 0.75 (10)  -0.9030    +0.9758
+
+      The h_rule column reproduces RULE4: +0.9758 on its low arm,
+      against the +0.9758 registered there. h_all is negative on
+      BOTH sets, so the verdict survives the bin-set error.
+      -> HIT
+
+  E5  h_rule(0) reproduces stage RULE4 exactly
+      worst absolute difference 0.000e+00
+      -> HIT
+
+IS THERE STILL A HUMP?
+
+  above the peak (11 bins)  R = 0.5976  95% [0.5793, 0.6164]  excludes 1
+  below the peak (2 bins)  R = 0.9420  95% [0.9089, 0.9762]  excludes 1
+
+  BUT A RATIO INTERVAL IS THE WRONG INSTRUMENT AT THIS SIZE.
+  h_all's numerators are in the thousands, not the tens, so the
+  95% interval is under 1% wide and ANY ripple is nominally
+  resolved. What matters is the size of the dip against the
+  range of the curve:
+
+      full range of h_all(0)        0.1258  (7.25x end to end)
+      peak at rho = 0.40             0.1459
+      value at rho = 0.33            0.1390
+      drop from the peak            0.0069  = 5.5% of the range
+
+  -> NOT A HUMP. The interior maximum is a 5.5% ripple
+     among the lowest bins, on a curve that rises 7.25x end
+     to end. Stage RULE4's hump was a 1.54x FALL over the
+     same region; this is not that, and the nominal flank
+     test above is an artefact of the larger numerator.
+     E1's MISS condition is therefore NOT met: it asked for
+     a peak that survives, and a sub-decile ripple is not
+     one. This adjudication is recorded, not hidden -- the
+     registration should have set a size floor as well as a
+     significance test.
+
+GROUP COMPARISONS, BOTH INTERVALS
+
+  h_all(0): four added bins vs rho >= 0.80
+      a: 17668 / 126400 = 0.139778      b: 5273 / 126400 = 0.041717
+      R = 3.3507   Poisson 95% [3.2492, 3.4553]  (SE log R = 0.0157)
+      delete-one-run 95% [3.2180, 3.4833]  (SE 0.0677, 79 runs)
+      -> both intervals exclude 1
+
+  h_rule(0): the same contrast, for comparison
+      a: 208 / 95234 = 0.002184      b: 237 / 116312 = 0.002038
+      R = 1.0719   Poisson 95% [0.8898, 1.2913]  (SE log R = 0.0950)
+      delete-one-run 95% [-0.2559, 2.3997]  (SE 0.6775, 79 runs)
+      -> NOT resolved by both intervals
+
+  h_all's numerator is in the thousands where h_rule's is in the
+  tens, which is why the two intervals differ so much in width.
+  That is the practical gain from not conditioning: the same
+  shards, a hundredfold larger numerator.
+
+WHAT THIS SAYS, AND WHAT IT STILL DOES NOT
+
+  Registered: E1 HIT, E2 HIT, E3 MISS, E4 HIT, E5 HIT
+
+  THE SELECTION WAS DOING THE WORK. Once the denominator is
+  every rollout instead of the ones the model chose to name,
+  the hump is gone and the first-emission error rate rises
+  monotonically as hints are removed, 0.0201 -> 0.1390.
+
+  WHAT THIS DOES AND DOES NOT SAY ABOUT STAGE RULE4. RULE4's
+  fall is still there -- E5 reproduces its table exactly, to
+  0.000e+00 -- and it is still not censoring, because there
+  is none at j = 0. What changes is what it is a fall IN.
+  h_rule's denominator is the model's own choice of cell,
+  s_F runs 0.963 -> 0.759, so the rollouts left in it are a
+  progressively more selected subset. The unconditional
+  first-emission error rate over the same rollouts RISES
+  monotonically. So RULE4's fall is not a statement about
+  deduction quality getting better as hints are removed.
+
+  STATED AS A LIMIT, NOT A MECHANISM: this stage shows the
+  selection EXISTS and moves in the direction that would
+  produce RULE4's fall. It does not prove it causes it.
+  Proving that needs a like-for-like comparison -- the same
+  cells scored at two densities -- and the shards carry no
+  per-cell breakdown, so it cannot be done here. The honest
+  claim is the weaker one: h_rule's fall is real but is not
+  interpretable as a density effect on deduction quality,
+  because its denominator is not held fixed across density.
+  RULE4's deck gets a correction page saying that; it does
+  not get quietly rebuilt, and its hump figure stands as a
+  correct picture of h_rule.
+
+  WHY E3 MISSED, AND IT IS A FINDING. The prediction fed
+  finding 124's off-support error rate (0.29 at rho = 0.95,
+  pooled over every deduction index) into the j = 0 slice.
+  Measured here, h_unf(0) at rho = 0.95 is 0.5190 -- 1.8x the
+  pooled figure. So off-support colour accuracy at the FIRST
+  emission is 48%, not the 71% finding 124 reported over
+  the whole trace: the model's guessing gets BETTER as the
+  trace goes on, presumably because later guesses are made
+  with more of the grid filled in.
+
+  That is the same direction as finding 126 -- the first
+  deduction is the worst one -- now shown on the unforced
+  arm as well as the forced arm. It also means the pooled
+  off-support number must not be quoted at a fixed index,
+  which is exactly the extrapolation E3 was written to test.
+  Still well above chance: a blind colour guess errs at
+  1 - 1/q = 0.75, and 0.52 is far below that.
+
+  WHAT IS SOLID EITHER WAY: the unforced arm is 151x to 451x
+  the forced arm. The model is near-perfect when one-step
+  propagation names the colour for it (0.1% to 0.3% wrong)
+  and about a coin flip when it does not (~52% wrong), and
+  that gap is the single largest effect in this dataset. Not
+  chance, though: a blind colour guess errs at 1 - 1/q = 0.75,
+  so off the forced set the model is well above guessing and
+  nowhere near the near-certainty it shows on it. It is also a
+  measurement no earlier stage could make, because every
+  earlier stage conditioned it away.
+
+  WHAT THIS IS NOT:
+
+  1. Not a density threshold. h_all(0) is a rate and is never
+     converted into one.
+  2. Not a statement about logical validity below rho_c. There
+     an off-trace colour on an unforced cell may be a different
+     valid colouring, so the four added bins bound the logical
+     error rate from above rather than measuring it. The ten
+     fitted bins carry the clean statement.
+  3. Not clustered by instance. All 79 runs share the same 400
+     instances per bin and the shards carry no per-instance
+     breakdown, so no interval here can account for that, and
+     the jackknife's 79 runs are not 79 exchangeable replicates.
+  4. Not a reason to submit anything. No training follows from
+     any outcome, as registered. The repair-and-continue rollout
+     eval stays hshunt's call.
+
+SCOPE
+
+  d5q4 at N = 48, 79 runs, 31 architectures, 400 instances per
+  bin, eval seed start 60,000,000,000. Every number is pooled
+  over all runs; no single-seed rung is a measurement, and the
+  per-architecture ranking is density-dependent and not quoted.
