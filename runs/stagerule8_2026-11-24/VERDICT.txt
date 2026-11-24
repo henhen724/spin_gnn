@@ -1,0 +1,132 @@
+STAGE RULE8 -- THE INTERVAL ON h_rule FOR THE GOVERNING CELL
+refit of runs/stagelogic_2026-11-17, 20039 hazard rows, 1120 summary rows
+registered in /scratch/users/hshunt/spin_gnn/runs/stagerule8_2026-11-24/REGISTERED.md before this scorer existed
+nothing trained, nothing submitted, no closed knob reopened
+
+==========================================================================
+DIAGNOSTICS -- any failure stops the stage
+==========================================================================
+D1 PASS: cell 'L=16 h=4 tied_no_mlp d320' resolved by label -> 3 run(s) ['r69', 'r70', 'r71']
+    the triple ('tied_no_mlp', 16, 320) covers 3 cells: L=16 h=4 tied_no_mlp d320, L=16 h=4 tied_no_mlp d320 k2, L=16 h=4 tied_no_mlp d320 k4
+    sibling runs excluded: 6 ['r72', 'r73', 'r74', 'r75', 'r76', 'r77']
+D2 PASS: per-(run,rho) sums vs per_cell: err 2 vs 2 (resid 0.0e+00), forced 80956 vs 80956 (resid 0.0e+00)
+D3 PASS: 42 of 42 (seed, density) pairs present, 0 with an empty denominator, 0 missing
+D4 PASS: n_err_in_F > n_err on 0 of 749 rows of this cell
+D5 PASS: GRID 14 densities, FIT_RHOS 10; forced 80956 (pub 80956) over 14 and 63213 (pub 63213) over 10; errors 2 and 2 (pub 2)
+
+diagnostics: 5 of 5 PASS
+
+==========================================================================
+THE NUMBER AND ITS COUNTS -- the same eval before and after
+==========================================================================
+cell            L=16 h=4 tied_no_mlp d320
+params          613818   seeds 3   runs ['r69', 'r70', 'r71']
+eval            all 14 densities, all j, 400 instances per bin
+h_rule          2.470478e-05  = 2 rule errors / 80956 forced emissions
+                rounded as this line quotes it: 0.00002
+per seed        r69 1/28181   r70 1/26493   r71 0/26282
+
+BEFORE -- Wilson 95% on the same counts
+   h_rule 2.470478e-05  [6.774826e-06, 9.008307e-05]  width 8.330825e-05
+AFTER  -- delete-one-run jackknife over the 3 seeds, Z = 1.96
+   h_rule 2.470478e-05  [1.272397e-06, 4.813716e-05]  width 4.686476e-05
+   jackknife SE 1.195530e-05, bias-corrected estimate 2.485439e-05
+   replicates (run dropped -> h_rule on the other two):
+     drop r69    -> 1.894837e-05   (1/28181 removed)
+     drop r70    -> 1.836109e-05   (1/26493 removed)
+     drop r71    -> 3.658046e-05   (0/26282 removed)
+   with the honest multiplier for 3 replicates, t(df=2) = 4.303:
+     [-2.673471e-05, 7.614427e-05]  width 1.028790e-04
+
+==========================================================================
+SCORED PREDICTIONS
+==========================================================================
+E1 MISS: jackknife width / Wilson width = 0.5625 (bar >= 1.0, i.e. HIT means it WIDENED)
+   Wilson    [6.775e-06, 9.008e-05]  width 8.331e-05
+   jackknife [1.272e-06, 4.814e-05]  width 4.686e-05
+   on t(df=2) instead of Z the jackknife width is 1.029e-04, a factor of 1.23 on Wilson
+E2 MISS: jackknife lower bound +1.272e-06, Wilson's +6.775e-06 -- the bar wanted the first <= 0 and the second > 0
+   on t(df=2) the jackknife lower bound is -2.673e-05 instead, so this prediction turns entirely on the multiplier too
+   the lower bound is the load-bearing one here: it is what separates 'keeps DD's rule' from 'makes no rule errors at all'.
+E3 HIT: 1 of 3 seeds carry no rule error at all (r71)
+   carriers: r69 1 error(s), r70 1 error(s)
+E4 HIT: SE_jack / SE_Poisson = 0.6844 (bar 0.5 to 2.0)
+   SE_jack 1.196e-05 over 3 runs, SE_Poisson sqrt(2)/80956 = 1.747e-05
+   a ratio near 1 means the 3 seeds add NO dispersion beyond counting noise: this is a COUNT problem, not a SEED problem.
+E5 HIT: reproduces finding 122 -- 2 errors, 80956 forced over 14 (pub 80956), 63213 forced over 10 (pub 63213), residual 0.0e+00
+   ten-density h_rule 3.163906e-05, fourteen-density 2.470478e-05 -- the SAME two errors, a bigger denominator.
+
+==========================================================================
+POST-HOC -- read after the scored predictions, never a test
+==========================================================================
+(a) the OTHER resampling unit: delete-one-DENSITY, 14 replicates
+    SE 1.678e-05, interval [-8.192e-06, 5.760e-05] on Z, width 6.579e-05
+    14 replicates instead of 3, and the unit is a BIN not a run, so this answers a different question -- whether one density carries the rate. It is reported because 3 replicates is the whole difficulty with the registered procedure.
+(b) where the 2 rule errors sit, by (seed, density, j)
+    r69    rho 0.90  j 3    1 error(s)  (n_in_F 343, n_at_risk 363)
+    r70    rho 0.65  j 13   1 error(s)  (n_in_F 75, n_at_risk 94)
+(c) the ONE-SIDED bound, which is the form the claim takes
+    h_rule < 7.777e-05 at 95% one-sided (exact Poisson on 2 events in 80956 forced emissions)
+    that is 129x under the 0.01 'has DD's rule' bar.
+    two-sided, for comparison: Wilson [6.775e-06, 9.008e-05], Clopper-Pearson [2.992e-06, 8.924e-05], exact Poisson [2.992e-06, 8.924e-05]
+(d) what it would take to tighten it, since resampling cannot
+    with k = 0 further errors the one-sided bound is 2.9957/F, so an upper bound under 1e-05 needs F >= 299573 forced emissions
+    this cell has 80956 over 3 seeds = 26985 per seed, so that is ~11.1 seeds at zero further errors -- i.e. 9 more TRAINING runs.
+    the eval is already exhausted: all 14 densities, all j, all 400 instances per bin are in the denominator, so no further rollouts exist to add without generating them.
+(e) against the standing reference J2 on the same eval
+    L=16 h=4 no_mlp d192           1/164070  h_rule 6.095e-06  Wilson [1.076e-06, 3.453e-05]  1-sided < 2.891e-05
+    L=16 h=4 tied_no_mlp d320      2/80956  h_rule 2.470e-05  Wilson [6.775e-06, 9.008e-05]  1-sided < 7.777e-05
+    J2 is 4.08x the parameters (2504890 vs 613818) and its interval OVERLAPS this cell's, so neither is resolved from the other on the rule arm.
+
+==========================================================================
+READING
+==========================================================================
+SCORE: E1 MISS E2 MISS E3 HIT E4 HIT E5 HIT
+
+1. E1 AND E2 BOTH MISSED, AND BOTH TURN ON THE MULTIPLIER RATHER THAN ON THE DATA.
+   I registered that the jackknife would WIDEN this interval. On the project's
+   existing Z = 1.96 convention it did the opposite: width 4.686e-05 against Wilson's
+   8.331e-05, a factor of 0.56, so the interval is 1.78x NARROWER and E1 is a MISS on its
+   own stated bar. E2 misses with it: the Z interval's lower bound is +1.272e-06,
+   above zero, where I predicted it would fall below.
+
+2. BUT THE NARROWING IS THE MULTIPLIER, NOT INFORMATION, AND THE CORRECTED VERSION IS
+   WIDER THAN WHAT IT REPLACED. 3 replicates carry 2 degrees of freedom, so the
+   reference distribution is t(df=2) = 4.303, not the normal. The same standard error
+   read against t gives [-2.673e-05, +7.614e-05], width 1.029e-04 -- 1.23x WIDER than Wilson, and a
+   lower bound below zero. Both registered statements hold on the honest multiplier
+   and fail on the registered one; the bars were adjudicated as registered and the
+   t version is reported beside them, not substituted for them. The transferable
+   lesson is to REGISTER THE MULTIPLIER WITH THE RESAMPLING UNIT: a Z interval on a
+   3-replicate jackknife reports a tightening that the degrees of freedom do not support.
+
+3. THE POINT ESTIMATE DID NOT MOVE AND COULD NOT. 2.470478e-05 = 2 rule errors / 80956 forced
+   emissions, before and after, on the same eval -- 0.00002 as this line quotes it.
+   NO IMPROVEMENT IS CLAIMED and none was available without generating rollouts.
+
+4. E3 HIT, AND IT IS WHY THE JACKKNIFE SE CAME OUT SMALL: the two errors sit ONE EACH
+   in two different seeds, r69 at rho 0.90 j 3, r70 at rho 0.65 j 13, with r71 clean.
+   That is the most EVEN arrangement 2 events over 3 seeds can take, so no replicate
+   ever deletes both errors and the replicate spread (1.895e-05 / 1.836e-05 / 3.658e-05)
+   is as small as it can be. Had both landed in one seed the replicates would have run
+   from 0 to about 3.706e-05 and the SE would have been roughly twice this. THE JACKKNIFE SE
+   HERE IS A DRAW FROM A 3-POINT DISTRIBUTION, not a stable quantity.
+
+5. E4 HIT at 0.684, and it is BELOW 1: the seeds look LESS dispersed than Poisson
+   counting noise on the same 2 events (SE_jack 1.196e-05 vs SE_Poisson 1.747e-05), which is
+   what an even split produces. Seed is NOT an extra variance component on this cell,
+   so the interval is a COUNT problem. On a near-zero rate, seeds buy an interval
+   through the DENOMINATOR they add and never through their spread.
+
+6. THE FORM THE CLAIM SHOULD TAKE IS ONE-SIDED: h_rule < 7.777e-05 at 95%, which is
+   129x under the 0.01 bar. A two-sided interval on 2 events spends half its coverage
+   on a lower bound no claim on this line uses. If a resampling interval is wanted on
+   this cell, the DENSITY is the only unit with enough replicates to support one (14,
+   SE 1.678e-05, within 4% of Poisson) -- but it resamples bins, so it answers a
+   different question than the seed does.
+
+LIMITS. Everything is this one cell on stage RULE2's eval. h_rule conditions on naming
+a forced cell, a density-dependent share (finding 126), so it is not a density trend and
+is never read as one. The jackknife resamples RUNS, so it carries no statement about
+instances -- all 3 seeds see the same 400 per bin and the shards have no per-instance
+breakdown. A zero on a seed is a bound, never a demonstration of perfection.
