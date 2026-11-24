@@ -560,6 +560,25 @@ def both_arms(fh, meta, rows, seeds):
     return n_both, n_small, n_rule, min(ratios), max(ratios)
 
 
+def uniform_by_rho(seq, blank):
+    """Per density, (mean |F| at j = 0, n_blank, u if the first cell were
+    picked uniformly among the blanks). Shared with the figure builder so the
+    two cannot disagree."""
+    rowsd = {}
+    for (_run, rho), byj in seq.items():
+        r = byj.get(0)
+        if r is None:
+            continue
+        a = rowsd.setdefault(rho, {"F": 0.0, "A": 0.0})
+        a["F"] += r["F_sum"]
+        a["A"] += r["at_risk"]
+    out = {}
+    for rho, a in rowsd.items():
+        mf = a["F"] / a["A"]
+        out[rho] = (mf, blank[rho], 1.0 - mf / blank[rho])
+    return out
+
+
 def uniform_null(fh, seq, blank):
     """What u would be if the model picked its first cell UNIFORMLY among the
     blank cells. This is the chance level for the stopping condition, and
@@ -571,24 +590,14 @@ def uniform_null(fh, seq, blank):
     32.0025, so the blank count varies across instances and the baseline is a
     ratio-of-means approximation on those two bins only.
     """
-    rowsd = {}
-    for (_run, rho), byj in seq.items():
-        r = byj.get(0)
-        if r is None:
-            continue
-        a = rowsd.setdefault(rho, {"F": 0.0, "A": 0.0})
-        a["F"] += r["F_sum"]
-        a["A"] += r["at_risk"]
+    by_rho = uniform_by_rho(seq, blank)
     line(fh, "CHANCE LEVEL FOR THE STOPPING CONDITION: pick a blank cell "
              "uniformly at random.")
     line(fh, "    %5s %10s %9s %10s" % ("rho", "mean |F|", "n_blank",
                                         "u_uniform"))
     vals = []
     for rho in RHOS:
-        a = rowsd[rho]
-        nb = blank[rho]
-        mf = a["F"] / a["A"]
-        uu = 1.0 - mf / nb
+        mf, nb, uu = by_rho[rho]
         vals.append(uu)
         line(fh, "    %5.2f %10.4f %9.4f %10.4f" % (rho, mf, nb, uu))
     u_bar = sum(vals) / len(vals)
@@ -596,6 +605,44 @@ def uniform_null(fh, seq, blank):
          % u_bar)
     line(fh)
     return u_bar
+
+
+def clump_split(meta, seeds, min_side=5):
+    """Every run's own u, sorted, plus the clump boundary read off that list.
+
+    Shared with `stagerule6_figs` on purpose. The boundary is a float with no
+    short decimal form (401/5600 = 0.0716071...), and rounding it to the four
+    places a figure caption prints moves one run across it -- which silently
+    changed both the clump counts and the straddle list when the figures
+    carried their own literal. One definition, two callers.
+
+    The largest gap in the sorted list is a single-run outlier rather than a
+    boundary, so this takes the largest gap with at least `min_side` runs on
+    each side. That rule is stated, not tuned, and everything built on it is
+    post-hoc and descriptive.
+    """
+    order = sorted(meta, key=lambda c: meta[c]["params"])
+    per_run = sorted((1.0 - a["in_F"] / a["at_risk"], cell, run)
+                     for cell in order for run, a in seeds[cell].items())
+    vals = [v for v, _c, _r in per_run]
+    gaps = sorted(((vals[i + 1] - vals[i], vals[i], vals[i + 1], i + 1)
+                   for i in range(len(vals) - 1)), reverse=True)
+    cand = [g for g in gaps if g[3] >= min_side
+            and len(vals) - g[3] >= min_side]
+    gap, a_bound, b_bound, k = cand[0]
+    return per_run, gaps, gap, a_bound, b_bound, k
+
+
+def straddlers(meta, rows, seeds, a_bound):
+    """Cells with at least one seed on each side of the boundary, ordered by
+    pooled u. Also shared with the figures, for the same reason."""
+    out = []
+    for cell in sorted(meta, key=lambda c: rows[c]["u"]):
+        per = sorted(1.0 - (a["in_F"] / a["at_risk"])
+                     for a in seeds[cell].values())
+        if len(per) > 1 and per[0] <= a_bound < per[-1]:
+            out.append((cell, per))
+    return out
 
 
 def posthoc(fh, meta, rows, seeds, u_bar):
@@ -638,24 +685,16 @@ def posthoc(fh, meta, rows, seeds, u_bar):
     line(fh)
 
     # The single most important thing in the output, and it was NOT registered.
-    per_run = sorted((1.0 - a["in_F"] / a["at_risk"], cell, run)
-                     for cell in order for run, a in seeds[cell].items())
+    MIN_SIDE = 5
+    per_run, gaps, gap, a_bound, b_bound, k = clump_split(meta, seeds, MIN_SIDE)
+    vals = [v for v, _c, _r in per_run]
     line(fh, "THE 79 RUNS ARE NOT SPREAD ALONG u -- THEY SIT IN TWO CLUMPS.")
     line(fh, "Every run's own u, sorted. Each is %.0f first emissions "
              "(14 densities x 400)." % (N_INST * N_DENS))
-    vals = [v for v, _c, _r in per_run]
-    gaps = sorted(((vals[i + 1] - vals[i], vals[i], vals[i + 1], i + 1)
-                   for i in range(len(vals) - 1)), reverse=True)
     line(fh, "    the three largest gaps in the sorted list:")
-    for g, a, b, k in gaps[:3]:
+    for g, a, b, kk in gaps[:3]:
         line(fh, "      %.4f  between u = %.4f and u = %.4f   (%d runs below, "
-                 "%d above)" % (g, a, b, k, len(vals) - k))
-    # The largest gap is a single-run outlier, not the clump boundary, so the
-    # boundary is the largest gap with a non-trivial group on BOTH sides. That
-    # rule is stated here rather than tuned, and the whole section is post-hoc.
-    MIN_SIDE = 5
-    cand = [g for g in gaps if g[3] >= MIN_SIDE and len(vals) - g[3] >= MIN_SIDE]
-    gap, a_bound, b_bound, k = cand[0]
+                 "%d above)" % (g, a, b, kk, len(vals) - kk))
     line(fh, "    The LARGEST gap is a single-run outlier, so it is not the "
              "clump boundary. Taking")
     line(fh, "    the largest gap with at least %d runs on each side instead: "
@@ -676,15 +715,11 @@ def posthoc(fh, meta, rows, seeds, u_bar):
              "per cell that is a")
     line(fh, "coarse quantity, and it is the strongest argument yet that SEED "
              "is the next axis.")
-    straddle = []
+    straddle = straddlers(meta, rows, seeds, a_bound)
     line(fh, "Cells whose seeds straddle the boundary:")
-    for cell in order:
-        per = sorted(1.0 - (a["in_F"] / a["at_risk"])
-                     for a in seeds[cell].values())
-        if len(per) > 1 and per[0] <= a_bound < per[-1]:
-            straddle.append(cell)
-            line(fh, "    %-30s %d seeds  u %.4f - %.4f  (pooled %.4f)"
-                 % (cell, len(per), per[0], per[-1], rows[cell]["u"]))
+    for cell, per in straddle:
+        line(fh, "    %-30s %d seeds  u %.4f - %.4f  (pooled %.4f)"
+             % (cell, len(per), per[0], per[-1], rows[cell]["u"]))
     if not straddle:
         line(fh, "    none")
     line(fh)
