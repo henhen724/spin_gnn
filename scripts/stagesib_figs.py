@@ -167,7 +167,7 @@ def fig_u(vj0):
     ax.set_xticklabels([short(c) for c in F.CELLS], fontsize=8, rotation=18,
                        ha="right")
     ax.set_ylabel("$u(0) = 1 - s_F(0)$")
-    ax.set_ylim(0, 0.62)
+    ax.set_ylim(0, 1.0)
     ax.text(0.08, 0.92, "admitted", color=SERIES[0], fontsize=10,
             transform=ax.transAxes)
     ax.text(0.08, 0.86, "gate-dropped siblings", color=SERIES[1], fontsize=10,
@@ -176,10 +176,36 @@ def fig_u(vj0):
     save(fig, "u_by_cell.png")
 
 
+def fig_at_risk(rows):
+    """Why D3 failed: the d448 siblings mostly never emit a scorable first round."""
+    from slides import label_line
+    want = [("r78", "d448 seed 0, admitted"), ("r90", "seed 1"), ("r91", "seed 2")]
+    got = {w: {} for w, _ in want}
+    for r in rows:
+        if r["run_id"] in got and int(float(r["j"])) == 0:
+            got[r["run_id"]][float(r["rho"])] = int(float(r["n_at_risk"]))
+    fig, ax = plt.subplots(figsize=(7.2, 4.0))
+    for i, (run, lab) in enumerate(want):
+        xs = sorted(got[run])
+        ys = [got[run][x] for x in xs]
+        ax.plot(xs, ys, "-o", ms=4, color=SERIES[i], lw=1.8, zorder=3)
+        # The axis is inverted, so the RIGHT-HAND end of every curve is the
+        # smallest rho -- xs[0], not xs[-1].
+        label_line(ax, xs[0], ys[0], lab, color=SERIES[i])
+    ax.axhline(400, color=MUTED, lw=1.0, ls=":", zorder=2)
+    ax.invert_xaxis()
+    ax.set_xlabel("$\\rho$, fraction of nodes given as hints")
+    ax.set_ylabel("instances with a scorable first round, of 400")
+    ax.set_ylim(0, 430)
+    ax.set_xlim(0.98, 0.22)
+    style_axes(ax)
+    save(fig, "at_risk.png")
+
+
 def main():
     os.makedirs(FIGS, exist_ok=True)
     fig_gate_margin()
-    v, vj0, _, _ = F.measure()
+    v, vj0, _, rows = F.measure()
     missing = [r for r in F.ALL_RUNS if r not in v]
     if missing:
         print("shards missing for %s -- only gate_margin rendered" % sorted(missing))
@@ -188,6 +214,7 @@ def main():
     fig_pooled_shift(v)
     fig_nF(v)
     fig_u(vj0)
+    fig_at_risk(rows)
     return 0
 
 

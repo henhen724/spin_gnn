@@ -1,0 +1,226 @@
+==========================================================================
+STAGE SIB -- the gate-dropped sibling seeds of the six single-seed cells
+==========================================================================
+
+COMPLETENESS: 18 runs x 14 densities expected
+  all 18 runs complete
+
+PER RUN, 14 densities x 400 instances, stage POS's cached instances
+  cell                       run   seed  wrong/forced   h_rule       u(0)
+  L=16 h=4 tied_no_mlp d192  r68   0     977/12053      8.105866e-02 0.4359  admitted
+  L=16 h=4 tied_no_mlp d192  r80   1     3694/6531      5.656102e-01 0.2882  sibling
+  L=16 h=4 tied_no_mlp d192  r81   2     3805/6745      5.641216e-01 0.2655  sibling
+                                   pooled 8476/25329     3.346362e-01  CP95 [3.2882e-01, 3.4049e-01]
+
+  L=6  h=4 no_mlp d128 ep100 r23   2     677/18714      3.617612e-02 0.2632  admitted
+  L=6  h=4 no_mlp d128 ep100 r86   0     3744/7194      5.204337e-01 0.2691  sibling
+  L=6  h=4 no_mlp d128 ep100 r87   1     3680/6710      5.484352e-01 0.2873  sibling
+                                   pooled 8101/32618     2.483598e-01  CP95 [2.4368e-01, 2.5309e-01]
+
+  L=12 h=4 no_mlp d128       r44   2     1/24737        4.042527e-05 0.2550  admitted
+  L=12 h=4 no_mlp d128       r88   0     3807/8120      4.688424e-01 0.2405  sibling
+  L=12 h=4 no_mlp d128       r89   1     3771/6939      5.434501e-01 0.2863  sibling
+                                   pooled 7579/39796     1.904463e-01  CP95 [1.8660e-01, 1.9434e-01]
+
+  L=16 h=4 tied_no_mlp d448  r78   0     0/26949        0.000000e+00 0.2357  admitted
+  L=16 h=4 tied_no_mlp d448  r90   1     493/604        8.162252e-01 0.8562  sibling
+  L=16 h=4 tied_no_mlp d448  r91   2     32/38          8.421053e-01 0.8109  sibling
+                                   pooled 525/27591      1.902794e-02  CP95 [1.7449e-02, 2.0710e-02]
+
+  L=4  h=4 no_mlp            r08   0     0/24955        0.000000e+00 0.2379  admitted
+  L=4  h=4 no_mlp            r82   1     2846/11932     2.385183e-01 0.2589  sibling
+  L=4  h=4 no_mlp            r83   2     3814/6717      5.678130e-01 0.2709  sibling
+                                   pooled 6660/43604     1.527383e-01  CP95 [1.4937e-01, 1.5615e-01]
+
+  L=4  h=4 rf_mlp            r09   1     2/23891        8.371353e-05 0.2712  admitted
+  L=4  h=4 rf_mlp            r84   0     3829/6596      5.805033e-01 0.2698  sibling
+  L=4  h=4 rf_mlp            r85   2     3780/6561      5.761317e-01 0.2745  sibling
+                                   pooled 7611/37048     2.054362e-01  CP95 [2.0133e-01, 2.0959e-01]
+
+--------------------------------------------------------------------------
+S1  EVERY CELL GETS WORSE  (pooled h_rule > published, all 5)
+      L=6  h=4 no_mlp d128 ep100 admitted 3.617612e-02 (677/18714) -> pooled 2.483598e-01 (8101/32618)  worse
+      L=12 h=4 no_mlp d128       admitted 4.042527e-05 (1/24737) -> pooled 1.904463e-01 (7579/39796)  worse
+      L=16 h=4 tied_no_mlp d448  admitted 0.000000e+00 (0/26949) -> pooled 1.902794e-02 (525/27591)  worse
+      L=4  h=4 no_mlp            admitted 0.000000e+00 (0/24955) -> pooled 1.527383e-01 (6660/43604)  worse
+      L=4  h=4 rf_mlp            admitted 8.371353e-05 (2/23891) -> pooled 2.054362e-01 (7611/37048)  worse
+      -> S1 HIT
+
+S2  AT LEAST ONE RULE-INTACT CELL BREAKS THE 0.01 BAR
+      L=12 h=4 no_mlp d128       seed 0 (r88)  h_rule 4.688424e-01  ABOVE the bar
+      L=12 h=4 no_mlp d128       seed 1 (r89)  h_rule 5.434501e-01  ABOVE the bar
+      L=16 h=4 tied_no_mlp d448  seed 1 (r90)  h_rule 8.162252e-01  ABOVE the bar
+      L=16 h=4 tied_no_mlp d448  seed 2 (r91)  h_rule 8.421053e-01  ABOVE the bar
+      L=4  h=4 no_mlp            seed 1 (r82)  h_rule 2.385183e-01  ABOVE the bar
+      L=4  h=4 no_mlp            seed 2 (r83)  h_rule 5.678130e-01  ABOVE the bar
+      L=4  h=4 rf_mlp            seed 0 (r84)  h_rule 5.805033e-01  ABOVE the bar
+      L=4  h=4 rf_mlp            seed 2 (r85)  h_rule 5.761317e-01  ABOVE the bar
+      8 of 8 intact-cell siblings are above the bar
+      -> S2 HIT
+
+S3  THE SIBLINGS CLUSTER HIGH  (median h_rule > 0.20)
+      the 10 new siblings, sorted: 0.23852 0.46884 0.52043 0.54345 0.54844 0.56781 0.57613 0.58050 0.81623 0.84211
+      median 5.581241e-01  vs floor 0.20
+      -> S3 HIT
+
+S4  u FALLS FOR THE SIBLINGS  (>= 6 of 10 below their cell)
+      L=6  h=4 no_mlp d128 ep100 seed 0  u 0.2691  vs admitted 0.2632  ROSE
+      L=6  h=4 no_mlp d128 ep100 seed 1  u 0.2873  vs admitted 0.2632  ROSE
+      L=12 h=4 no_mlp d128       seed 0  u 0.2405  vs admitted 0.2550  fell
+      L=12 h=4 no_mlp d128       seed 1  u 0.2863  vs admitted 0.2550  ROSE
+      L=16 h=4 tied_no_mlp d448  seed 1  u 0.8562  vs admitted 0.2357  ROSE
+      L=16 h=4 tied_no_mlp d448  seed 2  u 0.8109  vs admitted 0.2357  ROSE
+      L=4  h=4 no_mlp            seed 1  u 0.2589  vs admitted 0.2379  ROSE
+      L=4  h=4 no_mlp            seed 2  u 0.2709  vs admitted 0.2379  ROSE
+      L=4  h=4 rf_mlp            seed 0  u 0.2698  vs admitted 0.2712  fell
+      L=4  h=4 rf_mlp            seed 2  u 0.2745  vs admitted 0.2712  ROSE
+      2 of 10 fell  (bar 6)
+      -> S4 MISS
+
+S5  SURVIVORSHIP IN THE DENOMINATOR  (>= 8 of 10 with n_F below)
+      L=6  h=4 no_mlp d128 ep100 seed 0  n_F   7194  vs admitted  18714  ratio 2.601  fewer
+      L=6  h=4 no_mlp d128 ep100 seed 1  n_F   6710  vs admitted  18714  ratio 2.789  fewer
+      L=12 h=4 no_mlp d128       seed 0  n_F   8120  vs admitted  24737  ratio 3.046  fewer
+      L=12 h=4 no_mlp d128       seed 1  n_F   6939  vs admitted  24737  ratio 3.565  fewer
+      L=16 h=4 tied_no_mlp d448  seed 1  n_F    604  vs admitted  26949  ratio 44.618  fewer
+      L=16 h=4 tied_no_mlp d448  seed 2  n_F     38  vs admitted  26949  ratio 709.184  fewer
+      L=4  h=4 no_mlp            seed 1  n_F  11932  vs admitted  24955  ratio 2.091  fewer
+      L=4  h=4 no_mlp            seed 2  n_F   6717  vs admitted  24955  ratio 3.715  fewer
+      L=4  h=4 rf_mlp            seed 0  n_F   6596  vs admitted  23891  ratio 3.622  fewer
+      L=4  h=4 rf_mlp            seed 2  n_F   6561  vs admitted  23891  ratio 3.641  fewer
+      10 of 10 reached fewer  (bar 8)
+      -> S5 HIT
+
+--------------------------------------------------------------------------
+DIAGNOSTICS
+--------------------------------------------------------------------------
+
+D1  THE TWELVE ARE THE REGISTERED CELLS, SEEDS AND PARAMS
+      r80   seed 1  ntp=270010    in79=False in_seven=False  L=16 h=4 tied_no_mlp d192  ok
+      r81   seed 2  ntp=270010    in79=False in_seven=False  L=16 h=4 tied_no_mlp d192  ok
+      r86   seed 0  ntp=480058    in79=False in_seven=False  L=6  h=4 no_mlp d128 ep100  ok
+      r87   seed 1  ntp=480058    in79=False in_seven=False  L=6  h=4 no_mlp d128 ep100  ok
+      r88   seed 0  ntp=879418    in79=False in_seven=False  L=12 h=4 no_mlp d128  ok
+      r89   seed 1  ntp=879418    in79=False in_seven=False  L=12 h=4 no_mlp d128  ok
+      r90   seed 1  ntp=1088698   in79=False in_seven=False  L=16 h=4 tied_no_mlp d448  ok
+      r91   seed 2  ntp=1088698   in79=False in_seven=False  L=16 h=4 tied_no_mlp d448  ok
+      r82   seed 1  ntp=1218106   in79=False in_seven=False  L=4  h=4 no_mlp  ok
+      r83   seed 2  ntp=1218106   in79=False in_seven=False  L=4  h=4 no_mlp  ok
+      r84   seed 0  ntp=2267706   in79=False in_seven=False  L=4  h=4 rf_mlp  ok
+      r85   seed 2  ntp=2267706   in79=False in_seven=False  L=4  h=4 rf_mlp  ok
+      -> PASS
+D2  POS_EXTRA UNSET RETURNS THE PUBLISHED POPULATION UNCHANGED
+      checked by hand before submission, as in stage SEED:
+      unset -> 80 records, 79 in79 + 1 flagged, ids r00..r79
+      set   -> 92 records, r00..r79 untouched, r80..r91 appended
+      stagerule_fit.load() drops in79=False, and these shards are
+      named F_hazard_r80-r81-...-r91.csv and F_hazard_r91.csv, which
+      the published *of10 glob cannot match -- no published fit can
+      absorb them.
+      -> PASS (by construction; the env default is the old path)
+D3  THE SIBLINGS WERE SCORED ON THE ADMITTED SEED'S INSTANCES
+      r08   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r09   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r23   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r44   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r68   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r78   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r80   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r81   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r82   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r83   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r84   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r85   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r86   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r87   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r88   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r89   14 densities  n_instances=[400]  n_at_risk(0)=[400]  max|realized_rho - r68| 0.000e+00  ok
+      r90   14 densities  n_instances=[400]  n_at_risk(0)=[106, 171, 206, 238, 291, 305, 322, 325, 343, 353, 364, 371, 384, 387]  max|realized_rho - r68| 0.000e+00  MISMATCH
+      r91   14 densities  n_instances=[400]  n_at_risk(0)=[2, 4, 8, 11, 15, 16, 17, 20, 26, 39]  max|realized_rho - r68| 0.000e+00  MISMATCH
+      -> FAIL (2)
+      The instances ARE identical: realized_rho matches r68 to 0 on
+      every run and n_instances is 400 everywhere. What fails is the
+      registration's claim that n_at_risk(0) = 400 'by construction'.
+      An instance enters the j=0 at-risk set only if the model emits a
+      well-formed first round, so 400 is a property of a COMPETENT
+      model. This is reported as a FAIL, not reclassified.
+D4  n_err_in_F <= n_in_F <= n_at_risk ON EVERY ROW
+      0 of 2467 rows violate an identity
+      -> PASS
+D5  RE-MEASURING r80/r81 REPRODUCES STAGE SEED (134)
+      r80   134: 3694/6531 h 0.5656102 u 0.2882
+            now: 3694/6531 h 0.5656102 u 0.2882   |dh| 3.31e-08 |du| 1.43e-05  ok
+      r81   134: 3805/6745 h 0.5641216 u 0.2655
+            now: 3805/6745 h 0.5641216 u 0.2655   |dh| 2.85e-08 |du| 3.57e-05  ok
+      -> PASS
+D6  THE SIX ADMITTED SEEDS REPRODUCE THE REGISTERED BASELINES
+      L=16 h=4 tied_no_mlp d192  r68  h 8.105866e-02 vs 0.08106 (|d| 1.3e-06)  u 0.4359 vs 0.4359 (|d| 7.1e-06)  ok
+      L=6  h=4 no_mlp d128 ep100 r23  h 3.617612e-02 vs 0.03618 (|d| 3.9e-06)  u 0.2632 vs 0.2632 (|d| 1.4e-05)  ok
+      L=12 h=4 no_mlp d128       r44  h 4.042527e-05 vs 0.00004 (|d| 4.3e-07)  u 0.2550 vs 0.2550 (|d| 0.0e+00)  ok
+      L=16 h=4 tied_no_mlp d448  r78  h 0.000000e+00 vs 0.00000 (|d| 0.0e+00)  u 0.2357 vs 0.2357 (|d| 1.4e-05)  ok
+      L=4  h=4 no_mlp            r08  h 0.000000e+00 vs 0.00000 (|d| 0.0e+00)  u 0.2379 vs 0.2379 (|d| 4.3e-05)  ok
+      L=4  h=4 rf_mlp            r09  h 8.371353e-05 vs 0.00008 (|d| 3.7e-06)  u 0.2712 vs 0.2712 (|d| 5.0e-05)  ok
+      -> PASS
+
+
+
+
+
+
+DIAGNOSTICS 5 of 6 PASS
+
+SCORE: S1 HIT  S2 HIT  S3 HIT  S4 MISS  S5 HIT
+
+--------------------------------------------------------------------------
+READING
+--------------------------------------------------------------------------
+
+THE GATE SELECTS, FOR EACH CELL, THE ONE SEED IN THREE THAT LEARNED THE
+RULE. Every one of the ten newly-measured siblings is a rule-breaker:
+h_rule runs 0.2385 to 0.8421, median 0.5581, against a bar of 0.01. Six
+of the ten sit in 0.52-0.58, and the two d448 siblings at 0.8162 and
+0.8421 are ABOVE the blind-guess rate 1 - 1/q = 0.75, i.e. worse than
+choosing a colour at random. S2 asked for ONE sibling of a rule-intact
+cell to break the bar and got EIGHT OF EIGHT, by 24x to 84x.
+
+SO FOUR PUBLISHED-INTACT ROWS OF THE LADDER ARE NOT PROPERTIES OF THEIR
+ARCHITECTURES. Pooling each cell over all three of its seeds moves it
+from intact to breaking: no_mlp L=4 0 -> 0.1527, rf_mlp L=4 8.37e-05 ->
+0.2054, no_mlp L=12 4.04e-05 -> 0.1904, tied d448 0 -> 0.01903. The last
+clears the bar by only 1.9x, and for a reason worth naming rather than
+hiding: its pooled denominator is 27,591 of which 26,949 belong to the
+admitted seed. Read as 'this cell deduces reliably' the row is wrong;
+read as 'the seed that solves also deduces' it is right, and that is the
+only claim the 79 can support.
+
+D3 FAILED AND THE REGISTRATION WAS WRONG, NOT THE DATA. It asserted
+n_at_risk(0) = 400 per density 'by construction'. True for sixteen runs;
+for r90 it is 106 to 387 and for r91 2 to 39. An instance enters the
+j=0 at-risk set only if the model emits a well-formed first round, so
+400 is a property of COMPETENT models, not of the eval. The two d448
+siblings (val acc 0.0412, 0.0308) fail at the format level on 73% and
+99% of instances. Their h_rule therefore rests on 604 and 38 forced
+emissions out of a possible 5,600 instances -- real, hugely above the
+bar, and far too thin to carry a number on its own.
+
+S4 MISSED AND REVERSED 134's REVERSAL. 134 registered u to rise, measured
+it falling, and the direction was folded into the registration here; u
+rose for 8 of 10. For six siblings the move is small (0.24-0.29 against
+admitted 0.24-0.27, the 'half of chance' clump of 129), and the two large
+moves are d448's 0.2357 -> 0.8562 and 0.8109, which is the same format
+collapse D3 found. So u has NO consistent sign across gate-dropped seeds:
+134's fall was a d192 fact, not a bad-seed fact, and WHERE a model writes
+stays separable from WHAT it writes.
+
+S5 HIT 10 OF 10 AND SETS THE DIRECTION OF THE BIAS. Every sibling reached
+fewer forced emissions than its admitted seed on identical instances --
+ratios 2.09x, 2.60x, 2.79x, 3.05x, 3.57x, 3.62x, 3.64x, 3.72x, then 44.6x
+and 709x for d448. Censoring at the first error shrinks the denominator
+of the worse model, so every gap quoted here UNDERSTATES the difference.
+
+WHAT THIS DOES NOT TOUCH. The governing architecture, tied_no_mlp L=16
+d320 at h_rule 0.00002, is not in this set: all three of its seeds
+cleared the gate and 133 found them agreeing inside counting noise. The
+six cells here are the ones where 2 of 3 seeds were dropped, and the
+admitted one cleared by 1 to 14 solved instances of 400. Nothing measured
+here re-enters the 79; every row stays in79=False.

@@ -229,8 +229,9 @@ def d2(fh):
     line(fh, "      unset -> 80 records, 79 in79 + 1 flagged, ids r00..r79")
     line(fh, "      set   -> 92 records, r00..r79 untouched, r80..r91 appended")
     line(fh, "      stagerule_fit.load() drops in79=False, and these shards are")
-    line(fh, "      named F_hazard_r80-r91.csv, which the published *of10 glob")
-    line(fh, "      cannot match -- no published fit can absorb them.")
+    line(fh, "      named F_hazard_r80-r81-...-r91.csv and F_hazard_r91.csv, which")
+    line(fh, "      the published *of10 glob cannot match -- no published fit can")
+    line(fh, "      absorb them.")
     line(fh, "      -> PASS (by construction; the env default is the old path)")
     return True
 
@@ -265,6 +266,13 @@ def d3(fh, rows):
                  % (run, len(g), sorted(nin[run]), risks, d,
                     "ok" if okd else "MISMATCH"))
     line(fh, "      -> %s" % ("PASS" if bad == 0 else "FAIL (%d)" % bad))
+    if bad:
+        line(fh, "      The instances ARE identical: realized_rho matches r68 to 0 on")
+        line(fh, "      every run and n_instances is 400 everywhere. What fails is the")
+        line(fh, "      registration's claim that n_at_risk(0) = 400 'by construction'.")
+        line(fh, "      An instance enters the j=0 at-risk set only if the model emits a")
+        line(fh, "      well-formed first round, so 400 is a property of a COMPETENT")
+        line(fh, "      model. This is reported as a FAIL, not reclassified.")
     return bad == 0
 
 
@@ -323,6 +331,63 @@ def d6(fh, v, vj0):
                     aj["u"], c["pub_u"], du, "ok" if okc else "MISMATCH"))
     line(fh, "      -> %s" % ("PASS" if bad == 0 else "FAIL (%d)" % bad))
     return bad == 0
+
+
+def reading(fh):
+    """Written AFTER the numbers above printed, from those numbers only."""
+    line(fh, "-" * 74)
+    line(fh, "READING")
+    line(fh, "-" * 74)
+    line(fh)
+    line(fh, "THE GATE SELECTS, FOR EACH CELL, THE ONE SEED IN THREE THAT LEARNED THE")
+    line(fh, "RULE. Every one of the ten newly-measured siblings is a rule-breaker:")
+    line(fh, "h_rule runs 0.2385 to 0.8421, median 0.5581, against a bar of 0.01. Six")
+    line(fh, "of the ten sit in 0.52-0.58, and the two d448 siblings at 0.8162 and")
+    line(fh, "0.8421 are ABOVE the blind-guess rate 1 - 1/q = 0.75, i.e. worse than")
+    line(fh, "choosing a colour at random. S2 asked for ONE sibling of a rule-intact")
+    line(fh, "cell to break the bar and got EIGHT OF EIGHT, by 24x to 84x.")
+    line(fh)
+    line(fh, "SO FOUR PUBLISHED-INTACT ROWS OF THE LADDER ARE NOT PROPERTIES OF THEIR")
+    line(fh, "ARCHITECTURES. Pooling each cell over all three of its seeds moves it")
+    line(fh, "from intact to breaking: no_mlp L=4 0 -> 0.1527, rf_mlp L=4 8.37e-05 ->")
+    line(fh, "0.2054, no_mlp L=12 4.04e-05 -> 0.1904, tied d448 0 -> 0.01903. The last")
+    line(fh, "clears the bar by only 1.9x, and for a reason worth naming rather than")
+    line(fh, "hiding: its pooled denominator is 27,591 of which 26,949 belong to the")
+    line(fh, "admitted seed. Read as 'this cell deduces reliably' the row is wrong;")
+    line(fh, "read as 'the seed that solves also deduces' it is right, and that is the")
+    line(fh, "only claim the 79 can support.")
+    line(fh)
+    line(fh, "D3 FAILED AND THE REGISTRATION WAS WRONG, NOT THE DATA. It asserted")
+    line(fh, "n_at_risk(0) = 400 per density 'by construction'. True for sixteen runs;")
+    line(fh, "for r90 it is 106 to 387 and for r91 2 to 39. An instance enters the")
+    line(fh, "j=0 at-risk set only if the model emits a well-formed first round, so")
+    line(fh, "400 is a property of COMPETENT models, not of the eval. The two d448")
+    line(fh, "siblings (val acc 0.0412, 0.0308) fail at the format level on 73% and")
+    line(fh, "99% of instances. Their h_rule therefore rests on 604 and 38 forced")
+    line(fh, "emissions out of a possible 5,600 instances -- real, hugely above the")
+    line(fh, "bar, and far too thin to carry a number on its own.")
+    line(fh)
+    line(fh, "S4 MISSED AND REVERSED 134's REVERSAL. 134 registered u to rise, measured")
+    line(fh, "it falling, and the direction was folded into the registration here; u")
+    line(fh, "rose for 8 of 10. For six siblings the move is small (0.24-0.29 against")
+    line(fh, "admitted 0.24-0.27, the 'half of chance' clump of 129), and the two large")
+    line(fh, "moves are d448's 0.2357 -> 0.8562 and 0.8109, which is the same format")
+    line(fh, "collapse D3 found. So u has NO consistent sign across gate-dropped seeds:")
+    line(fh, "134's fall was a d192 fact, not a bad-seed fact, and WHERE a model writes")
+    line(fh, "stays separable from WHAT it writes.")
+    line(fh)
+    line(fh, "S5 HIT 10 OF 10 AND SETS THE DIRECTION OF THE BIAS. Every sibling reached")
+    line(fh, "fewer forced emissions than its admitted seed on identical instances --")
+    line(fh, "ratios 2.09x, 2.60x, 2.79x, 3.05x, 3.57x, 3.62x, 3.64x, 3.72x, then 44.6x")
+    line(fh, "and 709x for d448. Censoring at the first error shrinks the denominator")
+    line(fh, "of the worse model, so every gap quoted here UNDERSTATES the difference.")
+    line(fh)
+    line(fh, "WHAT THIS DOES NOT TOUCH. The governing architecture, tied_no_mlp L=16")
+    line(fh, "d320 at h_rule 0.00002, is not in this set: all three of its seeds")
+    line(fh, "cleared the gate and 133 found them agreeing inside counting noise. The")
+    line(fh, "six cells here are the ones where 2 of 3 seeds were dropped, and the")
+    line(fh, "admitted one cleared by 1 to 14 solved instances of 400. Nothing measured")
+    line(fh, "here re-enters the 79; every row stays in79=False.")
 
 
 # -------------------------------------------------------------------- main
@@ -386,6 +451,8 @@ def main():
         line(fh)
         line(fh, "SCORE: " + "  ".join("%s %s" % (k, "HIT" if S[k] else "MISS")
                                        for k in sorted(S)))
+        line(fh)
+        reading(fh)
     print("\nwrote", os.path.join(OUT, "VERDICT.txt"))
     return 0
 
