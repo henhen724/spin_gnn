@@ -31,6 +31,18 @@ from stagerule8_fit import clopper_pearson  # noqa: E402
 SCR = "/scratch/users/hshunt/spin_gnn"
 OUT = os.path.join(SCR, "runs", "stagesib_2026-11-24")
 
+# stagelogic_score names a shard after EVERY run it measured, joined by dashes --
+# `F_hazard_r80-r81-r82-...-r91.csv`, not `F_hazard_r80-r91.csv`.
+#
+# Job 53631778 hit TIMEOUT at 02:00:21 with r91 at 8 of its 14 densities, so that
+# shard is TRUNCATED. The 8 partial rows stay on disk (nothing here is ever
+# deleted) and r91 is instead taken whole from job 53643104's own shard. The two
+# globs below are disjoint by construction, so a partial row cannot be pooled
+# with a complete one.
+BIG = "%s_r80-r81-*.csv"      # 53631778: r80..r90 complete, r91 truncated
+RERUN = "%s_r91.csv"          # 53643104: r91 alone, all 14 densities
+TRUNCATED = {"r91"}
+
 BAR = 0.01            # the rule bar, from stage RULE
 S3_MEDIAN = 0.20      # S3's registered floor on the siblings' median h_rule
 S4_MIN = 6            # S4: at least this many of 10 siblings with u below their cell
@@ -80,13 +92,9 @@ def hazard_rows():
     r80-r91. No in79 filter anywhere -- every sibling is in79=False by design.
     """
     rows = read_rows(os.path.join(LOGIC, "F_hazard_all_*of10.csv"))
-    rows += read_rows(os.path.join(OUT, "F_hazard_r80-r91.csv"))
-    return [r for r in rows if r["run_id"] in ALL_RUNS]
-
-
-def summary_rows():
-    rows = read_rows(os.path.join(LOGIC, "LF_summary_all_*of10.csv"))
-    rows += read_rows(os.path.join(OUT, "LF_summary_r80-r91.csv"))
+    rows += [r for r in read_rows(os.path.join(OUT, BIG % "F_hazard"))
+             if r["run_id"] not in TRUNCATED]
+    rows += read_rows(os.path.join(OUT, RERUN % "F_hazard"))
     return [r for r in rows if r["run_id"] in ALL_RUNS]
 
 
@@ -187,11 +195,16 @@ def score(fh, v, vj0):
 
 # -------------------------------------------------------------- diagnostics
 
-def d1(fh, summ):
-    """The twelve appended runs are the cells, seeds and params registered."""
+def d1(fh, rows):
+    """The twelve appended runs are the cells, seeds and params registered.
+
+    Read from the F_hazard rows, not from LF_summary: stagelogic_score writes
+    LF_summary only after the LAST run, so 53631778's timeout means it never
+    appeared. F_hazard carries the same identity columns on every row.
+    """
     line(fh, "D1  THE TWELVE ARE THE REGISTERED CELLS, SEEDS AND PARAMS")
     by_run = {}
-    for r in summ:
+    for r in rows:
         by_run.setdefault(r["run_id"], r)
     bad = 0
     for c in CELLS:
@@ -324,6 +337,21 @@ def main():
 
         v, vj0, per_rho, rows = measure()
 
+        # A truncated run would quietly pool fewer densities than every other,
+        # which is exactly the failure 53631778's timeout could have produced.
+        ndens = collections.Counter()
+        for r in rows:
+            ndens[(r["run_id"], round(float(r["rho"]), 4))] = 1
+        short = {run: sum(1 for (q, _) in ndens if q == run) for run in ALL_RUNS}
+        bad = {k: n for k, n in short.items() if n != len(GRID)}
+        line(fh, "COMPLETENESS: %d runs x %d densities expected" % (len(ALL_RUNS), len(GRID)))
+        if bad:
+            line(fh, "  INCOMPLETE: %s -- NOT SCORING" % sorted(bad.items()))
+            print("incomplete:", sorted(bad.items()))
+            return 1
+        line(fh, "  all %d runs complete" % len(ALL_RUNS))
+        line(fh)
+
         line(fh, "PER RUN, 14 densities x 400 instances, stage POS's cached instances")
         line(fh, "  %-26s %-5s %-5s %-14s %-12s %s"
                  % ("cell", "run", "seed", "wrong/forced", "h_rule", "u(0)"))
@@ -350,8 +378,7 @@ def main():
         line(fh, "DIAGNOSTICS")
         line(fh, "-" * 74)
         line(fh)
-        summ = summary_rows()
-        ds = [d1(fh, summ), d2(fh), d3(fh, rows), d4(fh, rows),
+        ds = [d1(fh, rows), d2(fh), d3(fh, rows), d4(fh, rows),
               d5(fh, v, vj0), d6(fh, v, vj0)]
         for i in range(len(ds)):
             line(fh)
