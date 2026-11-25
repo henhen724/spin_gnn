@@ -147,12 +147,9 @@ def successful_runs(verbose=True):
                 rec["in_seven"] = True
                 by_suffix[suf] = rec
 
-    # The named cells that the success filter drops -- appended, flagged, and
-    # never pooled with the 79. Resolved against the scan rows so the path,
-    # the cell key and the seed come from the same place as every other run.
-    for suf in SEVEN_SUFFIXES:
-        if suf in by_suffix:
-            continue
+    def _append_named(suf, in_seven):
+        """One below-gate cell, resolved against the scan rows so the path, the
+        cell key and the seed come from the same place as every other run."""
         hit = [(k, rs) for k, rs in cells.items() if _named(rs[0]["path"], suf)]
         if len(hit) != 1:
             raise SystemExit("cannot resolve named cell %s (%d matches)" % (suf, len(hit)))
@@ -167,11 +164,28 @@ def successful_runs(verbose=True):
             "n_trainable_params": int(cfg.get("n_trainable_params") or 0),
             "val_acc": _val_accuracy(path),
             "solve50": float(at50[0]["solve_rate"]) if at50 else float("nan"),
-            "in79": False, "in_seven": True, "max_len": int(cfg["max_len"]),
+            "in79": False, "in_seven": in_seven, "max_len": int(cfg["max_len"]),
         })
         if verbose:
             print("NAMED BUT NOT SUCCESSFUL, measured anyway and flagged in79=False: "
                   "%s  solve@0.50=%.3f" % (out[-1]["cell"], out[-1]["solve50"]))
+
+    # The named cells that the success filter drops -- appended, flagged, and
+    # never pooled with the 79.
+    for suf in SEVEN_SUFFIXES:
+        if suf not in by_suffix:
+            _append_named(suf, True)
+
+    # POS_EXTRA appends further below-gate cells by checkpoint-directory suffix,
+    # flagged in79=False like the above but in_seven=False, because "the seven"
+    # is hshunt's own list and findings quote its size. UNSET IS THE DEFAULT AND
+    # RETURNS EXACTLY WHAT IT RETURNED BEFORE: every scorer that calls this
+    # shares one population, so widening it unconditionally would silently
+    # change runs that are already published. Appended after the seven, so the
+    # existing run_ids r00..r79 are untouched and the new cells get r80 upward.
+    for suf in [s.strip() for s in os.environ.get("POS_EXTRA", "").split(",")]:
+        if suf:
+            _append_named(suf, False)
 
     for i, rec in enumerate(out):
         rec["run_id"] = "r%02d" % i
