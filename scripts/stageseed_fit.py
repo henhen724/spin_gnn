@@ -400,6 +400,96 @@ def score(fh, per_run, per_run_j0, per_rho):
     return v, vj0, vp, (s1, s2, s3, s4, s5), (stat, df, p, rate), per_rho
 
 
+def reading(fh, v, vj0, vp, S, chi):
+    """Written from the numbers printed above, after they existed."""
+    s1, s2, s3, s4, s5 = S
+    stat, df, p, rate = chi
+    a0, a1, a2 = v[SEED0], v[SEED1], v[SEED2]
+    u0, u1, u2 = vj0[SEED0], vj0[SEED1], vj0[SEED2]
+    overlap = max(a1["h_lo"], a2["h_lo"]) <= min(a1["h_hi"], a2["h_hi"])
+
+    line(fh, "-" * 74)
+    line(fh, "READING")
+    line(fh, "-" * 74)
+    line(fh)
+
+    line(fh, "THE QUESTION HAS TWO ANSWERS AND THEY POINT OPPOSITE WAYS. Whether")
+    line(fh, "the cell breaks the rule is an architecture property: all three seeds")
+    line(fh, "clear the %.2f bar, S1 HIT. HOW BADLY it breaks is a seed property"
+             % BAR)
+    line(fh, "with an enormous effect: chi2 = %.0f on %d d.o.f., p = %.3g, S2 MISS"
+             % (stat, df, p))
+    line(fh, "by about as far as a homogeneity test can miss. The registered")
+    line(fh, "hypothesis -- architecture, not seed -- is therefore right about the")
+    line(fh, "failure and wrong about its size.")
+    line(fh)
+
+    line(fh, "THE PUBLISHED d192 NUMBER IS THE BEST SEED OF THREE BY A FACTOR OF")
+    line(fh, "%.1f, and it was selected that way. S3 HIT: h_rule is %.5f for r68"
+             % (a1["h_rule"] / a0["h_rule"], a0["h_rule"]))
+    line(fh, "against %.4f and %.4f for the two seeds that were never evaluated."
+             % (a1["h_rule"], a2["h_rule"]))
+    line(fh, "Seed 0 is in the 79 because it solved 1 instance of 400 at")
+    line(fh, "rho = 0.50 while seeds 1 and 2 solved 0 of 400, and the gate is")
+    line(fh, "solve_rate > 0. A gate on SOLVING turns out to be a gate on the RULE")
+    line(fh, "arm, so the one admitted seed is the one that writes the forced")
+    line(fh, "colour correctly, and 0.08106 is not a property of the cell. The")
+    line(fh, "cell's typical seed sits at %.3f, and pooled over all three it is"
+             % ((a1["h_rule"] + a2["h_rule"]) / 2.0))
+    line(fh, "%.4f -- %.2fx the published figure, S5 MISS on the factor-of-2 half"
+             % (vp["h_rule"], vp["h_rule"] / PUB_H))
+    line(fh, "of its statement while HITTING the half that matters for the bar.")
+    line(fh)
+
+    line(fh, "THE TWO UNEVALUATED SEEDS AGREE WITH EACH OTHER ALMOST EXACTLY:")
+    line(fh, "%.4f [%.3f, %.3f] and %.4f [%.3f, %.3f], intervals %s."
+             % (a1["h_rule"], a1["h_lo"], a1["h_hi"], a2["h_rule"], a2["h_lo"],
+                a2["h_hi"], "OVERLAPPING" if overlap else "disjoint"))
+    line(fh, "So this is not a spread: it is two seeds in one mode and one seed in")
+    line(fh, "another, which is the clump structure findings 130/131 described,")
+    line(fh, "seen here at the level of a single cell. The minority clump is the")
+    line(fh, "one that got published.")
+    line(fh)
+
+    line(fh, "S4 MISSED, AND ITS DIRECTION IS THE SURPRISE. u = 1 - s_F(0) was")
+    line(fh, "registered to rise with the worse seeds and it FELL: %.4f for r68"
+             % u0["u"])
+    line(fh, "against %.4f for r80 and %.4f for r81. The two bad seeds name a"
+             % (u1["u"], u2["u"]))
+    line(fh, "forced cell at the first emission MORE often than the good one, and")
+    line(fh, "then write the wrong colour in it %.0f%% of the time against %.0f%%."
+             % (100 * a1["h_rule"], 100 * a0["h_rule"]))
+    line(fh, "The two arms move in OPPOSITE directions across seeds of one cell, so")
+    line(fh, "they are not two readings of one quality axis. Picking WHERE to write")
+    line(fh, "and knowing WHAT to write are separable, and a seed can be better at")
+    line(fh, "the first while being far worse at the second.")
+    line(fh)
+
+    line(fh, "THE DENOMINATORS CARRY THE RESULT TOO. On identical instances r68")
+    line(fh, "accumulated %d forced emissions against %d and %d -- %.2fx as many"
+             % (a0["F"], a1["F"], a2["F"],
+                a0["F"] / ((a1["F"] + a2["F"]) / 2.0)))
+    line(fh, "-- because a rollout is censored at its first error and the bad seeds")
+    line(fh, "die sooner. Survivorship therefore shrinks the very denominator that")
+    line(fh, "a high h_rule is divided by, which means h_rule UNDERSTATES how")
+    line(fh, "different these seeds are, not overstates it.")
+    line(fh)
+
+    line(fh, "WHAT THIS CANNOT SAY. Three seeds of one cell at one width. It does")
+    line(fh, "not show that seed dispersion is general -- and the contrast with")
+    line(fh, "d320 says it is not: that cell's three seeds agreed INSIDE counting")
+    line(fh, "noise (stage RULE8, SE_jack 1.196e-05 against SE_Poisson 1.747e-05)")
+    line(fh, "while d192's three differ by %.1fx. If anything, seed dispersion is"
+             % (a1["h_rule"] / a0["h_rule"]))
+    line(fh, "itself width-dependent, and the small cell is the unstable one.")
+    line(fh, "r80 and r81 are outside the 79 by construction and are never pooled")
+    line(fh, "into any published fit; the correct use of them is the comparison")
+    line(fh, "above, not a new population. No further training is needed to reach")
+    line(fh, "this: the eval cost was one 3-minute GPU job on checkpoints that had")
+    line(fh, "been sitting on scratch since 2026-11-10.")
+    line(fh)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     rows = hazard_rows()
@@ -427,6 +517,7 @@ def main():
         line(fh, "SCORE: " + "  ".join(
             "S%d %s" % (i + 1, "HIT" if s else "MISS") for i, s in enumerate(S)))
         line(fh)
+        reading(fh, v, vj0, vp, S, chi)
     print("\nwrote", path)
     return 0
 

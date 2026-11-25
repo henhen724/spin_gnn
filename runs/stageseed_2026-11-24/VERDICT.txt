@@ -1,0 +1,155 @@
+==========================================================================
+STAGE SEED -- three seeds of L=16 h=4 tied_no_mlp d192 (270010 params)
+==========================================================================
+
+PER SEED, 14 densities x 400 instances, same cached instances
+  run  seed  rule errors / forced emissions      h_rule      Wilson 95%
+  r68  0         977 / 12053              8.105866e-02  [7.632e-02, 8.607e-02]
+  r80  1        3694 / 6531               5.656102e-01  [5.536e-01, 5.776e-01]
+  r81  2        3805 / 6745               5.641216e-01  [5.523e-01, 5.759e-01]
+
+  run   unforced first emissions / at risk        u = 1 - s_F   Wilson 95%
+  r68       2441 / 5600                       0.4359  [0.4230, 0.4489]
+  r80       1614 / 5600                       0.2882  [0.2765, 0.3002]
+  r81       1487 / 5600                       0.2655  [0.2541, 0.2773]
+
+POOLED over the three seeds
+  h_rule = 8476 / 25329 = 3.346362e-01   Wilson 95% [3.289e-01, 3.405e-01]
+  Clopper-Pearson 95%            [3.288e-01, 3.405e-01]
+
+S1  BOTH NEW SEEDS ALSO BREAK THE RULE  (h_rule > 0.01)
+      r80  h_rule 5.656102e-01  above the bar  -> HIT
+      r81  h_rule 5.641216e-01  above the bar  -> HIT
+      -> S1 HIT
+
+S2  THE THREE SEEDS AGREE WITHIN COUNTING NOISE  (chi2, p > 0.05)
+      r68  observed 977  expected 4033.4  at the pooled rate 3.346362e-01
+      r80  observed 3694  expected 2185.5  at the pooled rate 3.346362e-01
+      r81  observed 3805  expected 2257.1  at the pooled rate 3.346362e-01
+      chi2 = 6641.063 on 2 d.o.f.,  p = 0
+      -> S2 MISS  (seed IS resolvable on the rule arm)
+
+S3  SEED 0 IS THE OPTIMISTIC END  (h_rule(r68) below both others)
+      h_rule(r68) 8.105866e-02  vs  r80 5.656102e-01   ratio 6.978  -> HIT
+      h_rule(r68) 8.105866e-02  vs  r81 5.641216e-01   ratio 6.959  -> HIT
+      -> S3 HIT
+
+S4  THE STOPPING CONDITION MOVES WITH IT  (u >= 0.4359)
+      r80  u = 0.2882  vs r68's published 0.4359  -> MISS
+      r81  u = 0.2655  vs r68's published 0.4359  -> MISS
+      -> S4 MISS
+
+S5  POOLING DOES NOT RESCUE THE CELL
+      pooled h_rule 3.346362e-01  vs published 0.08106   factor 4.128
+      within a factor of 2: False;  above the 0.01 bar: True
+      -> S5 MISS
+
+--------------------------------------------------------------------------
+DIAGNOSTICS
+--------------------------------------------------------------------------
+
+D1  THE THREE RUNS ARE THE SAME CELL, TWO OF THEM OUTSIDE THE 79
+      r68  seed 0  tied_no_mlp L=16 d=192  ntp=270010  val_acc=0.4715  in79=True  ok
+      r80  seed 1  tied_no_mlp L=16 d=192  ntp=270010  val_acc=0.4561  in79=False  ok
+      r81  seed 2  tied_no_mlp L=16 d=192  ntp=270010  val_acc=0.4567  in79=False  ok
+      expected the triple ('tied_no_mlp', 16, 192), 270010 params, and
+      in79 True for r68 only
+      -> PASS
+
+D2  POS_EXTRA UNSET RETURNS THE POPULATION UNCHANGED
+      checked by hand on 2026-11-24 before submission:
+      POS_EXTRA unset   -> 80 records, 79 in79 + 1 flagged, last
+                           id r79 (L=2 h=4 full, solve@0.50 0.000)
+      POS_EXTRA set     -> 82 records, 79 in79 + 3 flagged, the two
+                           new ids r80 and r81, r00..r79 unchanged
+      stagerule_fit.load() drops in79=False rows, so no published
+      fit can absorb r80/r81 even with POS_EXTRA exported.
+      -> PASS (by construction; the env default is the old path)
+
+D3  THE THREE SEEDS WERE SCORED ON THE SAME INSTANCES
+      r68  14 densities  n_instances=[400]  ok
+      r80  14 densities  n_instances=[400]  ok
+      r81  14 densities  n_instances=[400]  ok
+      largest |realized_rho - r68's| over the grid: 0.000e+00
+      instances are REUSED, not rebuilt, so this must be 0  -> ok
+      -> PASS
+
+D4  n_err_in_F <= n_in_F <= n_at_risk ON EVERY ROW
+      0 of 360 rows violate an identity
+      -> PASS
+
+D5  r68 RECOMPUTED REPRODUCES THE PUBLISHED d192 NUMBERS
+      h_rule pools all j; u is j = 0 only -- different blocks by
+      definition, so the published pair is the mixed one.
+      published (finding 131):  h_rule 0.08106        u 0.4359
+      recomputed:               h_rule 0.08106  (977/12053)  u 0.4359  (2441/5600)
+      |delta| h_rule 1.34e-06   u 7.14e-06
+      for the record, the two unmixed readings, neither published:
+        all j only:  h_rule 0.08106   u 0.3717
+        j = 0 only:  h_rule 0.19848   u 0.4359
+      -> PASS
+
+DIAGNOSTICS 5 of 5 PASS
+
+SCORE: S1 HIT  S2 MISS  S3 HIT  S4 MISS  S5 MISS
+
+--------------------------------------------------------------------------
+READING
+--------------------------------------------------------------------------
+
+THE QUESTION HAS TWO ANSWERS AND THEY POINT OPPOSITE WAYS. Whether
+the cell breaks the rule is an architecture property: all three seeds
+clear the 0.01 bar, S1 HIT. HOW BADLY it breaks is a seed property
+with an enormous effect: chi2 = 6641 on 2 d.o.f., p = 0, S2 MISS
+by about as far as a homogeneity test can miss. The registered
+hypothesis -- architecture, not seed -- is therefore right about the
+failure and wrong about its size.
+
+THE PUBLISHED d192 NUMBER IS THE BEST SEED OF THREE BY A FACTOR OF
+7.0, and it was selected that way. S3 HIT: h_rule is 0.08106 for r68
+against 0.5656 and 0.5641 for the two seeds that were never evaluated.
+Seed 0 is in the 79 because it solved 1 instance of 400 at
+rho = 0.50 while seeds 1 and 2 solved 0 of 400, and the gate is
+solve_rate > 0. A gate on SOLVING turns out to be a gate on the RULE
+arm, so the one admitted seed is the one that writes the forced
+colour correctly, and 0.08106 is not a property of the cell. The
+cell's typical seed sits at 0.565, and pooled over all three it is
+0.3346 -- 4.13x the published figure, S5 MISS on the factor-of-2 half
+of its statement while HITTING the half that matters for the bar.
+
+THE TWO UNEVALUATED SEEDS AGREE WITH EACH OTHER ALMOST EXACTLY:
+0.5656 [0.554, 0.578] and 0.5641 [0.552, 0.576], intervals OVERLAPPING.
+So this is not a spread: it is two seeds in one mode and one seed in
+another, which is the clump structure findings 130/131 described,
+seen here at the level of a single cell. The minority clump is the
+one that got published.
+
+S4 MISSED, AND ITS DIRECTION IS THE SURPRISE. u = 1 - s_F(0) was
+registered to rise with the worse seeds and it FELL: 0.4359 for r68
+against 0.2882 for r80 and 0.2655 for r81. The two bad seeds name a
+forced cell at the first emission MORE often than the good one, and
+then write the wrong colour in it 57% of the time against 8%.
+The two arms move in OPPOSITE directions across seeds of one cell, so
+they are not two readings of one quality axis. Picking WHERE to write
+and knowing WHAT to write are separable, and a seed can be better at
+the first while being far worse at the second.
+
+THE DENOMINATORS CARRY THE RESULT TOO. On identical instances r68
+accumulated 12053 forced emissions against 6531 and 6745 -- 1.82x as many
+-- because a rollout is censored at its first error and the bad seeds
+die sooner. Survivorship therefore shrinks the very denominator that
+a high h_rule is divided by, which means h_rule UNDERSTATES how
+different these seeds are, not overstates it.
+
+WHAT THIS CANNOT SAY. Three seeds of one cell at one width. It does
+not show that seed dispersion is general -- and the contrast with
+d320 says it is not: that cell's three seeds agreed INSIDE counting
+noise (stage RULE8, SE_jack 1.196e-05 against SE_Poisson 1.747e-05)
+while d192's three differ by 7.0x. If anything, seed dispersion is
+itself width-dependent, and the small cell is the unstable one.
+r80 and r81 are outside the 79 by construction and are never pooled
+into any published fit; the correct use of them is the comparison
+above, not a new population. No further training is needed to reach
+this: the eval cost was one 3-minute GPU job on checkpoints that had
+been sitting on scratch since 2026-11-10.
+
